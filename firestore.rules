@@ -1,0 +1,118 @@
+rules_version = '2';
+
+// Security Rules for "Veille Stratégique" (Neurones Technologies CI).
+// Ported from docs/BUILD_KIT.md §7, with the `match … where c in […]` shorthand expanded
+// into one explicit `match` block per collection (Firestore rules do not support that syntax).
+//
+// NOTE (V0): these rules are committed as part of the project skeleton but are NOT yet wired
+// to real Auth/custom-claims usage in the app (that's V1 per the roadmap). They already reflect
+// the intended RBAC model so V1 can turn them on without redesigning the schema.
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function role() { return request.auth.token.role; }
+    function matrix() { return get(/databases/$(db)/documents/config/permissions).data.matrix; }
+    function lvl(m) { return role() in ['direction'] ? 'write' : matrix()[role()][m]; }
+    function canRead(m) { return request.auth != null && lvl(m) in ['read', 'write']; }
+    function canWrite(m) { return request.auth != null && lvl(m) == 'write'; }
+    function exec() { return role() in ['direction', 'strategie', 'innovation']; }
+
+    // — Signaux & détection —
+    match /intelItems/{id} {
+      allow read: if canRead('veille');
+      allow create: if canWrite('veille') && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if canWrite('veille');
+    }
+    match /intelWatchlist/{id} {
+      allow read: if canRead('veille');
+      allow write: if canWrite('veille');
+    }
+    match /intelSources/{id} {
+      allow read: if canRead('veille');
+      allow write: if exec();
+    }
+
+    // — Cadres & analyse —
+    match /frameworks/{key} {
+      allow read: if canRead('veille');
+      allow write: if exec();
+    }
+
+    // Expanded from: match /{c}/{id} where c in ['scenarios','decisions','strategicThemes','initiatives']
+    match /scenarios/{id} {
+      allow read: if canRead('veille');
+      allow write: if exec();
+    }
+    match /decisions/{id} {
+      allow read: if canRead('veille');
+      allow write: if exec();
+    }
+    match /strategicThemes/{id} {
+      allow read: if canRead('veille');
+      allow write: if exec();
+    }
+    match /initiatives/{id} {
+      allow read: if canRead('veille');
+      allow write: if exec();
+    }
+
+    // Expanded from: match /{c}/{id} where c in ['techRadar','innovationPortfolio']
+    match /techRadar/{id} {
+      allow read: if canRead('veille');
+      allow write: if role() in ['direction', 'innovation'];
+    }
+    match /innovationPortfolio/{id} {
+      allow read: if canRead('veille');
+      allow write: if role() in ['direction', 'innovation'];
+    }
+
+    match /battlecards/{id} {
+      allow read: if canRead('veille');
+      allow write: if canWrite('veille');
+    }
+
+    // Expanded from: match /{c}/{id} where c in ['winLoss','actions','briefings']
+    match /winLoss/{id} {
+      allow read: if canRead('veille');
+      allow write: if exec();
+    }
+    match /actions/{id} {
+      allow read: if canRead('veille');
+      allow write: if exec();
+    }
+    match /briefings/{id} {
+      allow read: if canRead('veille');
+      allow write: if exec();
+    }
+
+    // — Agrégats (écrits par Cloud Functions / Admin SDK uniquement) —
+    match /summaries/{d} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // — Config & sécurité —
+    match /config/permissions {
+      allow read: if request.auth != null;
+      allow write: if role() == 'direction';
+    }
+    match /config/{d} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /auditLog/{id} {
+      allow read: if role() == 'direction';
+      allow write: if false;
+    }
+    match /users/{uid} {
+      allow read: if role() == 'direction' || request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // — Imports (écrits par ingestInternal via Admin SDK ; lecture réservée exécutifs) —
+    match /imports/{id} {
+      allow read: if exec();
+      allow write: if false;
+    }
+  }
+}

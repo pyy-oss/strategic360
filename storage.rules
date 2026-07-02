@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Storage rules for "Veille Stratégique". V0 skeleton: authenticated read, writes reserved to
+// Cloud Functions (Admin SDK bypasses these rules) — raw imports and generated exports are never
+// written directly by client code.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Raw internal imports (P&L / LIVE / Facturation / fiche affaire .xlsx) — Functions-only write.
+    match /imports/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Generated exports (board pack / one-pager PDF) — Functions-only write, signed URLs for access.
+    match /exports/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Default deny.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
