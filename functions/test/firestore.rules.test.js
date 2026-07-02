@@ -16,15 +16,17 @@
  * criterion: "Une écriture non autorisée est refusée par les Security Rules".
  */
 
-const fs = require("fs");
-const path = require("path");
-const { beforeAll, afterAll, beforeEach, describe, it } = require("vitest");
-const {
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { beforeAll, afterAll, beforeEach, describe, it } from "vitest";
+import {
   initializeTestEnvironment,
   assertSucceeds,
   assertFails,
-} = require("@firebase/rules-unit-testing");
+} from "@firebase/rules-unit-testing";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RULES_PATH = path.resolve(__dirname, "..", "..", "firestore.rules");
 
 const ALL_ROLES = [
