@@ -534,7 +534,7 @@ exports.classifyAI = onCall(CALLABLE_OPTS, async (request) => {
  * the currently stored one (this function's own write would otherwise re-trigger itself forever).
  * Roadmap: V3 Scoring & agrégats veille.
  */
-exports.scoreItems = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1" }, async (event) => {
+exports.scoreItems = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1", database: FIRESTORE_DATABASE_ID }, async (event) => {
   const after = event.data && event.data.after;
   if (!after || !after.exists) return; // deleted — nothing to score
 
@@ -602,7 +602,7 @@ async function computeVeilleSummary(db) {
  * priorityScore update, is exactly what keeps this summary fresh).
  * Roadmap: V3 Scoring & agrégats veille.
  */
-exports.aggregateVeille = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1" }, async (event) => {
+exports.aggregateVeille = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1", database: FIRESTORE_DATABASE_ID }, async (event) => {
   const db = firestoreDb();
   try {
     const summary = await computeVeilleSummary(db);
@@ -677,7 +677,7 @@ exports.aggregateVeilleExec = onSchedule({ schedule: "every 60 minutes", timeZon
  * avoid duplicating the computation (BUILD_KIT.md §10 lists this pair as "onWrite + planifié").
  * Roadmap: V3 Scoring & agrégats veille.
  */
-exports.aggregateVeilleExecOnWrite = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1" }, async (event) => {
+exports.aggregateVeilleExecOnWrite = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1", database: FIRESTORE_DATABASE_ID }, async (event) => {
   const db = firestoreDb();
   try {
     const summary = await computeVeilleExecSummary(db);
