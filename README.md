@@ -118,10 +118,13 @@ vers des ressources **dédiées** à cette app, pas les ressources par défaut d
    avant de déployer ; le support des bases Firestore nommées dans `firebase.json`/le CLI nécessite
    une version raisonnablement récente). Toujours vérifier le `firebase deploy --only ... --dry-run`
    ou passer par un canal de prévisualisation avant la première production si disponible.
-8. **Premier compte `direction`** : appeler `setUserRole({ uid, role: "direction" })` une première
-   fois (le bootstrap est autorisé tant qu'aucun `direction` n'existe pour CETTE app, voir
-   `config/bootstrap` dans la base `strategic360`) pour amorcer le RBAC — voir
-   `docs/USER_GUIDE.md` pour la suite côté utilisateur final.
+8. **Premier compte `direction`** : onglet Actions > "Set user role (propulse-business-87f7a /
+   strategic360)" > Run workflow > email du futur compte direction, rôle `direction`, confirmer.
+   Ce workflow (`.github/workflows/set-user-role.yml` → `functions/adminSetUserRole.js`) crée le
+   compte Auth s'il n'existe pas encore, lui assigne le rôle, et envoie un e-mail de définition de
+   mot de passe (aucun mot de passe ne transite jamais par les logs CI). Réutilisable ensuite pour
+   assigner n'importe lequel des 8 rôles à n'importe quel email — voir `docs/USER_GUIDE.md` pour la
+   suite côté utilisateur final.
 
 ### Créer le secret GitHub Actions (déploiement CI/CD)
 

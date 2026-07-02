@@ -1,0 +1,72 @@
+name: Set user role (propulse-business-87f7a / strategic360)
+
+# Manual trigger only. Assigns a `role` custom claim to a user by email, using the same
+# GCP_SA_KEY_STRATEGIC360 credentials as deploy.yml — see functions/adminSetUserRole.js for the
+# full behavior (creates the Auth user if missing, merges custom claims rather than overwriting,
+# sends a password-setup email instead of ever handling a password in CI logs).
+#
+# Use this to bootstrap the first `direction` account (role=direction, config/bootstrap gets
+# marked done), and later to grant any of the 8 roles to any user.
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: "Email du compte à créer/mettre à jour"
+        required: true
+      role:
+        description: "Rôle à assigner"
+        required: true
+        type: choice
+        default: direction
+        options:
+          - direction
+          - strategie
+          - innovation
+          - commercial_dir
+          - commercial
+          - pmo
+          - achats
+          - lecture
+      confirm:
+        description: 'Tapez "confirm" pour valider'
+        required: true
+
+jobs:
+  set-role:
+    name: Assign role
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Refuse to run without explicit confirmation
+        if: ${{ github.event.inputs.confirm != 'confirm' }}
+        run: |
+          echo "Le champ 'confirm' doit valoir exactement 'confirm'. Annulé."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install functions dependencies
+        working-directory: functions
+        run: npm install
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
+
+      - name: Assign role
+        working-directory: functions
+        env:
+          GCLOUD_PROJECT: propulse-business-87f7a
+          FIRESTORE_DATABASE_ID: strategic360
+          # Firebase web API keys are not secret (see functions/adminSetUserRole.js's header
+          # comment) — safe as a plain literal here, matching functions/.env.propulse-business-87f7a.
+          FIREBASE_WEB_API_KEY: AIzaSyBHxv2ThBh66hRc1Lp_boTlzeB8LA37FF8
+          TARGET_EMAIL: ${{ github.event.inputs.email }}
+          TARGET_ROLE: ${{ github.event.inputs.role }}
+        run: node adminSetUserRole.js
