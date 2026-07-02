@@ -9,13 +9,27 @@
  */
 
 const { initializeApp } = require("firebase-admin/app");
-const { onCall } = require("firebase-functions/v2/https");
+const { getAuth } = require("firebase-admin/auth");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
 const logger = require("firebase-functions/logger");
 
 initializeApp();
+
+/** The 8 profiles from BUILD_KIT.md §7 / firestore.rules. */
+const VALID_ROLES = [
+  "direction",
+  "strategie",
+  "innovation",
+  "commercial_dir",
+  "commercial",
+  "pmo",
+  "achats",
+  "lecture",
+];
 
 const NOT_IMPLEMENTED = (fn, phase) => {
   const msg = `${fn} not implemented — see BUILD_KIT.md roadmap ${phase}`;
@@ -101,9 +115,69 @@ exports.exportPdf = onCall({ region: "europe-west1" }, async () => {
 
 /**
  * setUserRole — callable (admin `direction`)
- * Pose le custom claim `role` + audit.
+ * Pose le custom claim `role` + audit (BUILD_KIT.md §7/§10).
+ *
+ * Admin-only: the caller must carry the `direction` custom claim — EXCEPT for a one-time
+ * bootstrap: if no `direction` user has ever been provisioned (tracked by `config/bootstrap`),
+ * the very first call is allowed to create that first `direction` account, after which
+ * bootstrap is marked done and every subsequent call requires an authenticated `direction` caller.
+ *
+ * data: { uid: string, role: Role }
  * Roadmap: V1 Auth & RBAC.
  */
-exports.setUserRole = onCall({ region: "europe-west1" }, async () => {
-  NOT_IMPLEMENTED("setUserRole", "V1 Auth & RBAC");
+exports.setUserRole = onCall({ region: "europe-west1" }, async (request) => {
+  const { uid, role } = request.data || {};
+
+  if (typeof uid !== "string" || !uid) {
+    throw new HttpsError("invalid-argument", "uid (string) est requis.");
+  }
+  if (typeof role !== "string" || !VALID_ROLES.includes(role)) {
+    throw new HttpsError(
+      "invalid-argument",
+      `role doit être l'un de : ${VALID_ROLES.join(", ")}.`
+    );
+  }
+
+  const db = getFirestore();
+  const bootstrapRef = db.doc("config/bootstrap");
+  const bootstrapSnap = await bootstrapRef.get();
+  const bootstrapDone = bootstrapSnap.exists && bootstrapSnap.data()?.done === true;
+
+  const callerRole = request.auth?.token?.role;
+  const isCallerDirection = request.auth != null && callerRole === "direction";
+
+  if (!bootstrapDone) {
+    // First-ever call: only allowed to bootstrap the first `direction` user, and only if
+    // no admin caller is required yet (nobody has the claim to call it normally).
+    if (role !== "direction") {
+      throw new HttpsError(
+        "failed-precondition",
+        "Le premier appel (bootstrap) doit créer un compte 'direction'."
+      );
+    }
+  } else if (!isCallerDirection) {
+    throw new HttpsError(
+      "permission-denied",
+      "Seule la Direction peut assigner un rôle."
+    );
+  }
+
+  await getAuth().setCustomUserClaims(uid, { role });
+
+  await db.collection("auditLog").add({
+    uid: request.auth?.uid ?? null,
+    action: "setUserRole",
+    module: "config",
+    entity: "users",
+    entityId: uid,
+    detail: { role, bootstrap: !bootstrapDone },
+    ts: FieldValue.serverTimestamp(),
+  });
+
+  if (!bootstrapDone) {
+    await bootstrapRef.set({ done: true, ts: FieldValue.serverTimestamp() }, { merge: true });
+  }
+
+  logger.info(`setUserRole: uid=${uid} role=${role} bootstrap=${!bootstrapDone} caller=${request.auth?.uid ?? "none"}`);
+  return { uid, role };
 });

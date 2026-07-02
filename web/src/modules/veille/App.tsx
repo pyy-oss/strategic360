@@ -33,6 +33,7 @@ export default function VeilleApp() {
   const [lens, setLens] = useState("dg");
   const navigate = useNavigate();
   const { view } = useParams<{ view: string }>();
+  const { user, role } = useAuthClaims();
 
   if (!view || !VIEW_KEYS.includes(view)) {
     return <Navigate to="/veille/radar" replace />;
@@ -59,12 +60,21 @@ export default function VeilleApp() {
             <div style={{ fontSize: 11.5, color: T.dim }}>Neurones Technologies CI · intelligence & aide à la décision · Afrique / UEMOA / CI</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
           {LENS.map(([k, l]) => (
             <button key={k} className={`pill ${k === lens ? "on" : ""}`} onClick={() => setLens(k)}>
               {l}
             </button>
           ))}
+          <Badge c={T.steel}>{role ?? "sans rôle"}</Badge>
+          {user?.email && <span style={{ fontSize: 11, color: T.faint }}>{user.email}</span>}
+          <button
+            className="pill"
+            onClick={() => signOut(auth)}
+            title="Se déconnecter"
+          >
+            Déconnexion
+          </button>
         </div>
       </header>
       <div className="navwrap" style={{ display: "flex", gap: 18, borderBottom: `1px solid ${T.line}`, marginBottom: 18, overflowX: "auto" }}>

@@ -1,0 +1,174 @@
+"use strict";
+
+/**
+ * Security Rules tests for firestore.rules (BUILD_KIT.md §7 / §14 "tests de règles par profil").
+ * Uses @firebase/rules-unit-testing against the local Firestore Emulator (must be running —
+ * see the `serve`/`test:rules` scripts / README note below). Custom claims (`role`) are simulated
+ * via `testEnv.authenticatedContext(uid, { role })`, matching how firestore.rules reads
+ * `request.auth.token.role`.
+ *
+ * Run against the emulator:
+ *   firebase emulators:exec --only firestore "npx vitest run test/firestore.rules.test.js"
+ * or, with an emulator already running (FIRESTORE_EMULATOR_HOST set), just:
+ *   npx vitest run test/firestore.rules.test.js
+ *
+ * This is a representative subset (not exhaustive) covering BUILD_KIT.md §14's acceptance
+ * criterion: "Une écriture non autorisée est refusée par les Security Rules".
+ */
+
+const fs = require("fs");
+const path = require("path");
+const { beforeAll, afterAll, beforeEach, describe, it } = require("vitest");
+const {
+  initializeTestEnvironment,
+  assertSucceeds,
+  assertFails,
+} = require("@firebase/rules-unit-testing");
+
+const RULES_PATH = path.resolve(__dirname, "..", "..", "firestore.rules");
+
+const ALL_ROLES = [
+  "direction",
+  "strategie",
+  "innovation",
+  "commercial_dir",
+  "commercial",
+  "pmo",
+  "achats",
+  "lecture",
+];
+
+const EXEC_ROLES = ["direction", "strategie", "innovation"];
+const CONTRIB_ROLES = ["direction", "strategie", "innovation", "commercial_dir", "commercial"];
+const READ_ONLY_ROLES = ["pmo", "achats", "lecture"];
+
+const PERMISSIONS_MATRIX = {
+  direction: { veille: "write" },
+  strategie: { veille: "write" },
+  innovation: { veille: "write" },
+  commercial_dir: { veille: "write" },
+  commercial: { veille: "write" },
+  pmo: { veille: "read" },
+  achats: { veille: "read" },
+  lecture: { veille: "read" },
+};
+
+let testEnv;
+
+beforeAll(async () => {
+  testEnv = await initializeTestEnvironment({
+    projectId: "veille-rules-test",
+    firestore: {
+      rules: fs.readFileSync(RULES_PATH, "utf8"),
+      host: "127.0.0.1",
+      port: 8080,
+    },
+  });
+});
+
+afterAll(async () => {
+  if (testEnv) await testEnv.cleanup();
+});
+
+beforeEach(async () => {
+  await testEnv.clearFirestore();
+  // Seed config/permissions as an unauthenticated Admin SDK write (bypasses rules).
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc("config/permissions").set({ matrix: PERMISSIONS_MATRIX });
+  });
+});
+
+function ctxFor(role) {
+  return testEnv.authenticatedContext(`user-${role}`, { role });
+}
+
+describe("intelItems", () => {
+  it.each(ALL_ROLES)("read is allowed for role=%s", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertSucceeds(db.collection("intelItems").doc("i1").get());
+  });
+
+  it.each(CONTRIB_ROLES)("create is allowed for role=%s (own createdBy)", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertSucceeds(
+      db.collection("intelItems").doc(`item-${role}`).set({
+        title: "Test signal",
+        createdBy: `user-${role}`,
+      })
+    );
+  });
+
+  it.each(READ_ONLY_ROLES)("create is rejected for role=%s", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertFails(
+      db.collection("intelItems").doc(`item-${role}`).set({
+        title: "Test signal",
+        createdBy: `user-${role}`,
+      })
+    );
+  });
+
+  it("create is rejected when createdBy doesn't match the caller", async () => {
+    const db = ctxFor("commercial").firestore();
+    await assertFails(
+      db.collection("intelItems").doc("item-spoof").set({
+        title: "Test signal",
+        createdBy: "someone-else",
+      })
+    );
+  });
+
+  it("read is rejected when unauthenticated", async () => {
+    const db = testEnv.unauthenticatedContext().firestore();
+    await assertFails(db.collection("intelItems").doc("i1").get());
+  });
+});
+
+describe("frameworks", () => {
+  it.each(EXEC_ROLES)("write is allowed for exec role=%s", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertSucceeds(db.collection("frameworks").doc("swot").set({ content: "x" }));
+  });
+
+  it.each(["commercial_dir", "commercial", "pmo", "achats", "lecture"])(
+    "write is rejected for non-exec role=%s",
+    async (role) => {
+      const db = ctxFor(role).firestore();
+      await assertFails(db.collection("frameworks").doc("swot").set({ content: "x" }));
+    }
+  );
+
+  it.each(ALL_ROLES)("read is allowed for role=%s", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertSucceeds(db.collection("frameworks").doc("swot").get());
+  });
+});
+
+describe("summaries/veille", () => {
+  it.each(ALL_ROLES)("write is always rejected client-side for role=%s", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertFails(db.collection("summaries").doc("veille").set({ countsByAxis: {} }));
+  });
+
+  it.each(ALL_ROLES)("read is allowed for authenticated role=%s", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertSucceeds(db.collection("summaries").doc("veille").get());
+  });
+});
+
+describe("config/permissions", () => {
+  it("write is allowed for direction", async () => {
+    const db = ctxFor("direction").firestore();
+    await assertSucceeds(
+      db.doc("config/permissions").set({ matrix: PERMISSIONS_MATRIX })
+    );
+  });
+
+  it.each(ALL_ROLES.filter((r) => r !== "direction"))(
+    "write is rejected for role=%s",
+    async (role) => {
+      const db = ctxFor(role).firestore();
+      await assertFails(db.doc("config/permissions").set({ matrix: PERMISSIONS_MATRIX }));
+    }
+  );
+});
