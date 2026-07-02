@@ -1,20 +1,19 @@
 import React, { useState } from "react";
 import { T, ECAT, PROX, IMP, STANCE } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
-import { useIntelItems } from "../lib/intel";
+import { useIntelItems, withDetectionFields } from "../lib/intel";
 
 /** "Radar de détection" — ported from `Detection` in the maquette; data source swapped to
  * Firestore `intelItems` (V2). Rendering (sonar SVG, quadrants, badges) is unchanged.
  *
- * The sonar/list need `cat` (ECAT key) + `prox` (PROX key) to be positioned — those are optional
- * fields on `intelItems` (populated by detection-style contributions/ingestion, not every fiche
- * de veille). Items missing either are simply not plottable yet and are excluded here, exactly
- * like an empty EVENTS array would render an empty radar.
+ * The sonar/list need `cat` (ECAT key) + `prox` (PROX key) to be positioned. Per the "100%
+ * données externes automatiques" decision these are derived from `axis` when absent
+ * (`withDetectionFields`) so every AI-classified signal is plottable without human touch-up.
  */
 export function Detection() {
   const [cat, setCat] = useState("all");
   const { items } = useIntelItems();
-  const EVENTS = items.filter((e) => e.cat && ECAT[e.cat] && e.prox && PROX[e.prox]);
+  const EVENTS = items.map(withDetectionFields).filter((e) => e.cat && ECAT[e.cat] && e.prox && PROX[e.prox]);
   const CX = 170,
     CY = 170,
     RR = 150;

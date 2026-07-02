@@ -103,6 +103,52 @@ export interface IntelSource {
 export type IntelSourceInput = Omit<IntelSource, "id" | "lastFetch">;
 
 /* ---------------------------------------------------------------------------------------------
+ * Detection-view derivation (Radar de détection)
+ *
+ * The Detection radar positions items by `cat` (ECAT key: marche/sectoriel/tech/regpays) and
+ * `prox`, and its "Types d'événements" panel counts canonical French labels. The AI classifier
+ * (functions/domain/classify.js) fills `axis` + snake_case `subtype` codes but historically not
+ * `cat` — per the "100% données externes automatiques" decision, both are derived
+ * deterministically here so every classified signal is plottable without human touch-up.
+ * (classify.js now also persists `cat` for new items; this client-side fallback keeps older
+ * items live too.)
+ * ------------------------------------------------------------------------------------------- */
+
+export const AXIS_TO_DETECTION_CAT: Record<IntelAxis, string> = {
+  partenaires: "marche",
+  concurrents: "marche",
+  clients_prospects: "sectoriel",
+  tech: "tech",
+  reglementaire: "regpays",
+};
+
+/** Canonical Detection event-type labels for the snake_case subtype codes the AI classifier emits. */
+export const DETECTION_SUBTYPE_LABELS: Record<string, string> = {
+  product_launch: "Rupture / nouvelle techno",
+  trend: "Rupture / nouvelle techno",
+  eol: "Obsolescence / EOL",
+  regulation: "Nouvelle réglementation",
+  tender: "Opportunité sectorielle",
+  funding: "Opportunité sectorielle",
+  ma: "Expansion de groupe",
+  expansion: "Expansion de groupe",
+  market_entry: "Entrée d'un concurrent",
+  implantation: "Nouvelle implantation",
+  macro: "Risque pays",
+  supply: "Risque sectoriel",
+};
+
+/** Fills `cat`/`prox` (and Frenchifies known subtype codes) so the item is plottable on the radar. */
+export function withDetectionFields(item: IntelItem): IntelItem {
+  return {
+    ...item,
+    cat: item.cat ?? AXIS_TO_DETECTION_CAT[item.axis],
+    prox: item.prox ?? "moyen",
+    subtype: item.subtype ? DETECTION_SUBTYPE_LABELS[item.subtype] ?? item.subtype : item.subtype,
+  };
+}
+
+/* ---------------------------------------------------------------------------------------------
  * Deterministic IDs (idempotent ingestion — BUILD_KIT.md §10)
  * ------------------------------------------------------------------------------------------- */
 

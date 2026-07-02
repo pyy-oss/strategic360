@@ -42,6 +42,17 @@ const VALID_IMPACTS = ["high", "medium", "low"];
 const VALID_STANCES = ["opportunity", "threat", "neutral"];
 const VALID_PROX = ["imminent", "court", "moyen", "horizon"];
 
+// Detection-radar category (web ECAT key) derived from the axis — mirrors
+// web/src/modules/veille/lib/intel.ts#AXIS_TO_DETECTION_CAT. Persisted on every classified item
+// so the "Radar de détection" view can plot AI signals without any human touch-up.
+const AXIS_TO_DETECTION_CAT = {
+  partenaires: "marche",
+  concurrents: "marche",
+  clients_prospects: "sectoriel",
+  tech: "tech",
+  reglementaire: "regpays",
+};
+
 /**
  * Builds the Gemini prompt for classifying one raw veille signal (BUILD_KIT.md §9.C).
  * @param {string} rawText Raw extracted text (title + description/body, however obtained —
@@ -130,10 +141,12 @@ function parseClassificationResponse(rawJsonResponse, context) {
   const ctx = context || {};
   const today = new Date().toISOString().slice(0, 10);
 
+  const axis = coerceEnum(r.axis, VALID_AXES, "tech");
   const item = {
     title: title || summary.slice(0, 80),
     summary: summary || title,
-    axis: coerceEnum(r.axis, VALID_AXES, "tech"),
+    axis,
+    cat: AXIS_TO_DETECTION_CAT[axis],
     subtype: coerceString(r.subtype, undefined),
     impact: coerceEnum(r.impact, VALID_IMPACTS, "low"),
     stance: coerceEnum(r.stance, VALID_STANCES, "neutral"),
@@ -171,4 +184,5 @@ module.exports = {
   VALID_IMPACTS,
   VALID_STANCES,
   VALID_PROX,
+  AXIS_TO_DETECTION_CAT,
 };

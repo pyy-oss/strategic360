@@ -50,6 +50,7 @@ describe("parseClassificationResponse — valid fixture", () => {
     expect(item.status).toBe("new");
     expect(item.title).toBe(raw.title);
     expect(item.axis).toBe("partenaires");
+    expect(item.cat).toBe("marche"); // detection-radar category derived from axis
     expect(item.impact).toBe("medium");
     expect(item.stance).toBe("threat");
     expect(item.ent).toBe("Fortinet");
@@ -69,6 +70,7 @@ describe("parseClassificationResponse — missing fields", () => {
     expect(item.title).toBe("Signal partiel");
     expect(item.summary).toBe("Signal partiel"); // falls back to title
     expect(item.axis).toBe("tech"); // default axis
+    expect(item.cat).toBe("tech"); // detection category always derived, even from the default axis
     expect(item.impact).toBe("low"); // default impact
     expect(item.stance).toBe("neutral"); // default stance
     expect(item.prox).toBe("moyen"); // default prox
