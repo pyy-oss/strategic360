@@ -43,6 +43,18 @@ initializeApp();
  */
 const TENDER_SUBTYPE = "Appel d'offres";
 
+/**
+ * Some intelSources (SIGMAP/DGMP, ARMP, etc.) return 403 to Node's default fetch — most likely
+ * bot-detection rejecting the absent/generic default User-Agent, per a real syncSources run
+ * against propulse-business-87f7a (2026-07-02). A realistic browser-ish User-Agent is a low-risk
+ * mitigation for that class of failure; sites with stricter anti-bot measures (Cloudflare
+ * challenges, JS-rendered content) will still fail and need a different ingestion approach later.
+ */
+const SOURCE_FETCH_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (compatible; VeilleStrategiqueBot/1.0; +https://strategic360.web.app)",
+  Accept: "text/html,application/xhtml+xml,application/xml,application/rss+xml;q=0.9,*/*;q=0.8",
+};
+
 /** The 8 profiles from BUILD_KIT.md §7 / firestore.rules. */
 const VALID_ROLES = [
   "direction",
@@ -398,7 +410,7 @@ async function runSyncSources(db) {
       const context = { sourceName: source.name, defaultSourceRating: source.sourceRating };
 
       if (source.kind === "rss" || source.kind === "newsletter" || source.kind === "portal") {
-        const res = await fetch(source.url);
+        const res = await fetch(source.url, { headers: SOURCE_FETCH_HEADERS });
         if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
         const xml = await res.text();
         const rssItems = extractRssItems(xml);
@@ -415,7 +427,7 @@ async function runSyncSources(db) {
           }
         }
       } else if (source.kind === "web") {
-        const res = await fetch(source.url);
+        const res = await fetch(source.url, { headers: SOURCE_FETCH_HEADERS });
         if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
         const html = await res.text();
         const rawText = extractWebText(html);

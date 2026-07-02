@@ -12,16 +12,24 @@
  * network egress to Vertex AI endpoints). This file is verified with `node --check` only
  * (structural correctness against the documented SDK surface), never invoked in tests.
  *
- * Model: `gemini-2.0-flash` — a current, cost-effective Gemini model appropriate for
+ * Model: `gemini-2.0-flash-001` — the versioned GA release id, appropriate for
  * summarization/classification/JSON-extraction workloads (BUILD_KIT.md doesn't pin an exact
  * model name, only "Vertex AI (Gemini)"). Swap via `GEMINI_MODEL` env var if needed without a
  * code change.
+ *
+ * NOTE (found via a real production run against propulse-business-87f7a, 2026-07-02): the
+ * unversioned alias `gemini-2.0-flash` 404'd — "Publisher model ... was not found or your
+ * project does not have access to it" — even though Vertex AI + the aiplatform.user role were
+ * correctly enabled/granted. The Vertex AI "Publisher Model" registry requires the versioned
+ * suffix for this SDK/API surface; the unversioned alias isn't resolvable here. If
+ * `gemini-2.0-flash-001` also 404s for a given project/region, try `gemini-1.5-flash-002` (an
+ * older, very broadly available GA model) via the `GEMINI_MODEL` env var.
  */
 
 const { VertexAI } = require("@google-cloud/vertexai");
 
 /**
- * Vertex AI model availability varies by region — `gemini-2.0-flash` is broadly available in
+ * Vertex AI model availability varies by region — Gemini models are broadly available in
  * `us-central1`; `europe-west1` (used elsewhere in this codebase for Cloud Functions, e.g.
  * `region: "europe-west1"` in index.js) does NOT currently serve all Gemini models. The Vertex AI
  * *client* location is therefore deliberately independent of the Cloud Functions *execution*
@@ -29,7 +37,7 @@ const { VertexAI } = require("@google-cloud/vertexai");
  * region actually serves the chosen model for your GCP project at deploy time.
  */
 const DEFAULT_LOCATION = "us-central1";
-const DEFAULT_MODEL = "gemini-2.0-flash";
+const DEFAULT_MODEL = "gemini-2.0-flash-001";
 
 let cachedClient = null;
 let cachedModelName = null;
