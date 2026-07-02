@@ -15,6 +15,7 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
+const { defineSecret } = require("firebase-functions/params");
 const { getStorage } = require("firebase-admin/storage");
 const logger = require("firebase-functions/logger");
 const { computePriorityScore } = require("./domain/scoring");
@@ -101,6 +102,19 @@ const ENFORCE_APP_CHECK = process.env.APPCHECK_ENFORCE === "true";
  * consistently across all four so none of them is accidentally left unprotected once enforcement
  * is switched on project-wide. */
 const CALLABLE_OPTS = { region: "europe-west1", enforceAppCheck: ENFORCE_APP_CHECK };
+
+/**
+ * Gemini Developer API key (functions/domain/vertex.js — see that file's MIGRATION HISTORY for
+ * why this is API-key auth rather than the service-account-based Vertex AI mode used everywhere
+ * else in this codebase). Wired via Secret Manager (`firebase-functions/params#defineSecret`)
+ * rather than a plain env var / .env.<project> file, since — unlike the Firebase web API key
+ * elsewhere in this repo — a Gemini Developer API key IS sensitive (it's directly billable and
+ * not scoped by Firebase/Auth/Rules the way a web API key is). Provisioned once via
+ * `gcloud secrets create GEMINI_API_KEY ...` (see README.md) — every function below that calls
+ * `generateJson` must list it in `secrets: [GEMINI_API_KEY]` for Cloud Functions to inject it as
+ * `process.env.GEMINI_API_KEY` at runtime.
+ */
+const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 
 /**
  * Shared-project isolation (this Firebase project — e.g. "propulse-business-87f7a" — hosts
@@ -459,9 +473,12 @@ async function runSyncSources(db) {
  * syncSources — Scheduler (quotidien 06:00 Africa/Abidjan). Thin wrapper around runSyncSources().
  * Roadmap: V7 IA & sync.
  */
-exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1" }, async () => {
-  await runSyncSources(firestoreDb());
-});
+exports.syncSources = onSchedule(
+  { schedule: "0 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", secrets: [GEMINI_API_KEY] },
+  async () => {
+    await runSyncSources(firestoreDb());
+  }
+);
 
 /**
  * syncSourcesNow — callable (manual on-demand trigger). Same runSyncSources() logic as the
@@ -469,7 +486,7 @@ exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abid
  * Exec-gated, same pattern as classifyAI/generateBriefing/exportPdf.
  * Roadmap: V7 IA & sync (added post-deploy for real-data onboarding).
  */
-exports.syncSourcesNow = onCall(CALLABLE_OPTS, async (request) => {
+exports.syncSourcesNow = onCall({ ...CALLABLE_OPTS, secrets: [GEMINI_API_KEY] }, async (request) => {
   requireExecCaller(request, "lancer une synchronisation de la veille");
   const result = await runSyncSources(firestoreDb());
   return result;
@@ -492,7 +509,7 @@ exports.syncSourcesNow = onCall(CALLABLE_OPTS, async (request) => {
  * exec-triggered request for new AI review, not a mass background overwrite.
  * Roadmap: V7 IA & sync.
  */
-exports.classifyAI = onCall(CALLABLE_OPTS, async (request) => {
+exports.classifyAI = onCall({ ...CALLABLE_OPTS, secrets: [GEMINI_API_KEY] }, async (request) => {
   requireExecCaller(request, "reclassifier un signal");
 
   const { itemId } = request.data || {};
@@ -701,7 +718,7 @@ exports.aggregateVeilleExecOnWrite = onDocumentWritten({ document: "intelItems/{
  * gate, BUILD_KIT.md §1).
  * Roadmap: V7 IA & sync.
  */
-exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
+exports.generateBriefing = onCall({ ...CALLABLE_OPTS, secrets: [GEMINI_API_KEY] }, async (request) => {
   requireExecCaller(request, "générer un briefing");
 
   const db = firestoreDb();

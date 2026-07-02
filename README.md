@@ -179,19 +179,34 @@ compte dédié `github-deploy-strategic360` comme recommandé ci-dessus. Comprom
   qui peut échouer sans bloquer hosting/firestore/functions (`continue-on-error: true`).
   Si le déploiement Functions échoue séparément avec `PERMISSION_DENIED` / `iam.serviceaccounts.actAs`,
   ajouter aussi `roles/iam.serviceAccountUser`.
-- **Chantier données réelles (post-déploiement)** : deux rôles supplémentaires nécessaires pour
-  `.github/workflows/run-sync-now.yml` (déclenchement manuel de `syncSources`) et pour que
-  `classifyAI`/`syncSources`/`generateBriefing` puissent effectivement appeler Vertex AI en
-  production :
+- **Chantier données réelles (post-déploiement)** : un rôle supplémentaire nécessaire pour
+  `.github/workflows/run-sync-now.yml` (déclenchement manuel de `syncSources`) :
   - **`roles/cloudscheduler.admin`** (ou la permission plus fine `cloudscheduler.jobs.run`) — sans
     quoi `gcloud scheduler jobs run` échoue en `PERMISSION_DENIED`.
-  - **`roles/aiplatform.user`** — sans quoi tout appel Vertex AI (`functions/domain/vertex.js`)
-    échoue en `PERMISSION_DENIED`. Vérifier aussi que l'**API Vertex AI est activée** sur le projet
-    (Console GCP > API et services > Bibliothèque > "Vertex AI API" > Activer) — potentiellement
-    déjà activée par une autre app du projet partagé, vérifier avant de la (dés)activer.
-- Ce choix reste réversible à tout moment : re-générer le secret avec la clé d'un compte de
-  service dédié (étapes 1-4 ci-dessus) referme cette fenêtre d'exposition sans toucher au reste
-  de la configuration.
+- **IA (`classifyAI`/`syncSources`/`generateBriefing`) — authentification par clé API, pas par
+  compte de service** : après plusieurs échecs en 404 sur l'API Vertex AI classique (nom de
+  modèle, région, SDK — tout testé, tout confirmé non-fautif via Vertex AI Studio dans la
+  Console), il s'est avéré que le modèle `gemini-3.5-flash` n'est disponible pour ce projet que
+  via l'**API Gemini Developer** (authentification par clé API), pas via l'API Vertex AI
+  entreprise (authentification par compte de service). `functions/domain/vertex.js` utilise donc
+  `{ apiKey }` plutôt que `{ vertexai: true, project, location }`. Provisionnement du secret :
+  1. Générer une clé sur [Google AI Studio](https://aistudio.google.com/apikey) (la associer au
+     projet `propulse-business-87f7a` si l'option est proposée), ou via Console GCP > API et
+     services > Identifiants > Créer des identifiants > Clé API, restreinte à "Generative
+     Language API".
+  2. La stocker dans **Secret Manager** (pas dans un fichier `.env.<project>` committé — contrairement
+     à la clé web Firebase, une clé API Gemini Developer est facturable et sensible) :
+     ```bash
+     printf '%s' "VOTRE_CLE" | gcloud secrets create GEMINI_API_KEY --project=propulse-business-87f7a --data-file=-
+     ```
+     (ou `gcloud secrets versions add GEMINI_API_KEY --data-file=-` si le secret existe déjà).
+  3. Accorder au compte de service (`firebase-adminsdk-fbsvc@propulse-business-87f7a.iam.gserviceaccount.com`)
+     le rôle `roles/secretmanager.secretAccessor` sur ce secret (ou au niveau projet).
+  4. Redéployer (`functions/index.js` référence déjà ce secret via `defineSecret("GEMINI_API_KEY")`
+     + `secrets: [GEMINI_API_KEY]` sur `syncSources`/`syncSourcesNow`/`classifyAI`/`generateBriefing`).
+- Ce choix reste réversible à tout moment : re-générer le secret `GCP_SA_KEY_STRATEGIC360` avec la
+  clé d'un compte de service dédié (étapes 1-4 ci-dessus) referme cette fenêtre d'exposition sans
+  toucher au reste de la configuration.
 
 ### Déployer plutôt dans un projet Firebase dédié (alternative)
 
