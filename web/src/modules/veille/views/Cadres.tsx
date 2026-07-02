@@ -215,7 +215,7 @@ function PestelEditor({ initial, onClose }: { initial: PestelContent | null; onC
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {rows.map((r, i) => (
-          <div key={r.f} style={{ display: "grid", gridTemplateColumns: "130px 90px 70px 1fr", gap: 8, alignItems: "center" }}>
+          <div key={r.f} className="pestel-row" style={{ display: "grid", gridTemplateColumns: "130px 90px 70px 1fr", gap: 8, alignItems: "center" }}>
             <span style={{ fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{r.f}</span>
             <div>
               <label style={labelStyle}>Impact (%)</label>
@@ -336,7 +336,7 @@ function CanvasTab() {
       {editing && isExec && <CanvasEditor initial={fw?.content ?? null} onClose={() => setEditing(false)} />}
       {!hasContent && !editing && <EmptyFramework label="Business Model Canvas" />}
       {hasContent && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+        <div className="canvas-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
           {blocks.map((b, i) => (
             <Card key={i} style={{ gridColumn: i === 2 ? "3" : i === 8 ? "1 / span 3" : "auto" }}>
               <Eyebrow color={T.plum}>{b.t}</Eyebrow>

@@ -76,7 +76,7 @@ function NewScenarioPanel({ onClose }: { onClose: () => void }) {
             Fermer
           </button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div className="g2 gform" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Titre *</label>
             <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} required />
