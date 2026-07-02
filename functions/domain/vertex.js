@@ -1,34 +1,30 @@
 "use strict";
 
 /**
- * Thin wrapper around `@google-cloud/vertexai` (BUILD_KIT.md §10: "classifyAI/generateBriefing —
- * Vertex AI/Gemini"). This module is the ONLY place in the codebase that constructs a
- * `VertexAI` client / calls `generateContent` — everything else (prompt construction, response
- * parsing, Firestore writes) lives in pure, unit-testable functions in `domain/classify.js` and
- * `domain/briefing.js` that never import this file's network path directly at test time (they
- * receive an already-built JSON response as input).
+ * Thin wrapper around `@google/genai` (the unified Google Gen AI SDK — BUILD_KIT.md §10:
+ * "classifyAI/generateBriefing — Vertex AI/Gemini"). This module is the ONLY place in the
+ * codebase that constructs a Gen AI client / calls `generateContent` — everything else (prompt
+ * construction, response parsing, Firestore writes) lives in pure, unit-testable functions in
+ * `domain/classify.js` and `domain/briefing.js` that never import this file's network path
+ * directly at test time (they receive an already-built JSON response as input).
+ *
+ * MIGRATION NOTE (2026-07-02, from a real production run against propulse-business-87f7a): this
+ * file originally used `@google-cloud/vertexai` (the older `VertexAI` class). THREE different
+ * model names (`gemini-2.0-flash`, `gemini-2.0-flash-001`, `gemini-1.5-flash-002`) all 404'd —
+ * "Publisher model ... was not found" — with IAM/API access confirmed correct each time. The
+ * actual cause: that SDK's own deprecation notice states it "will be removed on June 24, 2026" —
+ * a date already in the past relative to this run — so its underlying API path had stopped
+ * resolving publisher models entirely, independent of which model name was requested. Migrated to
+ * `@google/genai` (Google's current unified Gen AI SDK, supporting both the Gemini Developer API
+ * and Vertex AI) to fix this at the root rather than continuing to guess model names.
  *
  * NOT unit-tested end-to-end here: there is no real GCP project/credentials in this sandbox (no
  * network egress to Vertex AI endpoints). This file is verified with `node --check` only
- * (structural correctness against the documented SDK surface), never invoked in tests.
- *
- * Model: `gemini-1.5-flash-002` — an older, very broadly available GA model, appropriate for
- * summarization/classification/JSON-extraction workloads (BUILD_KIT.md doesn't pin an exact
- * model name, only "Vertex AI (Gemini)"). Swap via `GEMINI_MODEL` env var if needed without a
- * code change.
- *
- * NOTE (found via two real production runs against propulse-business-87f7a, 2026-07-02): BOTH
- * `gemini-2.0-flash` (unversioned alias) and `gemini-2.0-flash-001` (versioned GA id) 404'd —
- * "Publisher model ... was not found or your project does not have access to it" — even though
- * Vertex AI + the aiplatform.user role were correctly enabled/granted (the error is a genuine
- * model/region availability gap for this project, not a permission problem — auth succeeded both
- * times). Fell back to `gemini-1.5-flash-002`, which has been GA and broadly available across
- * regions for far longer. If this ALSO 404s, the likely next step is enabling/accepting the
- * relevant model in Vertex AI Model Garden for this project (Console > Vertex AI > Model Garden >
- * search the model > Enable), not another model-name guess.
+ * (structural correctness against the documented SDK surface) until re-verified against the real
+ * project in a follow-up syncSources run.
  */
 
-const { VertexAI } = require("@google-cloud/vertexai");
+const { GoogleGenAI } = require("@google/genai");
 
 /**
  * Vertex AI model availability varies by region — Gemini models are broadly available in
@@ -39,56 +35,46 @@ const { VertexAI } = require("@google-cloud/vertexai");
  * region actually serves the chosen model for your GCP project at deploy time.
  */
 const DEFAULT_LOCATION = "us-central1";
-const DEFAULT_MODEL = "gemini-1.5-flash-002";
+const DEFAULT_MODEL = "gemini-2.0-flash-001";
 
 let cachedClient = null;
-let cachedModelName = null;
+let cachedClientKey = null;
 
 /**
- * Lazily constructs (and memoizes) the Vertex AI generative model client. Lazy so that importing
+ * Lazily constructs (and memoizes) the Gen AI client in Vertex AI mode. Lazy so that importing
  * this module (e.g. transitively via functions/index.js) never throws in environments without
  * `GCLOUD_PROJECT` set (local `node --check`, unit tests of domain/classify.js and
  * domain/briefing.js that never call `generateJson`).
  */
-function getModel() {
+function getClient() {
   const project = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT;
   if (!project) {
     throw new Error(
-      "vertex.js: GCLOUD_PROJECT is not set — Vertex AI client cannot be initialized. " +
+      "vertex.js: GCLOUD_PROJECT is not set — Gen AI client cannot be initialized. " +
         "This is expected in local/test environments; only fails when generateJson() is actually invoked."
     );
   }
   const location = process.env.VERTEX_LOCATION || DEFAULT_LOCATION;
-  const modelName = process.env.GEMINI_MODEL || DEFAULT_MODEL;
+  const key = `${project}:${location}`;
 
-  if (cachedClient && cachedModelName === `${project}:${location}:${modelName}`) {
+  if (cachedClient && cachedClientKey === key) {
     return cachedClient;
   }
 
-  const vertexAi = new VertexAI({ project, location });
-  cachedClient = vertexAi.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.2,
-      maxOutputTokens: 2048,
-    },
-  });
-  cachedModelName = `${project}:${location}:${modelName}`;
+  cachedClient = new GoogleGenAI({ vertexai: true, project, location });
+  cachedClientKey = key;
   return cachedClient;
 }
 
 /**
- * Calls Gemini with `prompt`, asking for a JSON response (`response_mime_type:
- * "application/json"` per the Vertex AI SDK's documented `generationConfig.responseMimeType`),
- * and returns the parsed JSON object.
+ * Calls Gemini with `prompt`, asking for a JSON response (`config.responseMimeType:
+ * "application/json"`), and returns the parsed JSON object.
  *
- * @param {string} prompt Full prompt text (already includes any schema description — Vertex AI's
+ * @param {string} prompt Full prompt text (already includes any schema description — Gemini's
  *   JSON mode constrains the *format* of the output, not a rigid schema by itself unless a
  *   `responseSchema` is also supplied; callers here describe the desired shape in the prompt).
  * @param {object} [schema] Optional JSON Schema-ish object passed through as
- *   `generationConfig.responseSchema` for stricter structured output (Vertex AI supports this on
- *   `gemini-1.5+`/`gemini-2.0` models). Omit to rely on prompt-described JSON only.
+ *   `config.responseSchema` for stricter structured output.
  * @returns {Promise<any>} Parsed JSON response body.
  */
 async function generateJson(prompt, schema) {
@@ -96,20 +82,27 @@ async function generateJson(prompt, schema) {
     throw new Error("generateJson: prompt (non-empty string) is required.");
   }
 
-  const model = getModel();
-  const request = {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-  };
-  if (schema) {
-    request.generationConfig = { responseMimeType: "application/json", responseSchema: schema };
-  }
+  const ai = getClient();
+  const modelName = process.env.GEMINI_MODEL || DEFAULT_MODEL;
 
-  const result = await model.generateContent(request);
-  const response = result.response;
-  const text = response?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") ?? "";
+  const config = { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 2048 };
+  if (schema) config.responseSchema = schema;
+
+  const response = await ai.models.generateContent({
+    model: modelName,
+    contents: prompt,
+    config,
+  });
+
+  // `@google/genai` exposes a `.text` convenience getter that concatenates all text parts of the
+  // first candidate; fall back to manual extraction if it's ever absent (defensive — SDK surface).
+  const text =
+    typeof response.text === "string"
+      ? response.text
+      : (response.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") ?? "");
 
   if (!text.trim()) {
-    throw new Error("generateJson: empty response text from Vertex AI.");
+    throw new Error("generateJson: empty response text from Gemini.");
   }
 
   try {
@@ -119,4 +112,4 @@ async function generateJson(prompt, schema) {
   }
 }
 
-module.exports = { generateJson, getModel, DEFAULT_LOCATION, DEFAULT_MODEL };
+module.exports = { generateJson, getClient, DEFAULT_LOCATION, DEFAULT_MODEL };
