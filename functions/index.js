@@ -23,6 +23,12 @@ const { parseLive } = require("./parsers/live");
 const { parseFacturationDf } = require("./parsers/facturationDf");
 const { parseFiche } = require("./parsers/fiche");
 const { computePorterForces, computeBcg, computeCasSummary, computePipeline, computeKris, computeValueAtStake } = require("./domain/quanti");
+const { intelItemId } = require("./domain/ids");
+const { buildClassificationPrompt, parseClassificationResponse } = require("./domain/classify");
+const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
+const { buildBriefingPdf } = require("./domain/pdf");
+const { generateJson } = require("./domain/vertex");
+const PDFDocument = require("pdfkit");
 
 initializeApp();
 
@@ -47,6 +53,18 @@ const VALID_ROLES = [
   "achats",
   "lecture",
 ];
+
+/** Mirrors `exec()` in firestore.rules (BUILD_KIT.md §7): direction/strategie/innovation. */
+const EXEC_ROLES = ["direction", "strategie", "innovation"];
+function isExecCaller(request) {
+  const role = request.auth?.token?.role;
+  return request.auth != null && EXEC_ROLES.includes(role);
+}
+function requireExecCaller(request, action) {
+  if (!isExecCaller(request)) {
+    throw new HttpsError("permission-denied", `Seuls les profils exécutifs (direction/strategie/innovation) peuvent ${action}.`);
+  }
+}
 
 const NOT_IMPLEMENTED = (fn, phase) => {
   const msg = `${fn} not implemented — see BUILD_KIT.md roadmap ${phase}`;
@@ -191,22 +209,222 @@ exports.ingestInternal = onObjectFinalized({ region: "europe-west1" }, async (ev
 });
 
 /**
+ * Minimal, intentionally-simplified RSS `<item>` extractor (regex/string based, NOT a real XML
+ * parser — documented simplification per the V7 task brief). Pulls `<title>`, `<description>`
+ * and `<link>` out of each `<item>...</item>` block, unescapes the handful of XML entities RSS
+ * feeds commonly use, and strips any CDATA wrapper. Good enough to feed short raw text into the
+ * classification prompt; NOT a substitute for a real feed parser (no namespace/Atom support, no
+ * malformed-XML recovery).
+ */
+function extractRssItems(xml, maxItems = 5) {
+  const items = [];
+  const itemRe = /<item[^>]*>([\s\S]*?)<\/item>/gi;
+  let m;
+  while ((m = itemRe.exec(xml)) !== null && items.length < maxItems) {
+    const block = m[1];
+    const grab = (tag) => {
+      const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
+      const mm = re.exec(block);
+      if (!mm) return "";
+      return mm[1]
+        .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/i, "$1")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/<[^>]+>/g, "")
+        .trim();
+    };
+    items.push({ title: grab("title"), description: grab("description"), link: grab("link") });
+  }
+  return items;
+}
+
+/**
+ * Minimal HTML→text extraction for `kind: "web"` sources (documented simplification — NOT a real
+ * readability/HTML-to-text pipeline, just strips tags/scripts/styles and truncates). Good enough
+ * as raw material for the classification prompt.
+ */
+function extractWebText(html, maxChars = 4000) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxChars);
+}
+
+/**
+ * Classifies one raw text extract via Vertex AI (buildClassificationPrompt → generateJson →
+ * parseClassificationResponse) and returns the parsed IntelItem fields, or `null` if the AI
+ * response was unusable (mirrors `parseClassificationResponse`'s contract).
+ */
+async function classifyRawText(rawText, watchlistEntities, context) {
+  const prompt = buildClassificationPrompt(rawText, watchlistEntities);
+  const response = await generateJson(prompt);
+  return parseClassificationResponse(response, context);
+}
+
+/**
+ * Writes (or idempotently re-merges) a classified item into `intelItems`, computing the SAME
+ * deterministic id the client would (`functions/domain/ids.js#intelItemId`, mirrors
+ * `web/src/modules/veille/lib/intel.ts`). NEVER clobbers a human-reviewed doc: if a doc already
+ * exists at that id with `status !== 'new'` (i.e. a human has already reviewed/actioned/archived
+ * it), the AI-sourced update is skipped entirely rather than merged — the human decision stands.
+ * Roadmap: V7 IA & sync — BUILD_KIT.md §1 "Rien n'est publié par l'IA sans revue humaine".
+ */
+async function upsertClassifiedItem(db, classified) {
+  const id = intelItemId({ url: classified.url, title: classified.title, date: classified.date });
+  const ref = db.doc(`intelItems/${id}`);
+  const existing = await ref.get();
+  if (existing.exists && existing.data().status !== "new") {
+    logger.info(`syncSources: skip ${id} — already reviewed/actioned/archived (human decision stands)`);
+    return { id, written: false };
+  }
+  await ref.set(
+    {
+      ...classified,
+      createdBy: "system:syncSources",
+      createdAt: existing.exists ? existing.data().createdAt : FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+  return { id, written: true };
+}
+
+/**
  * syncSources — Scheduler (quotidien 06:00)
  * Récupère intelSources (RSS/web/portails) → classifyAI → crée intelItems{status:new}.
+ *
+ * `kind: 'manual'` sources are skipped (nothing to fetch — they're fed by human submissions via
+ * the Fil.tsx contribution form). `kind: 'rss'`/`'web'` are fetched with Node 20's built-in
+ * `fetch`. EACH source is wrapped in its own try/catch so one failing source (dead URL, malformed
+ * feed, Vertex AI hiccup) never aborts the whole run — logged and skipped, next source continues.
  * Roadmap: V7 IA & sync.
  */
 exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1" }, async () => {
-  NOT_IMPLEMENTED("syncSources", "V7 IA & sync");
+  const db = getFirestore();
+
+  const [sourcesSnap, watchlistSnap] = await Promise.all([
+    db.collection("intelSources").where("active", "==", true).get(),
+    db.collection("intelWatchlist").where("active", "==", true).get(),
+  ]);
+  const watchlistEntities = watchlistSnap.docs.map((d) => ({ name: d.data().name, type: d.data().type }));
+
+  let sourcesProcessed = 0;
+  let itemsCreated = 0;
+
+  for (const sourceDoc of sourcesSnap.docs) {
+    const source = { id: sourceDoc.id, ...sourceDoc.data() };
+    try {
+      if (source.kind === "manual") {
+        logger.info(`syncSources: skip ${source.id} (kind=manual, no auto-fetch)`);
+        continue;
+      }
+      if (!source.url) {
+        logger.warn(`syncSources: skip ${source.id} — no url configured for kind=${source.kind}`);
+        continue;
+      }
+
+      const context = { sourceName: source.name, defaultSourceRating: source.sourceRating };
+
+      if (source.kind === "rss" || source.kind === "newsletter" || source.kind === "portal") {
+        const res = await fetch(source.url);
+        if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
+        const xml = await res.text();
+        const rssItems = extractRssItems(xml);
+        for (const rssItem of rssItems) {
+          const rawText = `${rssItem.title}\n${rssItem.description}`.trim();
+          if (!rawText) continue;
+          const classified = await classifyRawText(rawText, watchlistEntities, {
+            ...context,
+            url: rssItem.link || source.url,
+          });
+          if (classified) {
+            const { written } = await upsertClassifiedItem(db, classified);
+            if (written) itemsCreated += 1;
+          }
+        }
+      } else if (source.kind === "web") {
+        const res = await fetch(source.url);
+        if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
+        const html = await res.text();
+        const rawText = extractWebText(html);
+        if (rawText) {
+          const classified = await classifyRawText(rawText, watchlistEntities, { ...context, url: source.url });
+          if (classified) {
+            const { written } = await upsertClassifiedItem(db, classified);
+            if (written) itemsCreated += 1;
+          }
+        }
+      } else {
+        logger.warn(`syncSources: skip ${source.id} — unrecognized kind "${source.kind}"`);
+        continue;
+      }
+
+      await sourceDoc.ref.update({ lastFetch: FieldValue.serverTimestamp() });
+      sourcesProcessed += 1;
+    } catch (err) {
+      // Documented per task brief: one failing source must never abort the whole sync.
+      logger.error(`syncSources: source ${source.id} (${source.kind}) failed — ${err.message}`);
+    }
+  }
+
+  logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourcesSnap.size} itemsCreated=${itemsCreated}`);
 });
 
 /**
- * classifyAI — appelée par syncSources
+ * classifyAI — callable (manual "reclassify this item" admin action)
  * Vertex AI / Gemini : résumé, classification (axe/type/imminence/impact/posture),
  * entity resolution, so-what + action, signaux faibles.
+ *
+ * Auth-gated to exec roles (direction/strategie/innovation), same pattern as `setUserRole`'s
+ * caller check (BUILD_KIT.md §7 "cadres/scénarios/décisions/OKR → exécutifs" — reclassification
+ * is an admin action in the same family). Calls the SAME `classify.js`/`vertex.js` helpers
+ * `syncSources` uses directly — no HTTP round-trip to itself.
+ *
+ * data: { itemId: string } — re-runs classification on an existing `intelItems/{itemId}` doc's
+ * own title+summary, and merges the refreshed classification fields back in. `status` is always
+ * reset to `'new'` (parseClassificationResponse's hard default) since a fresh AI classification
+ * is, by definition, unreviewed output again — the reclassify action is itself a deliberate
+ * exec-triggered request for new AI review, not a mass background overwrite.
  * Roadmap: V7 IA & sync.
  */
-exports.classifyAI = onCall({ region: "europe-west1" }, async () => {
-  NOT_IMPLEMENTED("classifyAI", "V7 IA & sync");
+exports.classifyAI = onCall({ region: "europe-west1" }, async (request) => {
+  requireExecCaller(request, "reclassifier un signal");
+
+  const { itemId } = request.data || {};
+  if (typeof itemId !== "string" || !itemId) {
+    throw new HttpsError("invalid-argument", "itemId (string) est requis.");
+  }
+
+  const db = getFirestore();
+  const ref = db.doc(`intelItems/${itemId}`);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    throw new HttpsError("not-found", `intelItems/${itemId} introuvable.`);
+  }
+  const existing = snap.data();
+
+  const watchlistSnap = await db.collection("intelWatchlist").where("active", "==", true).get();
+  const watchlistEntities = watchlistSnap.docs.map((d) => ({ name: d.data().name, type: d.data().type }));
+
+  const rawText = `${existing.title || ""}\n${existing.summary || ""}`.trim();
+  const classified = await classifyRawText(rawText, watchlistEntities, {
+    sourceName: existing.sourceName,
+    url: existing.url,
+    defaultDate: existing.date,
+    defaultSourceRating: existing.sourceRating,
+  });
+  if (!classified) {
+    throw new HttpsError("internal", "La réponse IA n'a pas pu être exploitée (contenu vide/incomplet).");
+  }
+
+  await ref.set(classified, { merge: true });
+  logger.info(`classifyAI: reclassified ${itemId} caller=${request.auth.uid}`);
+  return { id: itemId, status: classified.status };
 });
 
 /**
@@ -352,21 +570,110 @@ exports.aggregateVeilleExecOnWrite = onDocumentWritten({ document: "intelItems/{
 });
 
 /**
- * generateBriefing — callable / planifié
+ * generateBriefing — callable (BUILD_KIT.md §11: "Briefing | briefings, summaries/* |
+ * exécutifs (generate)"), exec-gated same as classifyAI.
  * IA : idée directrice + 3 arguments MECE + KPIs → briefings (revue humaine obligatoire).
+ *
+ * Reads `summaries/veille` + `summaries/veille_exec` (boardKpis, top threats/opportunities) plus
+ * the top 10 highest-`priorityScore` `intelItems`, builds a Minto-pyramid prompt
+ * (`briefing.js#buildBriefingPrompt`), calls Vertex AI, and parses the response
+ * (`briefing.js#parseBriefingResponse`) into a new `briefings/{id}` doc. `status` always starts
+ * `'draft'` / `reviewedBy: null` (hard-enforced inside `parseBriefingResponse` — human review
+ * gate, BUILD_KIT.md §1).
  * Roadmap: V7 IA & sync.
  */
-exports.generateBriefing = onCall({ region: "europe-west1" }, async () => {
-  NOT_IMPLEMENTED("generateBriefing", "V7 IA & sync");
+exports.generateBriefing = onCall({ region: "europe-west1" }, async (request) => {
+  requireExecCaller(request, "générer un briefing");
+
+  const db = getFirestore();
+  const [veilleSnap, veilleExecSnap, topItemsSnap] = await Promise.all([
+    db.doc("summaries/veille").get(),
+    db.doc("summaries/veille_exec").get(),
+    db.collection("intelItems").orderBy("priorityScore", "desc").limit(10).get(),
+  ]);
+
+  const veilleSummary = veilleSnap.exists ? veilleSnap.data() : null;
+  const veilleExecSummary = veilleExecSnap.exists ? veilleExecSnap.data() : null;
+  const topItems = topItemsSnap.docs.map((d) => {
+    const it = d.data();
+    return { title: it.title, axis: it.axis, impact: it.impact, stance: it.stance, soWhat: it.soWhat, priorityScore: it.priorityScore };
+  });
+
+  const now = new Date();
+  const period = `semaine du ${now.toISOString().slice(0, 10)}`;
+
+  const prompt = buildBriefingPrompt({ veilleSummary, veilleExecSummary, topItems, period });
+  const response = await generateJson(prompt);
+  const briefing = parseBriefingResponse(response, {
+    period,
+    generatedBy: `vertex-ai:${request.auth.uid}`,
+    kpis: veilleExecSummary?.boardKpis ?? null,
+  });
+  if (!briefing) {
+    throw new HttpsError("internal", "La réponse IA n'a pas pu être exploitée (contenu vide/incomplet).");
+  }
+
+  const ref = await db.collection("briefings").add({ ...briefing, createdAt: FieldValue.serverTimestamp() });
+  logger.info(`generateBriefing: created briefings/${ref.id} caller=${request.auth.uid}`);
+  return { id: ref.id, status: briefing.status };
 });
 
 /**
- * exportPdf — callable
- * Board pack / one-pager PDF (pdfkit) → Storage (URL signée).
+ * exportPdf — callable (BUILD_KIT.md §10 "board pack / one-pager PDF (pdfkit) → Storage (URL
+ * signée)").
+ *
+ * data: { briefingId?: string } — if omitted, exports the most recently created briefing. Builds
+ * the PDF with `domain/pdf.js#buildBriefingPdf` (pure, unit-tested — see
+ * functions/test/exportPdf.test.js), uploads the buffer to Cloud Storage under
+ * `exports/{briefingId}.pdf`, and returns a signed read URL. NOT independently verifiable in this
+ * sandbox (no GCS credentials/network) — the PDF *content* generation is verified for real by
+ * exportPdf.test.js; only the Storage upload/signed-URL plumbing below is unverified.
  * Roadmap: V7 IA & sync.
  */
-exports.exportPdf = onCall({ region: "europe-west1" }, async () => {
-  NOT_IMPLEMENTED("exportPdf", "V7 IA & sync");
+exports.exportPdf = onCall({ region: "europe-west1" }, async (request) => {
+  requireExecCaller(request, "exporter un briefing en PDF");
+
+  const db = getFirestore();
+  const { briefingId } = request.data || {};
+
+  let ref;
+  let briefing;
+  if (typeof briefingId === "string" && briefingId) {
+    ref = db.doc(`briefings/${briefingId}`);
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpsError("not-found", `briefings/${briefingId} introuvable.`);
+    briefing = snap.data();
+  } else {
+    const latestSnap = await db.collection("briefings").orderBy("createdAt", "desc").limit(1).get();
+    if (latestSnap.empty) {
+      throw new HttpsError("failed-precondition", "Aucun briefing disponible — générez-en un d'abord (generateBriefing).");
+    }
+    ref = latestSnap.docs[0].ref;
+    briefing = latestSnap.docs[0].data();
+  }
+
+  const buffer = await new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: "A4", margin: 40 });
+    const chunks = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+    buildBriefingPdf(doc, briefing);
+    doc.end();
+  });
+
+  const bucket = getStorage().bucket();
+  const filePath = `exports/${ref.id}.pdf`;
+  const file = bucket.file(filePath);
+  await file.save(buffer, { contentType: "application/pdf" });
+
+  const [signedUrl] = await file.getSignedUrl({
+    action: "read",
+    expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+
+  logger.info(`exportPdf: uploaded ${filePath} caller=${request.auth.uid}`);
+  return { url: signedUrl, path: filePath };
 });
 
 /**
