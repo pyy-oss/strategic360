@@ -53,6 +53,23 @@ jobs:
           echo "Running $JOB"
           gcloud scheduler jobs run "$JOB" --project=propulse-business-87f7a --location=europe-west1
 
-      - name: Note
+      - name: Wait for the function to run (Pub/Sub trigger is asynchronous)
+        run: sleep 25
+
+      - name: Fetch syncSources logs
         run: |
-          echo "Déclenché. syncSources s'exécute de façon asynchrone (Pub/Sub) — consulter Cloud Functions > syncSources > Logs dans la console GCP (ou fournir les logs via une future étape) pour voir sourcesProcessed/itemsCreated, puis vérifier le Fil de veille dans l'app."
+          echo "--- Logs syncSources (dernières exécutions) ---"
+          gcloud functions logs read syncSources \
+            --project=propulse-business-87f7a \
+            --region=europe-west1 \
+            --gen2 \
+            --limit=100 \
+            2>&1 || echo "::warning::Impossible de lire les logs via 'gcloud functions logs read' (rôle roles/logging.viewer probablement manquant sur le compte de service) — essai via gcloud logging read en repli."
+          echo "--- Repli : gcloud logging read ---"
+          gcloud logging read \
+            'resource.type="cloud_run_revision" resource.labels.service_name="syncsources"' \
+            --project=propulse-business-87f7a \
+            --limit=50 \
+            --format="table(timestamp, severity, textPayload)" \
+            --freshness=10m \
+            2>&1 || true
