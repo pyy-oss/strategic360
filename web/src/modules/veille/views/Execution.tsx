@@ -3,10 +3,12 @@ import { T, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Badge } from "../../../design/ui";
 import { useIsExec } from "../../../lib/rbac";
 import {
+  createDecision,
   createInitiative,
   useDecisions,
   useInitiatives,
   useStrategicThemes,
+  type DecisionStatus,
   type InitiativeHorizon,
   type InitiativeStatus,
 } from "../lib/execution";
@@ -159,16 +161,129 @@ function NewInitiativePanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** "Exécution & Décisions" — ported from `Execution` in the maquette; data source swapped to
- * Firestore `initiatives`/`decisions` (V6). Decisions table is read-only for now (registry
- * entries are created via the CODIR/DG decision process, not a self-service form — see the
- * V6 report for the read-only-vs-CRUD rationale); initiatives get a full exec-gated create form. */
+interface NewDecisionForm {
+  title: string;
+  decidedBy: string;
+  date: string;
+  statut: DecisionStatus;
+  chosen: string;
+  linkedItems: string;
+}
+
+const EMPTY_DECISION_FORM: NewDecisionForm = {
+  title: "",
+  decidedBy: "",
+  date: new Date().toISOString().slice(0, 10),
+  statut: "En attente",
+  chosen: "",
+  linkedItems: "",
+};
+
+/** "Nouvelle décision" — exec-gated contribution panel for the decision registry, same layout
+ * convention as `NewInitiativePanel` above. */
+function NewDecisionPanel({ onClose }: { onClose: () => void }) {
+  const [form, setForm] = useState<NewDecisionForm>(EMPTY_DECISION_FORM);
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const set = <K extends keyof NewDecisionForm>(k: K, v: NewDecisionForm[K]) => setForm((f) => ({ ...f, [k]: v }));
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.title.trim() || !form.decidedBy.trim() || !form.date) {
+      setErr("Le titre, l'instance et la date sont requis.");
+      return;
+    }
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await createDecision({
+        title: form.title.trim(),
+        options: [],
+        chosen: form.chosen.trim(),
+        decidedBy: form.decidedBy.trim(),
+        date: form.date,
+        linkedItems: form.linkedItems.split(",").map((s) => s.trim()).filter(Boolean),
+        statut: form.statut,
+      });
+      setForm(EMPTY_DECISION_FORM);
+      onClose();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Échec de l'enregistrement.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    background: T.panel2,
+    border: `1px solid ${T.line}`,
+    borderRadius: 8,
+    padding: "7px 10px",
+    color: T.ink,
+    fontSize: 12.5,
+    fontFamily: "inherit",
+  };
+  const labelStyle: React.CSSProperties = { fontSize: 11, color: T.faint, display: "block", marginBottom: 4 };
+
+  return (
+    <Card style={{ marginBottom: 14, borderColor: T.gold }}>
+      <form onSubmit={submit}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Nouvelle décision</span>
+          <button type="button" className="pill" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={labelStyle}>Décision *</label>
+            <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} required />
+          </div>
+          <div>
+            <label style={labelStyle}>Instance (CODIR, DG…) *</label>
+            <input style={inputStyle} value={form.decidedBy} onChange={(e) => set("decidedBy", e.target.value)} required />
+          </div>
+          <div>
+            <label style={labelStyle}>Date *</label>
+            <input type="date" style={inputStyle} value={form.date} onChange={(e) => set("date", e.target.value)} required />
+          </div>
+          <div>
+            <label style={labelStyle}>Statut</label>
+            <select style={inputStyle} value={form.statut} onChange={(e) => set("statut", e.target.value)}>
+              <option value="En attente">En attente</option>
+              <option value="En cours">En cours</option>
+              <option value="Actée">Actée</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Option retenue</label>
+            <input style={inputStyle} value={form.chosen} onChange={(e) => set("chosen", e.target.value)} />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={labelStyle}>Signaux liés (séparés par des virgules, optionnel)</label>
+            <input style={inputStyle} value={form.linkedItems} onChange={(e) => set("linkedItems", e.target.value)} />
+          </div>
+        </div>
+        {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
+        <button type="submit" className="pill on" disabled={submitting}>
+          {submitting ? "Enregistrement…" : "Enregistrer la décision"}
+        </button>
+      </form>
+    </Card>
+  );
+}
+
+/** "Exécution & Décisions" — Firestore `initiatives`/`decisions`, with exec-gated create forms
+ * for both. */
 export function Execution() {
   const { initiatives, loading: loadingInit } = useInitiatives();
   const { decisions, loading: loadingDec } = useDecisions();
   const { themes } = useStrategicThemes();
   const isExec = useIsExec();
   const [showForm, setShowForm] = useState(false);
+  const [showDecisionForm, setShowDecisionForm] = useState(false);
 
   const themeTitle = (id?: string) => themes.find((t) => t.id === id)?.title;
 
@@ -210,7 +325,15 @@ export function Execution() {
         </div>
       </Card>
       <Card>
-        <Eyebrow color={T.steel}>Registre de décisions stratégiques</Eyebrow>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <Eyebrow color={T.steel}>Registre de décisions stratégiques</Eyebrow>
+          {isExec && (
+            <button className="pill on" onClick={() => setShowDecisionForm((v) => !v)}>
+              + Nouvelle décision
+            </button>
+          )}
+        </div>
+        {showDecisionForm && isExec && <NewDecisionPanel onClose={() => setShowDecisionForm(false)} />}
         <div style={{ marginTop: 12, overflowX: "auto" }}>
           {loadingDec && decisions.length === 0 && <div style={{ fontSize: 12.5, color: T.faint }}>Chargement du registre…</div>}
           {!loadingDec && decisions.length === 0 && <div style={{ fontSize: 12.5, color: T.faint }}>Aucune décision enregistrée pour l'instant.</div>}
