@@ -1,95 +1,49 @@
 import React from "react";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { T, fmt, pct, AMBITION_LABEL } from "../../../design/tokens";
-import { Eyebrow, Card, Kpi, Tip, Badge } from "../../../design/ui";
-import { BRIDGE, VAS } from "../data";
+import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { useQuantiSummary } from "../lib/quanti";
 
 /**
- * "Création de valeur" (value bridge · value-at-stake · driver tree) — ported from `Valeur`.
+ * "Création de valeur" (value bridge · value-at-stake · driver tree).
  *
- * V4 wiring (BUILD_KIT.md §11 "Création de valeur lit summaries/quanti.valueAtStake"):
- *   - Value-at-stake list: swapped for `summaries/quanti.valueAtStake` (open opportunities from
- *     LIVE, `ev = probabilité-étape × montant`) when non-empty; falls back to the static maquette
- *     `VAS` sample (labeled) otherwise. NOTE: the live-derived list only ever contains `type:
- *     "opp"` rows (see functions/domain/quanti.js) — LIVE alone has no "threat" rows (those live
- *     in `intelItems` with `stance:'threat'`, a separate V2/V3 concern not merged here per the
- *     task scope). The static sample's `threat` rows are therefore NOT reproduced when live data
- *     is available; only the opportunity side becomes real.
- *   - Pont de valeur (waterfall/`BRIDGE`): LEFT STATIC. A real bridge would need a genuine
- *     start→end walk (current CAS → 3-year ambition, broken into named growth/attrition levers)
- *     that isn't cleanly derivable from a flat value-at-stake list — `computeValueAtStake` has no
- *     notion of "levers" (Managed/Cloud/AO/etc.), only a per-opportunity p×impact row. Forcing a
- *     fake bridge out of that would fabricate structure that isn't in the data, so it stays on
- *     the maquette's illustrative `BRIDGE` sample (this matches `SIM_BASE`/`simCompute`, the
- *     simulator's own convention — same numbers, same "à calibrer" status, V5 scope).
+ * Value-at-stake reads `summaries/quanti.valueAtStake` (open opportunities from the LIVE import,
+ * `ev = probabilité-étape × montant`) — an explicit empty state is shown until the first LIVE
+ * import lands. The "pont de valeur" waterfall needs a lever-level decomposition (current CAS →
+ * ambition) that no internal source provides yet, so it too is an empty state — no illustrative
+ * numbers are rendered.
  */
 export function Valeur() {
   const { data: quanti } = useQuantiSummary();
-  let cum = 0;
-  const wf = BRIDGE.map((b) => {
-    if (b.kind === "start" || b.kind === "end") {
-      cum = b.v as number;
-      return { name: b.name, base: 0, pos: b.v as number, neg: 0, total: b.v as number, kind: b.kind };
-    }
-    const d = b.d as number;
-    const base = d >= 0 ? cum : cum + d;
-    cum += d;
-    return { name: b.name, base, pos: d >= 0 ? d : 0, neg: d < 0 ? -d : 0, total: cum, d };
-  });
   const liveVas = quanti?.valueAtStake && quanti.valueAtStake.length > 0 ? quanti.valueAtStake : null;
-  const vasSource = liveVas ?? VAS;
-  const vasIsLive = liveVas != null;
-  const vas = [...vasSource].map((v) => ({ ...v, ev: Math.round(v.p * v.impact) })).sort((a, b) => Math.abs(b.ev) - Math.abs(a.ev));
+  const vas = (liveVas ?? []).map((v) => ({ ...v, ev: Math.round(v.p * v.impact) })).sort((a, b) => Math.abs(b.ev) - Math.abs(a.ev));
   const evOpp = vas.filter((v) => v.type === "opp").reduce((s, v) => s + v.ev, 0);
-  const evThreat = vas.filter((v) => v.type === "threat").reduce((s, v) => s + v.ev, 0);
+  const evThreat = vas.filter((v) => (v.type as string) === "threat").reduce((s, v) => s + v.ev, 0);
   return (
     <div>
       <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 14 }}>
         <Card>
-          <Kpi label="Valeur attendue — opportunités" value={fmt(evOpp * 1e6)} accent={T.emerald} sub="Σ (proba × impact)" />
+          <Kpi label="Valeur attendue — opportunités" value={liveVas ? fmt(evOpp * 1e6) : "—"} accent={T.emerald} sub="Σ (proba × impact)" />
         </Card>
         <Card>
-          <Kpi label="Valeur à risque — menaces" value={fmt(evThreat * 1e6)} accent={T.clay} sub="Σ (proba × impact)" />
+          <Kpi label="Valeur à risque — menaces" value={liveVas ? fmt(evThreat * 1e6) : "—"} accent={T.clay} sub="Σ (proba × impact)" />
         </Card>
         <Card>
-          <Kpi label="Valeur nette en jeu" value={fmt((evOpp + evThreat) * 1e6)} accent={T.gold} sub="net at stake" />
+          <Kpi label="Valeur nette en jeu" value={liveVas ? fmt((evOpp + evThreat) * 1e6) : "—"} accent={T.gold} sub="net at stake" />
         </Card>
       </div>
       <Card style={{ marginBottom: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <Eyebrow color={T.gold}>Pont de création de valeur — {AMBITION_LABEL}</Eyebrow>
-          <Badge c={T.faint}>Exemple (illustratif) — non dérivable d'une simple liste value-at-stake</Badge>
-        </div>
-        <div style={{ height: 280, marginTop: 10 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={wf} margin={{ left: 0, right: 10, top: 10, bottom: 30 }}>
-              <CartesianGrid stroke={T.line} vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: T.dim, fontSize: 10 }} axisLine={false} tickLine={false} interval={0} angle={-15} textAnchor="end" height={60} />
-              <YAxis tickFormatter={(v) => fmt(v * 1e6)} tick={{ fill: T.faint, fontSize: 10 }} axisLine={false} tickLine={false} />
-              <Tooltip content={<Tip />} cursor={{ fill: T.panel2 }} />
-              <Bar dataKey="base" stackId="a" fill="transparent" />
-              <Bar dataKey="pos" stackId="a" radius={[3, 3, 0, 0]}>
-                {wf.map((r, i) => (
-                  <Cell key={i} fill={r.kind === "start" ? T.steel : r.kind === "end" ? T.gold : T.emerald} />
-                ))}
-              </Bar>
-              <Bar dataKey="neg" stackId="a" radius={[3, 3, 0, 0]}>
-                {wf.map((_r, i) => (
-                  <Cell key={i} fill={T.clay} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <div style={{ fontSize: 11.5, color: T.faint }}>En M FCFA (illustratif). Vert = leviers de croissance, rouge = pertes/menaces, or = ambition cible.</div>
+        <Eyebrow color={T.gold}>Pont de création de valeur — {AMBITION_LABEL}</Eyebrow>
+        <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>Pont de valeur — en attente des imports internes.</div>
       </Card>
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <Eyebrow color={T.emerald}>Value-at-stake (proba × impact)</Eyebrow>
-            <Badge c={vasIsLive ? T.emerald : T.faint}>{vasIsLive ? "Temps réel (imports LIVE)" : "Exemple — en attente d'un import LIVE"}</Badge>
+            {liveVas && <Badge c={T.emerald}>Temps réel (imports LIVE)</Badge>}
           </div>
+          {!liveVas && (
+            <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente des imports internes (LIVE).</div>
+          )}
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
             {vas.map((v, i) => (
               <div key={i}>
