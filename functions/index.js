@@ -361,8 +361,10 @@ async function upsertClassifiedItem(db, classified) {
 }
 
 /**
- * syncSources — Scheduler (quotidien 06:00)
- * Récupère intelSources (RSS/web/portails) → classifyAI → crée intelItems{status:new}.
+ * runSyncSources — shared implementation for `syncSources` (scheduled) and `syncSourcesNow`
+ * (manual on-demand trigger, added so this can be tested/run without waiting for 06:00
+ * Africa/Abidjan). Fetches active `intelSources` (RSS/web/portails) → classifyAI → creates
+ * `intelItems{status:new}`.
  *
  * `kind: 'manual'` sources are skipped (nothing to fetch — they're fed by human submissions via
  * the Fil.tsx contribution form). `kind: 'rss'`/`'web'` are fetched with Node 20's built-in
@@ -370,8 +372,7 @@ async function upsertClassifiedItem(db, classified) {
  * feed, Vertex AI hiccup) never aborts the whole run — logged and skipped, next source continues.
  * Roadmap: V7 IA & sync.
  */
-exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1" }, async () => {
-  const db = firestoreDb();
+async function runSyncSources(db) {
 
   const [sourcesSnap, watchlistSnap] = await Promise.all([
     db.collection("intelSources").where("active", "==", true).get(),
@@ -439,6 +440,27 @@ exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abid
   }
 
   logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourcesSnap.size} itemsCreated=${itemsCreated}`);
+  return { sourcesTotal: sourcesSnap.size, sourcesProcessed, itemsCreated };
+}
+
+/**
+ * syncSources — Scheduler (quotidien 06:00 Africa/Abidjan). Thin wrapper around runSyncSources().
+ * Roadmap: V7 IA & sync.
+ */
+exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1" }, async () => {
+  await runSyncSources(firestoreDb());
+});
+
+/**
+ * syncSourcesNow — callable (manual on-demand trigger). Same runSyncSources() logic as the
+ * schedule, exposed so a run can be tested/forced without waiting for the daily 06:00 slot.
+ * Exec-gated, same pattern as classifyAI/generateBriefing/exportPdf.
+ * Roadmap: V7 IA & sync (added post-deploy for real-data onboarding).
+ */
+exports.syncSourcesNow = onCall(CALLABLE_OPTS, async (request) => {
+  requireExecCaller(request, "lancer une synchronisation de la veille");
+  const result = await runSyncSources(firestoreDb());
+  return result;
 });
 
 /**

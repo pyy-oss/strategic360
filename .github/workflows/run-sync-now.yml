@@ -1,0 +1,58 @@
+name: Run syncSources now (propulse-business-87f7a / strategic360)
+
+# Manual trigger only. Force-runs the syncSources scheduled Cloud Function immediately, instead of
+# waiting for its daily 06:00 Africa/Abidjan slot — useful for testing real intelSources ingestion
+# on demand. Uses `gcloud scheduler jobs run` on the Cloud Scheduler job Firebase auto-creates for
+# a v2 onSchedule function (named "firebase-schedule-<functionName>-<region>"), which requires
+# roles/cloudscheduler.admin (or the narrower cloudscheduler.jobs.run permission) on the service
+# account — see README.md § Créer le secret GitHub Actions for the running list of IAM roles this
+# project's automation needs.
+#
+# This bypasses functions/index.js's `syncSourcesNow` callable entirely (that one requires an
+# authenticated exec-role ID token, meant for an in-app "sync now" button — not convenient to call
+# from CI). Triggering the underlying scheduled job directly needs only infra-level GCP
+# credentials, which this workflow already has via GCP_SA_KEY_STRATEGIC360.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tapez "sync" pour confirmer'
+        required: true
+
+jobs:
+  run-sync:
+    name: Force-run syncSources
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Refuse to run without explicit confirmation
+        if: ${{ github.event.inputs.confirm != 'sync' }}
+        run: |
+          echo "Le champ 'confirm' doit valoir exactement 'sync'. Annulé."
+          exit 1
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
+
+      - name: Find and run the syncSources scheduler job
+        run: |
+          set -e
+          JOB=$(gcloud scheduler jobs list \
+            --project=propulse-business-87f7a \
+            --location=europe-west1 \
+            --format="value(name)" \
+            --filter="name:firebase-schedule-syncSources" | head -n1)
+          if [ -z "$JOB" ]; then
+            echo "::error::Aucun job Cloud Scheduler trouvé pour syncSources — vérifier qu'il est bien déployé (functions:veille) et lister les jobs existants pour ajuster le filtre."
+            gcloud scheduler jobs list --project=propulse-business-87f7a --location=europe-west1
+            exit 1
+          fi
+          echo "Running $JOB"
+          gcloud scheduler jobs run "$JOB" --project=propulse-business-87f7a --location=europe-west1
+
+      - name: Note
+        run: |
+          echo "Déclenché. syncSources s'exécute de façon asynchrone (Pub/Sub) — consulter Cloud Functions > syncSources > Logs dans la console GCP (ou fournir les logs via une future étape) pour voir sourcesProcessed/itemsCreated, puis vérifier le Fil de veille dans l'app."

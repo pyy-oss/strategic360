@@ -179,6 +179,16 @@ compte dédié `github-deploy-strategic360` comme recommandé ci-dessus. Comprom
   qui peut échouer sans bloquer hosting/firestore/functions (`continue-on-error: true`).
   Si le déploiement Functions échoue séparément avec `PERMISSION_DENIED` / `iam.serviceaccounts.actAs`,
   ajouter aussi `roles/iam.serviceAccountUser`.
+- **Chantier données réelles (post-déploiement)** : deux rôles supplémentaires nécessaires pour
+  `.github/workflows/run-sync-now.yml` (déclenchement manuel de `syncSources`) et pour que
+  `classifyAI`/`syncSources`/`generateBriefing` puissent effectivement appeler Vertex AI en
+  production :
+  - **`roles/cloudscheduler.admin`** (ou la permission plus fine `cloudscheduler.jobs.run`) — sans
+    quoi `gcloud scheduler jobs run` échoue en `PERMISSION_DENIED`.
+  - **`roles/aiplatform.user`** — sans quoi tout appel Vertex AI (`functions/domain/vertex.js`)
+    échoue en `PERMISSION_DENIED`. Vérifier aussi que l'**API Vertex AI est activée** sur le projet
+    (Console GCP > API et services > Bibliothèque > "Vertex AI API" > Activer) — potentiellement
+    déjà activée par une autre app du projet partagé, vérifier avant de la (dés)activer.
 - Ce choix reste réversible à tout moment : re-générer le secret avec la clé d'un compte de
   service dédié (étapes 1-4 ci-dessus) referme cette fenêtre d'exposition sans toucher au reste
   de la configuration.
