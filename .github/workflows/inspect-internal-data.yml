@@ -15,6 +15,14 @@ on:
         description: 'Ids des bases Firestore à inspecter (séparés par des virgules)'
         required: false
         default: '(default)'
+      mode:
+        description: 'full (dump complet) ou roots (collections racine + ids de docs seulement)'
+        required: false
+        default: 'full'
+      path:
+        description: 'Chemin de document à inspecter en profondeur (ex: workspaces/ws_xyz) — prime sur mode'
+        required: false
+        default: ''
 
 jobs:
   inspect:
@@ -51,4 +59,6 @@ jobs:
         env:
           GCLOUD_PROJECT: propulse-business-87f7a
           INSPECT_DATABASE_IDS: ${{ github.event.inputs.databases }}
+          INSPECT_MODE: ${{ github.event.inputs.mode }}
+          INSPECT_PATH: ${{ github.event.inputs.path }}
         run: node inspectInternalData.js

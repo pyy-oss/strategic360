@@ -72,28 +72,83 @@ async function inspectCollection(col, indent) {
   }
 }
 
+/**
+ * INSPECT_MODE="roots": compact overview only — root collections with doc ids (+ name-ish fields)
+ * instead of the full field dump. Used to locate a specific workspace/tenant (e.g. "nt360") in a
+ * multi-tenant sibling app before pointing a deep inspection at it via INSPECT_PATH.
+ * INSPECT_PATH="workspaces/ws_x": deep-inspect only the subcollections of that document.
+ */
+const NAMEISH = ["name", "title", "label", "company", "companyName", "shopName", "displayName", "slug"];
+
+async function rootsOverview(db) {
+  const cols = await db.listCollections();
+  console.log(`${cols.length} collection(s) racine :`);
+  for (const col of cols) {
+    try {
+      const snap = await col.limit(25).get();
+      console.log(`- ${col.id} (${snap.size}${snap.size === 25 ? "+" : ""} docs)`);
+      for (const d of snap.docs) {
+        const data = d.data();
+        const hints = NAMEISH.filter((k) => typeof data[k] === "string").map((k) => `${k}=${preview(data[k])}`);
+        console.log(`    · ${d.id}${hints.length ? `  [${hints.join(", ")}]` : ""}`);
+      }
+    } catch (err) {
+      console.log(`- ${col.id}: ERREUR lecture — ${err.message}`);
+    }
+  }
+}
+
+async function inspectDocSubcollections(db, path) {
+  const ref = db.doc(path);
+  const snap = await ref.get();
+  console.log(`Document ${path} — existe: ${snap.exists}`);
+  if (snap.exists) {
+    const data = snap.data();
+    for (const [k, v] of Object.entries(data).sort((a, b) => a[0].localeCompare(b[0]))) {
+      console.log(`  ${k}: ${typeOf(v)}  ex: ${preview(v)}`);
+    }
+  }
+  const subs = await ref.listCollections();
+  console.log(`${subs.length} sous-collection(s) :`);
+  for (const sub of subs) {
+    try {
+      await inspectCollection(sub, 1);
+    } catch (err) {
+      console.log(`  - ${sub.id}: ERREUR lecture — ${err.message}`);
+    }
+  }
+}
+
 async function main() {
   initializeApp();
   const ids = (process.env.INSPECT_DATABASE_IDS || "(default)")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+  const mode = process.env.INSPECT_MODE || "full";
+  const path = process.env.INSPECT_PATH || "";
 
   for (const databaseId of ids) {
-    console.log(`\n========== Base Firestore "${databaseId}" ==========`);
+    console.log(`\n========== Base Firestore "${databaseId}" (mode: ${path ? `path:${path}` : mode}) ==========`);
     try {
       const db = databaseId === "(default)" ? getFirestore() : getFirestore(databaseId);
-      const cols = await db.listCollections();
-      if (!cols.length) {
-        console.log("(aucune collection racine)");
-        continue;
-      }
-      console.log(`${cols.length} collection(s) racine :`);
-      for (const col of cols) {
-        try {
-          await inspectCollection(col, 1);
-        } catch (err) {
-          console.log(`  - ${col.id}: ERREUR lecture — ${err.message}`);
+      if (path) {
+        await inspectDocSubcollections(db, path);
+      } else if (mode === "roots") {
+        await rootsOverview(db);
+      } else {
+        const cols = await db.listCollections();
+        if (!cols.length) {
+          console.log("(aucune collection racine)");
+          continue;
+        }
+        console.log(`${cols.length} collection(s) racine :`);
+        for (const col of cols) {
+          try {
+            await inspectCollection(col, 1);
+          } catch (err) {
+            console.log(`  - ${col.id}: ERREUR lecture — ${err.message}`);
+          }
         }
       }
     } catch (err) {
