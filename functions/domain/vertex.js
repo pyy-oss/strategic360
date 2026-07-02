@@ -12,18 +12,20 @@
  * network egress to Vertex AI endpoints). This file is verified with `node --check` only
  * (structural correctness against the documented SDK surface), never invoked in tests.
  *
- * Model: `gemini-2.0-flash-001` — the versioned GA release id, appropriate for
+ * Model: `gemini-1.5-flash-002` — an older, very broadly available GA model, appropriate for
  * summarization/classification/JSON-extraction workloads (BUILD_KIT.md doesn't pin an exact
  * model name, only "Vertex AI (Gemini)"). Swap via `GEMINI_MODEL` env var if needed without a
  * code change.
  *
- * NOTE (found via a real production run against propulse-business-87f7a, 2026-07-02): the
- * unversioned alias `gemini-2.0-flash` 404'd — "Publisher model ... was not found or your
- * project does not have access to it" — even though Vertex AI + the aiplatform.user role were
- * correctly enabled/granted. The Vertex AI "Publisher Model" registry requires the versioned
- * suffix for this SDK/API surface; the unversioned alias isn't resolvable here. If
- * `gemini-2.0-flash-001` also 404s for a given project/region, try `gemini-1.5-flash-002` (an
- * older, very broadly available GA model) via the `GEMINI_MODEL` env var.
+ * NOTE (found via two real production runs against propulse-business-87f7a, 2026-07-02): BOTH
+ * `gemini-2.0-flash` (unversioned alias) and `gemini-2.0-flash-001` (versioned GA id) 404'd —
+ * "Publisher model ... was not found or your project does not have access to it" — even though
+ * Vertex AI + the aiplatform.user role were correctly enabled/granted (the error is a genuine
+ * model/region availability gap for this project, not a permission problem — auth succeeded both
+ * times). Fell back to `gemini-1.5-flash-002`, which has been GA and broadly available across
+ * regions for far longer. If this ALSO 404s, the likely next step is enabling/accepting the
+ * relevant model in Vertex AI Model Garden for this project (Console > Vertex AI > Model Garden >
+ * search the model > Enable), not another model-name guess.
  */
 
 const { VertexAI } = require("@google-cloud/vertexai");
@@ -37,7 +39,7 @@ const { VertexAI } = require("@google-cloud/vertexai");
  * region actually serves the chosen model for your GCP project at deploy time.
  */
 const DEFAULT_LOCATION = "us-central1";
-const DEFAULT_MODEL = "gemini-2.0-flash-001";
+const DEFAULT_MODEL = "gemini-1.5-flash-002";
 
 let cachedClient = null;
 let cachedModelName = null;
