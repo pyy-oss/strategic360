@@ -925,6 +925,113 @@ exports.enrichNow = onCall(CALLABLE_OPTS, async (request) => {
   return result;
 });
 
+/* ------------------------------------------------------------------------------------------- *
+ * Sync quanti interne depuis nt360 ("données internes disponibles dans une autre application",
+ * 2026-07-02) — the internal P&L/LIVE/Facturation/fiche data lives in the SIBLING app nt360's
+ * named Firestore database (same shared project), already parsed from its own Excel imports.
+ * This reads nt360 STRICTLY READ-ONLY, maps its rows onto domain/quanti.js's shapes
+ * (domain/nt360.js) and recomputes strategic360's `summaries/quanti` — the same doc/shape that
+ * ingestInternal (the Storage-upload path, kept as a fallback) writes, so the quanti views
+ * (Indicateurs/Valeur/Portefeuille/Simulateur) light up with no frontend change.
+ * ------------------------------------------------------------------------------------------- */
+
+const NT360_DATABASE_ID = process.env.NT360_DATABASE_ID || "nt360";
+
+const {
+  mapOrders: nt360MapOrders,
+  mapOpportunities: nt360MapOpportunities,
+  mapInvoices: nt360MapInvoices,
+  mapBcLinesToSupplierRows: nt360MapBcLines,
+  pickObjectives: nt360PickObjectives,
+  pickCurrentFy: nt360PickCurrentFy,
+} = require("./domain/nt360");
+
+async function runInternalQuantiSync(db) {
+  const src = getFirestore(NT360_DATABASE_ID); // READ-ONLY — never write through this handle
+
+  const [ordersSnap, oppsSnap, invoicesSnap, bcLinesSnap, objectivesSnap, configSnap] = await Promise.all([
+    src.collection("orders").get(),
+    src.collection("opportunities").get(),
+    src.collection("invoices").get(),
+    src.collection("bcLines").get(),
+    src.collection("objectives").get(),
+    src.collection("config").get(),
+  ]);
+  const docsOf = (snap) => snap.docs.map((d) => d.data());
+
+  const currentFy = nt360PickCurrentFy(docsOf(configSnap), new Date().getFullYear());
+  const orders = nt360MapOrders(docsOf(ordersSnap), currentFy);
+  const opportunities = nt360MapOpportunities(docsOf(oppsSnap));
+  const invoices = nt360MapInvoices(docsOf(invoicesSnap));
+  const supplierRows = nt360MapBcLines(docsOf(bcLinesSnap));
+  const objectives = nt360PickObjectives(docsOf(objectivesSnap), currentFy);
+
+  // Same summary shape as computeSummaryQuanti (the Excel path), with two sourcing differences
+  // documented here: supplier concentration comes from nt360's bcLines purchase ledger (its
+  // orders' `suppliers` arrays are empty in practice), and those purchase pseudo-rows are kept
+  // OUT of computeBcg/computeCasSummary (purchases are not revenue).
+  const porterForces = {
+    ...computePorterForces({ orders: supplierRows, opportunities }),
+  };
+  const bcg = computeBcg({ orders });
+  const { casTotal, casN1Total } = computeCasSummary({ orders });
+  const { pipelinePondere, winRate } = computePipeline({ opportunities });
+  const kris = computeKris({ orders: supplierRows, opportunities, invoices });
+  const valueAtStake = computeValueAtStake({ opportunities });
+
+  const summary = {
+    porterForces,
+    bcg,
+    ge9: null, // still not derivable — needs an external market-attractiveness axis
+    casTotal,
+    casN1Total,
+    pipelinePondere,
+    winRate,
+    marginAvg: null, // see computeSummaryQuanti's comment — formula unspecified beyond BCG's per-BU marge
+    supplierSaturation: porterForces.pouvoirFournisseurs,
+    recurrentShare: null, // récurrent/projet tag still absent from nt360's orders/opportunities
+    kris,
+    valueAtStake,
+    objectives, // nt360 targets (targetCas/targetInvoiced/targetMargin) for future realized-vs-target UI
+    source: `nt360 (fy=${currentFy})`,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  await db.doc("summaries/quanti").set(summary);
+
+  const counts = {
+    orders: ordersSnap.size,
+    opportunities: oppsSnap.size,
+    invoices: invoicesSnap.size,
+    bcLines: bcLinesSnap.size,
+    casTotal,
+    pipelinePondere,
+    winRate,
+  };
+  logger.info(`runInternalQuantiSync: summaries/quanti recomputed from nt360 — ${JSON.stringify(counts)}`);
+  return counts;
+}
+
+/**
+ * syncInternalQuanti — Scheduler (quotidien 05:30 Africa/Abidjan, avant l'ouverture) : recalcule
+ * summaries/quanti depuis la base nt360. nt360 est lui-même réalimenté par ses propres imports
+ * Excel — une fraîcheur quotidienne suffit ; forçage à la demande via syncInternalQuantiNow ou le
+ * workflow GHA run-quanti-now.yml.
+ */
+exports.syncInternalQuanti = onSchedule(
+  { schedule: "30 5 * * *", timeZone: "Africa/Abidjan", region: "europe-west1" },
+  async () => {
+    await runInternalQuantiSync(firestoreDb());
+  }
+);
+
+/** syncInternalQuantiNow — callable exec-gated (même patron que syncSourcesNow/enrichNow). */
+exports.syncInternalQuantiNow = onCall(CALLABLE_OPTS, async (request) => {
+  requireExecCaller(request, "synchroniser les données internes (nt360)");
+  const result = await runInternalQuantiSync(firestoreDb());
+  logger.info(`syncInternalQuantiNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
+  return result;
+});
+
 /**
  * exportPdf — callable (BUILD_KIT.md §10 "board pack / one-pager PDF (pdfkit) → Storage (URL
  * signée)").
