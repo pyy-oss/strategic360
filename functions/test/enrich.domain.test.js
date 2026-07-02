@@ -246,3 +246,72 @@ describe("slugId", () => {
     expect(slugId("Zero Trust")).toBe(slugId("zero---trust")); // deterministic across runs
   });
 });
+
+describe("parseCanvasResponse", () => {
+  it("keeps only canonical block titles with non-empty text, ordered per CANVAS_BLOCKS", async () => {
+    const { parseCanvasResponse, CANVAS_BLOCKS } = await import("../domain/enrich.js");
+    const parsed = parseCanvasResponse({
+      blocks: [
+        { t: "Canaux", d: "Vente directe + partenaires distributeurs." },
+        { t: "Partenaires clés", d: "Cisco, Palo Alto, Westcon." },
+        { t: "Partenaires clés", d: "doublon ignoré" },
+        { t: "Bloc inventé", d: "à jeter" },
+        { t: "Revenus", d: "  " },
+        { t: "Propositions de valeur", d: "Intégration + managed services souverains." },
+      ],
+    });
+    expect(parsed.blocks.map((b) => b.t)).toEqual(["Partenaires clés", "Propositions de valeur", "Canaux"]);
+    expect(parsed.blocks[0].d).toBe("Cisco, Palo Alto, Westcon.");
+    expect(CANVAS_BLOCKS).toHaveLength(9);
+  });
+
+  it("returns null under 3 valid blocks or on junk", async () => {
+    const { parseCanvasResponse } = await import("../domain/enrich.js");
+    expect(parseCanvasResponse({ blocks: [{ t: "Canaux", d: "x" }] })).toBeNull();
+    expect(parseCanvasResponse(null)).toBeNull();
+    expect(parseCanvasResponse({ blocks: "nope" })).toBeNull();
+  });
+});
+
+describe("parseDiagnosticResponse", () => {
+  it("coerces a full fixture: issue branches filtered, s7 canonical order, scores clamped 0-100", async () => {
+    const { parseDiagnosticResponse, S7_DIMENSIONS } = await import("../domain/enrich.js");
+    const parsed = parseDiagnosticResponse({
+      issue: {
+        q: "Comment doubler le CA managed services d'ici 2028 ?",
+        branches: [
+          { t: "Offre", h: ["Packager 3 offres managed", "SOC souverain"] },
+          { t: "Sans hypothèses", h: [] },
+        ],
+      },
+      s7: [
+        { s: "Stratégie", v: 140 },
+        { s: "Systèmes", v: -5 },
+        { s: "Dimension inventée", v: 50 },
+        { s: "Structure", v: 61.4 },
+      ],
+      maturite: [
+        { c: "Cybersécurité", v: 70 },
+        { c: "", v: 50 },
+      ],
+    });
+    expect(parsed.issue.branches).toHaveLength(1);
+    expect(parsed.s7.map((e) => e.s)).toEqual(["Stratégie", "Structure", "Systèmes"]); // canonical order
+    expect(parsed.s7.map((e) => e.v)).toEqual([100, 61, 0]); // clamped/rounded
+    expect(parsed.maturite).toEqual([{ c: "Cybersécurité", v: 70 }]);
+    expect(S7_DIMENSIONS).toHaveLength(7);
+  });
+
+  it("drops empty sections and returns null when nothing survives; never emits undefined", async () => {
+    const { parseDiagnosticResponse } = await import("../domain/enrich.js");
+    expect(parseDiagnosticResponse({ issue: { q: "" }, s7: [], maturite: [] })).toBeNull();
+    const partial = parseDiagnosticResponse({ maturite: [{ c: "Cloud", v: 40 }] });
+    expect(partial).toEqual({ maturite: [{ c: "Cloud", v: 40 }] });
+    expect("issue" in partial).toBe(false);
+    const walk = (v) => {
+      if (v && typeof v === "object") Object.values(v).forEach(walk);
+      expect(v).not.toBeUndefined();
+    };
+    walk(partial);
+  });
+});

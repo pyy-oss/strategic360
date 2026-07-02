@@ -746,10 +746,7 @@ exports.aggregateVeilleExecOnWrite = onDocumentWritten({ document: "intelItems/{
  * gate, BUILD_KIT.md §1).
  * Roadmap: V7 IA & sync.
  */
-exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
-  requireExecCaller(request, "générer un briefing");
-
-  const db = firestoreDb();
+async function runGenerateBriefing(db, generatedBy) {
   const [veilleSnap, veilleExecSnap, topItemsSnap] = await Promise.all([
     db.doc("summaries/veille").get(),
     db.doc("summaries/veille_exec").get(),
@@ -770,17 +767,40 @@ exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
   const response = await generateJson(prompt);
   const briefing = parseBriefingResponse(response, {
     period,
-    generatedBy: `vertex-ai:${request.auth.uid}`,
+    generatedBy,
     kpis: veilleExecSummary?.boardKpis ?? null,
   });
-  if (!briefing) {
-    throw new HttpsError("internal", "La réponse IA n'a pas pu être exploitée (contenu vide/incomplet).");
-  }
+  if (!briefing) return null;
 
   const ref = await db.collection("briefings").add({ ...briefing, createdAt: FieldValue.serverTimestamp() });
-  logger.info(`generateBriefing: created briefings/${ref.id} caller=${request.auth.uid}`);
+  logger.info(`runGenerateBriefing: created briefings/${ref.id} generatedBy=${generatedBy}`);
   return { id: ref.id, status: briefing.status };
+}
+
+exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
+  requireExecCaller(request, "générer un briefing");
+  const result = await runGenerateBriefing(firestoreDb(), `vertex-ai:${request.auth.uid}`);
+  if (!result) {
+    throw new HttpsError("internal", "La réponse IA n'a pas pu être exploitée (contenu vide/incomplet).");
+  }
+  return result;
 });
+
+/**
+ * generateBriefingWeekly — Scheduler (hebdomadaire, vendredi 07:00 Africa/Abidjan) : le briefing
+ * exécutif se génère tout seul en fin de semaine ("encore des vues vides", 2026-07-02 — la vue
+ * Briefing restait vide tant que personne ne cliquait). Toujours créé en `status:'draft'` — la
+ * revue humaine reste obligatoire avant toute diffusion (garde dans parseBriefingResponse).
+ */
+exports.generateBriefingWeekly = onSchedule(
+  { schedule: "0 7 * * 5", timeZone: "Africa/Abidjan", region: "europe-west1" },
+  async () => {
+    const result = await runGenerateBriefing(firestoreDb(), "vertex-ai:scheduled");
+    if (!result) {
+      logger.error("generateBriefingWeekly: réponse IA inexploitable — aucun briefing créé cette semaine");
+    }
+  }
+);
 
 // ---------------------------------------------------------------------------------------------
 // AI enrichment of strategic artifacts (SWOT/PESTEL frameworks, tech radar, battlecard moves)
@@ -797,6 +817,10 @@ const {
   parseTechRadarResponse,
   buildBattlecardMovesPrompt,
   parseBattlecardMovesResponse,
+  buildCanvasPrompt,
+  parseCanvasResponse,
+  buildDiagnosticPrompt,
+  parseDiagnosticResponse,
   pickSignalsForEnrichment,
   slugId: enrichSlugId,
 } = require("./domain/enrich");
@@ -916,6 +940,34 @@ async function runEnrichment(db) {
     }
   } catch (err) {
     logger.error(`runEnrichment: battlecard moves generation FAILED — ${err.message}`, { err });
+  }
+
+  // 4. Business Model Canvas (frameworks/canvas) — added 2026-07-02 ("encore des vues vides") ----
+  try {
+    const parsed = parseCanvasResponse(await generateJson(buildCanvasPrompt(signals)));
+    if (!parsed) {
+      summary.canvas = "parse-failed";
+      logger.error("runEnrichment: canvas response unusable (parse returned null)");
+    } else {
+      summary.canvas = await writeFrameworkDoc(db, "canvas", parsed);
+    }
+  } catch (err) {
+    summary.canvas = "failed";
+    logger.error(`runEnrichment: canvas generation FAILED — ${err.message}`, { err });
+  }
+
+  // 5. Diagnostic (frameworks/diagnostic : arbre MECE + 7S + maturité) ---------------------------
+  try {
+    const parsed = parseDiagnosticResponse(await generateJson(buildDiagnosticPrompt(signals)));
+    if (!parsed) {
+      summary.diagnostic = "parse-failed";
+      logger.error("runEnrichment: diagnostic response unusable (parse returned null)");
+    } else {
+      summary.diagnostic = await writeFrameworkDoc(db, "diagnostic", parsed);
+    }
+  } catch (err) {
+    summary.diagnostic = "failed";
+    logger.error(`runEnrichment: diagnostic generation FAILED — ${err.message}`, { err });
   }
 
   logger.info(`runEnrichment: done — ${JSON.stringify(summary)} (signals=${signals.length})`);

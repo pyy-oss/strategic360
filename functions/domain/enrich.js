@@ -340,6 +340,166 @@ function parseBattlecardMovesResponse(raw) {
   return { moves };
 }
 
+/* ------------------------------------------------------------------------------------------- *
+ * Business Model Canvas + Diagnostic (MECE / 7S / maturité) — added 2026-07-02 ("encore des vues
+ * vides"): the Cadres>Canvas and Diagnostic views read frameworks/{canvas,diagnostic}, which only
+ * a Direction form used to fill. Same pattern as SWOT/PESTEL: AI first-jet from real signals +
+ * company context, humans edit afterwards (writeFrameworkDoc's human-guard applies).
+ * ------------------------------------------------------------------------------------------- */
+
+/** Exact block titles the Cadres>Canvas editor renders (web/src/modules/veille/views/Cadres.tsx
+ * CANVAS_BLOCKS) — the parser drops anything not in this list. */
+const CANVAS_BLOCKS = [
+  "Partenaires clés",
+  "Activités clés",
+  "Propositions de valeur",
+  "Relations clients",
+  "Segments clients",
+  "Ressources clés",
+  "Canaux",
+  "Structure de coûts",
+  "Revenus",
+];
+
+/** Canonical 7S dimensions (French) for the Diagnostic radar. */
+const S7_DIMENSIONS = ["Stratégie", "Structure", "Systèmes", "Valeurs partagées", "Compétences", "Style", "Équipes"];
+
+/**
+ * Builds the Gemini prompt producing a Business Model Canvas first-jet.
+ * @param {Array<object>} items Lightweight signals from `pickSignalsForEnrichment`.
+ * @returns {string}
+ */
+function buildCanvasPrompt(items) {
+  return `Tu es un consultant en stratégie travaillant pour l'entreprise suivante :
+${COMPANY_CONTEXT}
+
+À partir de ce contexte d'entreprise et des signaux de veille réels ci-dessous, rédige un
+Business Model Canvas synthétique pour cette entreprise. Réponds UNIQUEMENT avec un objet JSON
+valide (pas de markdown, pas de texte hors JSON) respectant STRICTEMENT ce schéma :
+
+{
+  "blocks": [
+    { "t": string, "d": string }
+  ]
+}
+
+Contraintes :
+- "t" doit être EXACTEMENT l'un des 9 intitulés suivants (tous présents, une seule fois chacun) :
+  ${CANVAS_BLOCKS.map((b) => `"${b}"`).join(", ")}.
+- "d" : 2-4 phrases concrètes en français, ancrées dans le contexte de l'entreprise et, quand
+  c'est pertinent, dans les signaux fournis.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+/**
+ * parseCanvasResponse(raw) -> {blocks: [{t, d}]} | null
+ * Keeps only blocks whose "t" is one of CANVAS_BLOCKS (deduped, ordered per CANVAS_BLOCKS) with a
+ * non-empty string "d". Null when fewer than 3 valid blocks survive (an emptier canvas than that
+ * isn't worth persisting). Never emits undefined values.
+ */
+function parseCanvasResponse(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.blocks)) return null;
+  const byTitle = new Map();
+  for (const b of raw.blocks) {
+    if (!b || typeof b !== "object") continue;
+    const t = typeof b.t === "string" ? b.t.trim() : "";
+    const d = typeof b.d === "string" ? b.d.trim() : "";
+    if (!CANVAS_BLOCKS.includes(t) || !d || byTitle.has(t)) continue;
+    byTitle.set(t, { t, d });
+  }
+  if (byTitle.size < 3) return null;
+  return { blocks: CANVAS_BLOCKS.filter((t) => byTitle.has(t)).map((t) => byTitle.get(t)) };
+}
+
+/**
+ * Builds the Gemini prompt producing the Diagnostic first-jet (arbre MECE + 7S + maturité des
+ * capacités) — shapes mirror web/src/modules/veille/views/Diagnostic.tsx's DiagnosticContent
+ * (scores on a 0-100 radar).
+ * @param {Array<object>} items Lightweight signals from `pickSignalsForEnrichment`.
+ * @returns {string}
+ */
+function buildDiagnosticPrompt(items) {
+  return `Tu es un consultant en stratégie travaillant pour l'entreprise suivante :
+${COMPANY_CONTEXT}
+
+À partir de ce contexte et des signaux de veille réels ci-dessous, produis un diagnostic
+stratégique en trois volets. Réponds UNIQUEMENT avec un objet JSON valide (pas de markdown,
+pas de texte hors JSON) respectant STRICTEMENT ce schéma :
+
+{
+  "issue": {
+    "q": string,                       // la question stratégique centrale (une phrase)
+    "branches": [
+      { "t": string, "h": string[] }  // 3-4 branches MECE ; "t" = intitulé, "h" = 2-4 hypothèses testables
+    ]
+  },
+  "s7": [
+    { "s": string, "v": number }      // les 7 dimensions McKinsey 7S, score 0-100
+  ],
+  "maturite": [
+    { "c": string, "v": number }      // 4-6 capacités clés (ex: Cybersécurité, Managed Services, Cloud, Avant-vente, Delivery, Partenariats), score 0-100
+  ]
+}
+
+Contraintes :
+- "s7" doit contenir EXACTEMENT ces 7 dimensions : ${S7_DIMENSIONS.map((s) => `"${s}"`).join(", ")}.
+- Les scores (0-100) sont des estimations honnêtes justifiables par le contexte/les signaux — pas
+  de complaisance (une ESN régionale n'a pas 90 partout).
+- Tout le texte en français, concret, spécifique à cette entreprise.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+function clamp100(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(Math.max(0, Math.min(100, n)));
+}
+
+/**
+ * parseDiagnosticResponse(raw) -> {issue?, s7?, maturite?} | null
+ * Coercions: issue kept only with a non-empty q and ≥1 branch carrying a title + ≥1 hypothesis;
+ * s7 entries restricted to S7_DIMENSIONS with a clampable 0-100 score; maturite entries need a
+ * non-empty name + clampable score. Null when NO section survives. Never emits undefined values
+ * (sections that don't survive are simply absent).
+ */
+function parseDiagnosticResponse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const out = {};
+
+  const issue = raw.issue;
+  if (issue && typeof issue === "object" && typeof issue.q === "string" && issue.q.trim()) {
+    const branches = (Array.isArray(issue.branches) ? issue.branches : [])
+      .filter((b) => b && typeof b === "object" && typeof b.t === "string" && b.t.trim())
+      .map((b) => ({ t: b.t.trim(), h: coerceStringArray(b.h) }))
+      .filter((b) => b.h.length > 0);
+    if (branches.length > 0) out.issue = { q: issue.q.trim(), branches };
+  }
+
+  const s7 = (Array.isArray(raw.s7) ? raw.s7 : [])
+    .filter((e) => e && typeof e === "object" && S7_DIMENSIONS.includes(e.s) && clamp100(e.v) != null)
+    .map((e) => ({ s: e.s, v: clamp100(e.v) }));
+  if (s7.length > 0) {
+    // dedupe by dimension, keep S7 canonical order
+    const byDim = new Map(s7.map((e) => [e.s, e]));
+    out.s7 = S7_DIMENSIONS.filter((s) => byDim.has(s)).map((s) => byDim.get(s));
+  }
+
+  const maturite = (Array.isArray(raw.maturite) ? raw.maturite : [])
+    .filter((e) => e && typeof e === "object" && typeof e.c === "string" && e.c.trim() && clamp100(e.v) != null)
+    .map((e) => ({ c: e.c.trim(), v: clamp100(e.v) }));
+  if (maturite.length > 0) out.maturite = maturite;
+
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 module.exports = {
   buildSwotPestelPrompt,
   parseSwotPestelResponse,
@@ -347,9 +507,15 @@ module.exports = {
   parseTechRadarResponse,
   buildBattlecardMovesPrompt,
   parseBattlecardMovesResponse,
+  buildCanvasPrompt,
+  parseCanvasResponse,
+  buildDiagnosticPrompt,
+  parseDiagnosticResponse,
   pickSignalsForEnrichment,
   slugId,
   SWOT_KEYS,
+  CANVAS_BLOCKS,
+  S7_DIMENSIONS,
   PESTEL_FACTORS,
   RADAR_RINGS,
   TRENDS,
