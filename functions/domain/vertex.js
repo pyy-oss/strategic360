@@ -8,15 +8,17 @@
  * `domain/classify.js` and `domain/briefing.js` that never import this file's network path
  * directly at test time (they receive an already-built JSON response as input).
  *
- * MIGRATION NOTE (2026-07-02, from a real production run against propulse-business-87f7a): this
- * file originally used `@google-cloud/vertexai` (the older `VertexAI` class). THREE different
- * model names (`gemini-2.0-flash`, `gemini-2.0-flash-001`, `gemini-1.5-flash-002`) all 404'd —
- * "Publisher model ... was not found" — with IAM/API access confirmed correct each time. The
- * actual cause: that SDK's own deprecation notice states it "will be removed on June 24, 2026" —
- * a date already in the past relative to this run — so its underlying API path had stopped
- * resolving publisher models entirely, independent of which model name was requested. Migrated to
- * `@google/genai` (Google's current unified Gen AI SDK, supporting both the Gemini Developer API
- * and Vertex AI) to fix this at the root rather than continuing to guess model names.
+ * MIGRATION NOTE (2026-07-02, from real production runs against propulse-business-87f7a): this
+ * file originally used `@google-cloud/vertexai` (the older `VertexAI` class), then tried three
+ * model names (`gemini-2.0-flash`, `gemini-2.0-flash-001`, `gemini-1.5-flash-002`) across two
+ * regions (`us-central1`, `europe-west1`) — ALL 404'd ("Publisher model ... was not found"), with
+ * IAM/API access confirmed correct every time. Root cause found by checking Vertex AI Studio
+ * directly in the Console (console.cloud.google.com/vertex-ai/studio/multimodal): by mid-2026 the
+ * model lineup has moved on — Studio's own model picker defaults to `gemini-3.5-flash`, a
+ * generation newer than every name tried above (all of which are presumably retired/sunset by
+ * now, consistent with the old SDK's own deprecation notice). Also migrated the SDK itself to
+ * `@google/genai` (Google's current unified Gen AI SDK) while investigating, which was necessary
+ * but not sufficient on its own — the model name was the actual remaining blocker.
  *
  * NOT unit-tested end-to-end here: there is no real GCP project/credentials in this sandbox (no
  * network egress to Vertex AI endpoints). This file is verified with `node --check` only
@@ -27,15 +29,16 @@
 const { GoogleGenAI } = require("@google/genai");
 
 /**
- * Vertex AI model availability varies by region — Gemini models are broadly available in
- * `us-central1`; `europe-west1` (used elsewhere in this codebase for Cloud Functions, e.g.
- * `region: "europe-west1"` in index.js) does NOT currently serve all Gemini models. The Vertex AI
- * *client* location is therefore deliberately independent of the Cloud Functions *execution*
- * region and is configurable via `VERTEX_LOCATION` (defaults to `us-central1`) — pick whichever
- * region actually serves the chosen model for your GCP project at deploy time.
+ * Vertex AI model/region availability drifts over time as Google retires older model
+ * generations — if `DEFAULT_MODEL` ever 404s again, check Vertex AI Studio's model picker
+ * (console.cloud.google.com/vertex-ai/studio/multimodal) for the CURRENT default/available model
+ * name rather than guessing versioned suffixes blindly (see MIGRATION NOTE above for how this was
+ * diagnosed the first time). `VERTEX_LOCATION` defaults to `europe-west1` — matches the Cloud
+ * Functions' own execution region (`region: "europe-west1"` in index.js) and is confirmed to
+ * resolve (once the model name was fixed) for this project.
  */
-const DEFAULT_LOCATION = "us-central1";
-const DEFAULT_MODEL = "gemini-2.0-flash-001";
+const DEFAULT_LOCATION = "europe-west1";
+const DEFAULT_MODEL = "gemini-3.5-flash";
 
 let cachedClient = null;
 let cachedClientKey = null;
