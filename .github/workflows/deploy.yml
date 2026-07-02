@@ -1,0 +1,66 @@
+name: Deploy (propulse-business-87f7a / strategic360)
+
+# Manual trigger ONLY (workflow_dispatch), by design: this deploys into a Firebase project shared
+# with other apps. Auto-deploying on every push to main would be one bad merge away from breaking
+# a shared production project. Once confidence is established, this can be changed to also run
+# `on: push: branches: [main]` — see README.md § Déploiement.
+#
+# Consumes ONE repository secret: GCP_SA_KEY_STRATEGIC360 (a Firebase/GCP service account JSON
+# key, base64-free — paste the raw JSON file content). See README.md § Déploiement > "Créer le
+# secret GitHub Actions" for how to create the service account and add this secret. This workflow
+# only ever deploys the resources this app owns (hosting site "strategic360", Firestore database
+# "strategic360", Storage bucket "strategic360", Functions codebase "veille") — see firebase.json.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tapez "deploy" pour confirmer un déploiement dans le projet partagé propulse-business-87f7a'
+        required: true
+
+jobs:
+  deploy:
+    name: Build & deploy
+    runs-on: ubuntu-latest
+    # Optional extra safety net: create a "production" Environment in the repo's Settings >
+    # Environments with required reviewers, and this job will pause for manual approval before
+    # touching the shared project. Harmless no-op if the Environment doesn't exist.
+    environment: production
+    steps:
+      - name: Refuse to run without explicit confirmation
+        if: ${{ github.event.inputs.confirm != 'deploy' }}
+        run: |
+          echo "Le champ 'confirm' doit valoir exactement 'deploy'. Déploiement annulé."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build web app
+        working-directory: web
+        run: |
+          npm install
+          npm run typecheck
+          npm run build
+
+      - name: Install functions dependencies
+        working-directory: functions
+        run: npm install
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Deploy (hosting:strategic360, firestore, storage, functions:veille)
+        run: >
+          firebase deploy
+          --project propulse-business-87f7a
+          --only hosting:strategic360,firestore,storage,functions:veille
+          --non-interactive

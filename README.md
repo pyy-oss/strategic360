@@ -123,6 +123,39 @@ vers des ressources **dédiées** à cette app, pas les ressources par défaut d
    `config/bootstrap` dans la base `strategic360`) pour amorcer le RBAC — voir
    `docs/USER_GUIDE.md` pour la suite côté utilisateur final.
 
+### Créer le secret GitHub Actions (déploiement CI/CD)
+
+`.github/workflows/deploy.yml` déploie automatiquement (déclenchement manuel, `workflow_dispatch`,
+volontairement pas sur chaque push — voir les commentaires du fichier) en consommant **un seul**
+secret de dépôt : `GCP_SA_KEY_STRATEGIC360`, la clé JSON d'un compte de service GCP dédié.
+
+**Important — limite structurelle** : IAM GCP ne sait pas attribuer un rôle *uniquement* sur le
+site Hosting/la base Firestore/le bucket de cette app — les rôles ci-dessous s'appliquent au
+**projet entier** `propulse-business-87f7a`, comme documenté plus haut pour Auth. La seule
+mitigation possible est un compte de service **dédié et nommé explicitement** (pas un compte
+partagé avec une autre app), pour que son usage et son audit restent traçables.
+
+1. **Créer un compte de service dédié** (Console GCP > IAM et administration > Comptes de
+   service > Créer un compte de service, dans le projet `propulse-business-87f7a`) :
+   - Nom : `github-deploy-strategic360` (le nom explicite est le seul garde-fou possible ici).
+2. **Attribuer les rôles minimaux nécessaires à `firebase deploy`** :
+   - `roles/firebase.admin` (Hosting, Functions, Firestore rules/indexes, Storage rules)
+   - `roles/cloudbuild.builds.editor` (build des Functions 2ᵉ génération)
+   - `roles/artifactregistry.writer` (images de build des Functions 2ᵉ génération)
+   - `roles/iam.serviceAccountUser` (pour agir en tant que compte d'exécution des Functions)
+3. **Générer une clé JSON** pour ce compte de service (onglet "Clés" > Ajouter une clé > JSON) —
+   téléchargée localement, à ne **jamais** committer dans le dépôt.
+4. **Ajouter le secret dans GitHub** : Settings (du dépôt) > Secrets and variables > Actions >
+   New repository secret > nom **`GCP_SA_KEY_STRATEGIC360`**, valeur = contenu brut du fichier
+   JSON téléchargé à l'étape 3. *(Cette étape ne peut pas être automatisée depuis cette session —
+   aucun outil d'écriture des secrets GitHub n'est disponible ici ; à faire manuellement une fois.)*
+5. **(Recommandé) Créer un Environment "production"** : Settings > Environments > New environment
+   `production`, avec des "Required reviewers" — `deploy.yml` référence déjà cet environment, donc
+   dès qu'il existe avec des reviewers configurés, chaque déploiement marquera une pause pour
+   validation humaine avant de toucher le projet partagé.
+6. **Déclencher** : onglet Actions > "Deploy (propulse-business-87f7a / strategic360)" > Run
+   workflow > taper `deploy` dans le champ de confirmation.
+
 ### Déployer plutôt dans un projet Firebase dédié (alternative)
 
 Si un projet Firebase séparé est préférable (isolation complète, y compris Auth), il suffit de :
