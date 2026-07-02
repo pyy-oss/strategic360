@@ -87,24 +87,29 @@ async function generateJson(prompt, schema) {
   const ai = getClient();
   const modelName = process.env.GEMINI_MODEL || DEFAULT_MODEL;
 
-  const config = { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 2048 };
+  // maxOutputTokens 8192 (was 2048): on 2026-07-02 the weekly briefing generation came back with
+  // EMPTY response text in production — gemini-3.5-flash spends part of the output budget on
+  // internal reasoning, and a longer JSON (Minto briefing) can exhaust 2048 before any text is
+  // emitted. 8192 leaves ample room; cost impact is negligible at this call volume.
+  const config = { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 8192 };
   if (schema) config.responseSchema = schema;
 
-  const response = await ai.models.generateContent({
-    model: modelName,
-    contents: prompt,
-    config,
-  });
-
-  // `@google/genai` exposes a `.text` convenience getter that concatenates all text parts of the
-  // first candidate; fall back to manual extraction if it's ever absent (defensive — SDK surface).
-  const text =
+  const extractText = (response) =>
     typeof response.text === "string"
       ? response.text
       : (response.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") ?? "");
 
+  // One retry on empty text — observed as a transient production failure mode (finish without
+  // any text part); a single immediate retry is cheap and usually enough.
+  let text = "";
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const response = await ai.models.generateContent({ model: modelName, contents: prompt, config });
+    text = extractText(response);
+    if (text.trim()) break;
+  }
+
   if (!text.trim()) {
-    throw new Error("generateJson: empty response text from Gemini.");
+    throw new Error("generateJson: empty response text from Gemini (after retry).");
   }
 
   try {
