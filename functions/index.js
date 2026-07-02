@@ -763,6 +763,168 @@ exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
   return { id: ref.id, status: briefing.status };
 });
 
+// ---------------------------------------------------------------------------------------------
+// AI enrichment of strategic artifacts (SWOT/PESTEL frameworks, tech radar, battlecard moves)
+// — user decision: "100% des données externes issues automatiquement de l'IA". The AI
+// generates/refreshes the artifacts from the accumulated real intelItems signals; humans EDIT
+// afterwards via the existing forms (they never create from scratch). Pure prompt/parse logic
+// lives in domain/enrich.js (unit-tested, no network); only the orchestration below touches
+// Vertex AI + Firestore.
+// ---------------------------------------------------------------------------------------------
+const {
+  buildSwotPestelPrompt,
+  parseSwotPestelResponse,
+  buildTechRadarPrompt,
+  parseTechRadarResponse,
+  buildBattlecardMovesPrompt,
+  parseBattlecardMovesResponse,
+  pickSignalsForEnrichment,
+  slugId: enrichSlugId,
+} = require("./domain/enrich");
+
+/**
+ * Writes (or refuses to write) one `frameworks/{key}` doc from an AI-generated `content`.
+ *
+ * HUMAN-CURATION GUARD: if the existing doc's `updatedBy` is a HUMAN (doc exists and `updatedBy`
+ * does NOT start with "ai:"), the AI must NEVER clobber it — we skip and log. A human who has
+ * hand-edited a framework keeps ownership until they explicitly hand it back (a UI toggle to
+ * re-enable AI regeneration per framework is planned; until then the human can clear/delete the
+ * doc to let the AI take over again).
+ */
+async function writeFrameworkDoc(db, key, content) {
+  const ref = db.doc(`frameworks/${key}`);
+  const existing = await ref.get();
+  const existingUpdatedBy = existing.exists ? existing.data()?.updatedBy : null;
+  if (existing.exists && !(typeof existingUpdatedBy === "string" && existingUpdatedBy.startsWith("ai:"))) {
+    logger.info(`runEnrichment: frameworks/${key} is human-curated (updatedBy=${existingUpdatedBy ?? "unknown"}) — skipping AI overwrite`);
+    return "skipped-human";
+  }
+  await ref.set({
+    key,
+    content,
+    version: existing.exists ? (existing.data()?.version ?? 0) + 1 : 1,
+    updatedBy: "ai:enrichStrategicArtifacts",
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return "written";
+}
+
+/**
+ * Shared enrichment pipeline (called by the weekly `enrichStrategicArtifacts` schedule and the
+ * exec-gated `enrichNow` callable). Reads all intelItems (fine at current collection scale),
+ * distills them via `pickSignalsForEnrichment`, then runs three INDEPENDENT AI generations —
+ * SWOT/PESTEL, tech radar, battlecard moves — each in its own try/catch so one failure never
+ * kills the others. Returns a summary object (also logged).
+ */
+async function runEnrichment(db) {
+  const itemsSnap = await db.collection("intelItems").get();
+  const signals = pickSignalsForEnrichment(itemsSnap.docs.map((d) => d.data()));
+
+  if (!signals.length) {
+    logger.info("runEnrichment: no non-archived intelItems — nothing to enrich, skipping");
+    return { skipped: true };
+  }
+
+  const summary = { swotPestel: "failed", techRadarBlips: 0, battlecardMoves: 0 };
+
+  // 1. SWOT + PESTEL frameworks -----------------------------------------------------------------
+  try {
+    const parsed = parseSwotPestelResponse(await generateJson(buildSwotPestelPrompt(signals)));
+    if (!parsed) {
+      summary.swotPestel = "parse-failed";
+      logger.error("runEnrichment: SWOT/PESTEL response unusable (parse returned null)");
+    } else {
+      const swotStatus = await writeFrameworkDoc(db, "swot", parsed.swot);
+      const pestelStatus = await writeFrameworkDoc(db, "pestel", parsed.pestel);
+      summary.swotPestel = swotStatus === pestelStatus ? swotStatus : `swot=${swotStatus},pestel=${pestelStatus}`;
+    }
+  } catch (err) {
+    logger.error(`runEnrichment: SWOT/PESTEL generation FAILED — ${err.message}`, { err });
+  }
+
+  // 2. Tech radar --------------------------------------------------------------------------------
+  try {
+    const techSignals = signals.filter((s) => s.axis === "tech");
+    if (!techSignals.length) {
+      logger.info("runEnrichment: no tech-axis signals — tech radar left untouched");
+    } else {
+      const parsed = parseTechRadarResponse(await generateJson(buildTechRadarPrompt(techSignals)));
+      if (!parsed) {
+        logger.error("runEnrichment: tech radar response unusable (parse returned null)");
+      } else {
+        for (const blip of parsed.blips) {
+          const ref = db.doc(`techRadar/${enrichSlugId(blip.name)}`);
+          const existing = await ref.get();
+          // merge:true — a human-created blip with the same slug only gets its
+          // ring/momentum/rationale refreshed, its other fields survive.
+          await ref.set(
+            {
+              ...blip,
+              generatedBy: "ai",
+              ...(existing.exists ? {} : { linkedItems: [] }),
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+        summary.techRadarBlips = parsed.blips.length;
+      }
+    }
+  } catch (err) {
+    logger.error(`runEnrichment: tech radar generation FAILED — ${err.message}`, { err });
+  }
+
+  // 3. Battlecard recent moves -------------------------------------------------------------------
+  try {
+    const competitorSignals = signals.filter((s) => s.axis === "concurrents");
+    if (!competitorSignals.length) {
+      logger.info("runEnrichment: no concurrents-axis signals — battlecards left untouched");
+    } else {
+      const parsed = parseBattlecardMovesResponse(await generateJson(buildBattlecardMovesPrompt(competitorSignals)));
+      if (!parsed) {
+        logger.error("runEnrichment: battlecard moves response unusable (parse returned null)");
+      } else {
+        for (const m of parsed.moves) {
+          // Only touch `competitor` + append to `recentMoves` (arrayUnion dedupes identical
+          // strings across runs) — every other battlecard field is human territory.
+          await db.doc(`battlecards/${enrichSlugId(m.competitor)}`).set(
+            { competitor: m.competitor, recentMoves: FieldValue.arrayUnion(`${m.date} — ${m.move}`) },
+            { merge: true }
+          );
+        }
+        summary.battlecardMoves = parsed.moves.length;
+      }
+    }
+  } catch (err) {
+    logger.error(`runEnrichment: battlecard moves generation FAILED — ${err.message}`, { err });
+  }
+
+  logger.info(`runEnrichment: done — ${JSON.stringify(summary)} (signals=${signals.length})`);
+  return summary;
+}
+
+/**
+ * enrichStrategicArtifacts — Scheduler (hebdomadaire, lundi 05:00 Africa/Abidjan).
+ * Regenerates the strategic artifacts from the week's accumulated signals via `runEnrichment`.
+ */
+exports.enrichStrategicArtifacts = onSchedule(
+  { schedule: "0 5 * * 1", timeZone: "Africa/Abidjan", region: "europe-west1" },
+  async () => {
+    await runEnrichment(firestoreDb());
+  }
+);
+
+/**
+ * enrichNow — callable, exec-gated (same pattern as syncSourcesNow/classifyAI): triggers the
+ * enrichment pipeline on demand and returns its summary.
+ */
+exports.enrichNow = onCall(CALLABLE_OPTS, async (request) => {
+  requireExecCaller(request, "lancer l'enrichissement IA");
+  const result = await runEnrichment(firestoreDb());
+  logger.info(`enrichNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
+  return result;
+});
+
 /**
  * exportPdf — callable (BUILD_KIT.md §10 "board pack / one-pager PDF (pdfkit) → Storage (URL
  * signée)").
