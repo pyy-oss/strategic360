@@ -17,6 +17,8 @@ import {
   parseTechRadarResponse,
   buildBattlecardMovesPrompt,
   parseBattlecardMovesResponse,
+  buildOpportunitiesPrompt,
+  parseOpportunitiesResponse,
   pickSignalsForEnrichment,
   slugId,
   SWOT_KEYS,
@@ -202,6 +204,103 @@ describe("parseBattlecardMovesResponse", () => {
   });
 });
 
+describe("buildOpportunitiesPrompt", () => {
+  it("embeds company context, the opportunities schema, the no-invention rule, and the signals", () => {
+    const prompt = buildOpportunitiesPrompt(SIGNALS);
+    expect(prompt).toContain("Neurones Technologies");
+    expect(prompt).toContain('"opportunities"');
+    expect(prompt).toContain('"ICT" | "FORMATION"');
+    expect(prompt).toContain('"imminent" | "court" | "moyen" | "horizon"');
+    expect(prompt).toContain("N'invente AUCUN montant");
+    expect(prompt).toContain('{"opportunities": []}');
+    expect(prompt).toContain("Orange CI lance une offre SOC managé");
+    expect(buildOpportunitiesPrompt([])).toContain("aucun signal disponible");
+  });
+});
+
+describe("parseOpportunitiesResponse", () => {
+  const validOpp = {
+    name: "Audit conformité SI AMF-UMOA — BRVM",
+    client: "BRVM",
+    bu: "ICT",
+    offering: "Audit de conformité aux instructions SI AMF-UMOA",
+    estAmount: null,
+    deadline: "2026-09-30",
+    horizon: "court",
+    probability: "high",
+    nextAction: "Contacter le DSI de la BRVM pour proposer un audit avant fin septembre",
+    sourceSignals: [2],
+    competitorsLikely: ["Talentys", "Atos"],
+  };
+
+  it("passes through a valid fixture, forcing status 'new' and never emitting undefined", () => {
+    const parsed = parseOpportunitiesResponse({
+      opportunities: [{ ...validOpp, status: "qualified" }], // AI must NOT be able to set status
+    });
+    expect(parsed.opportunities).toHaveLength(1);
+    expect(parsed.opportunities[0]).toEqual({ ...validOpp, status: "new" });
+    expectNoUndefined(parsed);
+  });
+
+  it("drops entries missing name, client, or nextAction (and null/non-object entries)", () => {
+    const parsed = parseOpportunitiesResponse({
+      opportunities: [
+        validOpp,
+        { ...validOpp, name: "   " },
+        { ...validOpp, client: "" },
+        { ...validOpp, nextAction: undefined },
+        null,
+        "junk",
+      ],
+    });
+    expect(parsed.opportunities).toHaveLength(1);
+    expect(parsed.opportunities[0].name).toBe(validOpp.name);
+  });
+
+  it("coerces invalid enums (bu→ICT, horizon→moyen, probability→medium) and junk fields", () => {
+    const parsed = parseOpportunitiesResponse({
+      opportunities: [
+        {
+          name: "Refresh FortiGate — SONAPIE",
+          client: "SONAPIE",
+          bu: "les_deux", // pas un bu d'opportunité valide → ICT
+          offering: 42,
+          estAmount: "  ", // vide → null (jamais inventé)
+          deadline: 2026,
+          horizon: "asap",
+          probability: "sure",
+          nextAction: "Qualifier le parc FortiGate série E avec le commercial du compte",
+          sourceSignals: [1, 0, -3, 2.5, "2", null],
+          competitorsLikely: ["Talentys", "", 7, null],
+        },
+      ],
+    });
+    expect(parsed.opportunities[0]).toEqual({
+      name: "Refresh FortiGate — SONAPIE",
+      client: "SONAPIE",
+      bu: "ICT",
+      offering: "",
+      estAmount: null,
+      deadline: null,
+      horizon: "moyen",
+      probability: "medium",
+      nextAction: "Qualifier le parc FortiGate série E avec le commercial du compte",
+      sourceSignals: [1],
+      competitorsLikely: ["Talentys"],
+      status: "new",
+    });
+    expectNoUndefined(parsed);
+  });
+
+  it("returns {opportunities: []} for a legitimately empty run, null only for non-object input", () => {
+    expect(parseOpportunitiesResponse({ opportunities: [] })).toEqual({ opportunities: [] });
+    expect(parseOpportunitiesResponse({})).toEqual({ opportunities: [] });
+    expect(parseOpportunitiesResponse(null)).toBeNull();
+    expect(parseOpportunitiesResponse([])).toBeNull();
+    expect(parseOpportunitiesResponse("opps")).toBeNull();
+  });
+});
+
 describe("pickSignalsForEnrichment", () => {
   const items = [
     { title: "B", summary: "s", axis: "tech", impact: "low", stance: "neutral", date: "2026-06-01", priorityScore: 50, status: "new" },
@@ -224,6 +323,22 @@ describe("pickSignalsForEnrichment", () => {
     });
     // soWhat absent (not undefined) when the item has none — Firestore/prompt hygiene.
     expect(Object.keys(picked[1])).not.toContain("soWhat");
+    expectNoUndefined(picked);
+  });
+
+  it("propagates ent/subtype/prox/recommendedAction when present, omits them (not undefined) otherwise", () => {
+    const picked = pickSignalsForEnrichment([
+      {
+        title: "AO BCEAO", summary: "s", axis: "clients_prospects", impact: "high", stance: "opportunity",
+        date: "2026-06-29", status: "new", ent: "BCEAO", subtype: "tender", prox: "imminent",
+        recommendedAction: "Constituer le dossier SIGOMAP avant le 15/07.",
+      },
+      { title: "Sans extras", summary: "s", axis: "tech", impact: "low", stance: "neutral", date: "2026-06-01", status: "new", ent: "  " },
+    ]);
+    expect(picked[0]).toMatchObject({ ent: "BCEAO", subtype: "tender", prox: "imminent", recommendedAction: "Constituer le dossier SIGOMAP avant le 15/07." });
+    for (const key of ["ent", "subtype", "prox", "recommendedAction"]) {
+      expect(Object.keys(picked[1])).not.toContain(key);
+    }
     expectNoUndefined(picked);
   });
 

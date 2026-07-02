@@ -817,6 +817,8 @@ const {
   parseTechRadarResponse,
   buildBattlecardMovesPrompt,
   parseBattlecardMovesResponse,
+  buildOpportunitiesPrompt,
+  parseOpportunitiesResponse,
   buildCanvasPrompt,
   parseCanvasResponse,
   buildDiagnosticPrompt,
@@ -968,6 +970,35 @@ async function runEnrichment(db) {
   } catch (err) {
     summary.diagnostic = "failed";
     logger.error(`runEnrichment: diagnostic generation FAILED — ${err.message}`, { err });
+  }
+
+  // 6. Opportunités business (bizOpportunities) — Action 6.1 de l'audit 2026-07 : transformer les
+  // signaux en pipeline de leads qualifiés. Upsert par slugId(name) ; statut "new" forcé à la
+  // création uniquement — un statut humain (qualified/dropped) déjà posé n'est JAMAIS écrasé.
+  try {
+    const parsed = parseOpportunitiesResponse(await generateJson(buildOpportunitiesPrompt(signals)));
+    if (!parsed) {
+      summary.bizOpportunities = "parse-failed";
+      logger.error("runEnrichment: opportunities response unusable (parse returned null)");
+    } else {
+      for (const opp of parsed.opportunities) {
+        const ref = db.doc(`bizOpportunities/${enrichSlugId(opp.name)}`);
+        const existing = await ref.get();
+        const payload = {
+          ...opp,
+          generatedBy: "ai",
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+        // Le doc existe déjà : merge:true préserve son `status` courant (revue humaine) — on
+        // retire la clé du payload pour ne pas repasser un lead qualifié/écarté en "new".
+        if (existing.exists) delete payload.status;
+        await ref.set(payload, { merge: true });
+      }
+      summary.bizOpportunities = parsed.opportunities.length;
+    }
+  } catch (err) {
+    summary.bizOpportunities = "failed";
+    logger.error(`runEnrichment: opportunities generation FAILED — ${err.message}`, { err });
   }
 
   logger.info(`runEnrichment: done — ${JSON.stringify(summary)} (signals=${signals.length})`);

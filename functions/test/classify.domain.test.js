@@ -24,6 +24,25 @@ describe("buildClassificationPrompt", () => {
     const prompt = buildClassificationPrompt("Un texte quelconque", []);
     expect(prompt).toContain("watchlist vide");
   });
+
+  it("embeds the full company context, the homonymy rule, and the business-angle schema", () => {
+    const prompt = buildClassificationPrompt("Un texte quelconque", []);
+    expect(prompt).toContain("Neurones Technologies S.A.");
+    expect(prompt).toContain("HOMONYMIE");
+    expect(prompt).toContain('"businessAngle"');
+    expect(prompt).toContain('"dueDate"');
+    expect(prompt).toContain('"budgetIdentified"');
+    expect(prompt).toContain("imminent = < 1 mois");
+  });
+
+  it("renders the watchlist note when present (Action 4.5)", () => {
+    const prompt = buildClassificationPrompt("Un texte", [
+      { name: "Talentys", type: "Concurrent", note: "Concurrent cyber le plus direct" },
+      { name: "Odoo" },
+    ]);
+    expect(prompt).toContain("- Talentys (Concurrent) — Concurrent cyber le plus direct");
+    expect(prompt).toContain("- Odoo");
+  });
 });
 
 describe("parseClassificationResponse — valid fixture", () => {

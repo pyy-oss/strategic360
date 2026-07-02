@@ -178,7 +178,7 @@ function proximiteFactor(item, now = Date.now()) {
     return 1.0 - t * (1.0 - 0.3);
   }
 
-  const fromProx = item && PROX_TABLE[item.prox];
+  const fromProx = item ? PROX_TABLE[item.prox] : undefined;
   if (fromProx !== undefined) return fromProx;
 
   const dateMs = item && item.date ? Date.parse(item.date) : NaN;

@@ -352,6 +352,111 @@ function parseBattlecardMovesResponse(raw) {
 }
 
 /* ------------------------------------------------------------------------------------------- *
+ * Détecteur d'opportunités business (Action 6.1, audit 2026-07 — "chaînon manquant n°1") :
+ * transforme les signaux de veille en pipeline de leads qualifiés (`bizOpportunities`). Même
+ * pattern build/parse que les battlecards ; statut `new` forcé côté parseur (revue humaine
+ * obligatoire avant toute action commerciale — les montants/échéances restent déclaratifs).
+ * ------------------------------------------------------------------------------------------- */
+
+/**
+ * Builds the Gemini prompt turning the accumulated signals into concrete business opportunities.
+ * @param {Array<object>} items Lightweight signals from `pickSignalsForEnrichment`.
+ * @returns {string}
+ */
+function buildOpportunitiesPrompt(items) {
+  return `Tu es un directeur du développement commercial travaillant pour l'entreprise suivante :
+${COMPANY_CONTEXT}
+
+À partir des signaux de veille stratégique réels ci-dessous (numérotés), identifie les
+opportunités business concrètes que l'entreprise devrait poursuivre (appels d'offres, obligations
+réglementaires monétisables, refresh de parc en fin de vie, financements bailleurs, upsell chez
+les clients références…). Réponds UNIQUEMENT avec un objet JSON valide (pas de markdown, pas de
+texte hors JSON) respectant STRICTEMENT ce schéma :
+
+{
+  "opportunities": [
+    {
+      "name": string,               // ex: "Audit conformité SI AMF-UMOA — BRVM"
+      "client": string,             // compte cible nommé
+      "bu": "ICT" | "FORMATION",
+      "offering": string,           // ex: "SOC managé", "mise en conformité RGSSI", "refresh FortiGate série E"
+      "estAmount": string | null,   // UNIQUEMENT si un chiffre figure dans un signal
+      "deadline": string | null,
+      "horizon": "imminent" | "court" | "moyen" | "horizon",
+      "probability": "high" | "medium" | "low",
+      "nextAction": string,         // première action commerciale concrète et nominative
+      "sourceSignals": number[],    // indices 1-based des signaux fondateurs
+      "competitorsLikely": string[]
+    }
+  ]
+}
+
+Consignes impératives :
+- Rédige tout en français.
+- N'invente AUCUN montant ni échéance : "estAmount" et "deadline" sont null si aucun signal ne
+  cite de chiffre/date.
+- Chaque opportunité doit citer AU MOINS un signal source dans "sourceSignals".
+- Entre 0 et 10 opportunités ; s'il n'y en a aucune de crédible, réponds {"opportunities": []}.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+/**
+ * Validates/coerces the opportunities JSON response (same pattern as
+ * `parseBattlecardMovesResponse`). Drops entries missing a non-empty `name`, `client` or
+ * `nextAction`; coerces `bu` to "ICT"|"FORMATION" (default "ICT"), `horizon` to its enum (default
+ * "moyen"), `probability` to its enum (default "medium"); `estAmount`/`deadline` become trimmed
+ * strings or null (never undefined — Firestore rejects undefined); `sourceSignals` filtered to
+ * positive integers; `competitorsLikely` filtered to non-empty strings.
+ *
+ * HARD RULE (human-review gate): `status` is ALWAYS forced to `"new"` on every opportunity —
+ * no AI output can mark itself as already qualified/dropped.
+ *
+ * Returns `{opportunities: []}` for a legitimately empty run; null only for non-object input.
+ * @param {unknown} raw
+ * @returns {{opportunities: Array<object>} | null}
+ */
+function parseOpportunitiesResponse(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const oppsRaw = Array.isArray(raw.opportunities) ? raw.opportunities : [];
+
+  const opportunities = [];
+  for (const entry of oppsRaw) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const name = typeof entry.name === "string" ? entry.name.trim() : "";
+    const client = typeof entry.client === "string" ? entry.client.trim() : "";
+    const nextAction = typeof entry.nextAction === "string" ? entry.nextAction.trim() : "";
+    // name identifies the upsert doc (slugId), client/nextAction are what make the lead
+    // actionable — an opportunity missing any of them is not worth persisting.
+    if (!name || !client || !nextAction) continue;
+
+    opportunities.push({
+      name,
+      client,
+      bu: VALID_OPP_BUS.includes(entry.bu) ? entry.bu : "ICT",
+      offering: typeof entry.offering === "string" ? entry.offering.trim() : "",
+      // Montants/échéances déclaratifs : null (pas undefined) quand absents ou non-string.
+      estAmount: typeof entry.estAmount === "string" && entry.estAmount.trim() ? entry.estAmount.trim() : null,
+      deadline: typeof entry.deadline === "string" && entry.deadline.trim() ? entry.deadline.trim() : null,
+      horizon: VALID_HORIZONS.includes(entry.horizon) ? entry.horizon : "moyen",
+      probability: VALID_PROBABILITIES.includes(entry.probability) ? entry.probability : "medium",
+      nextAction,
+      sourceSignals: (Array.isArray(entry.sourceSignals) ? entry.sourceSignals : []).filter(
+        (n) => Number.isInteger(n) && n >= 1
+      ),
+      competitorsLikely: coerceStringArray(entry.competitorsLikely),
+      // Non-negotiable human review gate — see function doc comment above.
+      status: "new",
+    });
+  }
+
+  return { opportunities };
+}
+
+/* ------------------------------------------------------------------------------------------- *
  * Business Model Canvas + Diagnostic (MECE / 7S / maturité) — added 2026-07-02 ("encore des vues
  * vides"): the Cadres>Canvas and Diagnostic views read frameworks/{canvas,diagnostic}, which only
  * a Direction form used to fill. Same pattern as SWOT/PESTEL: AI first-jet from real signals +
@@ -518,6 +623,8 @@ module.exports = {
   parseTechRadarResponse,
   buildBattlecardMovesPrompt,
   parseBattlecardMovesResponse,
+  buildOpportunitiesPrompt,
+  parseOpportunitiesResponse,
   buildCanvasPrompt,
   parseCanvasResponse,
   buildDiagnosticPrompt,
