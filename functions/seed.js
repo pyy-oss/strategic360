@@ -66,14 +66,35 @@ const WATCHLIST_SEED = [
   { name: "BCEAO", type: "Client/Régulateur", geo: "Afrique de l'Ouest", priority: "Haute", active: true },
 ];
 
-// intelSources seed entries — first jet per BUILD_KIT.md §9.B (AO & financements, réglementaire, partenaires).
+// intelSources seed entries — first jet per BUILD_KIT.md §9.B (AO & financements, réglementaire,
+// partenaires), EXPANDED per the "100% automatique" decision with candidate RSS feeds from the
+// regional economic/tech press (DELTA_01 §3bis.B: Jeune Afrique, Financial Afrik, Sika Finance,
+// Abidjan.net, APA, Agence Ecofin). Feed URLs are standard/best-effort and could NOT be verified
+// from the dev sandbox (its network policy blocks those domains) — the pipeline is deliberately
+// SELF-CURATING instead: syncSources tracks per-source health (lastStatus, consecutiveFailures)
+// and auto-deactivates any source after 5 consecutive failures, so dead candidates prune
+// themselves out within a few daily runs and working ones keep feeding the AI classifier.
 const SOURCES_SEED = [
+  // Réglementaire / institutions
+  { name: "ARTCI — Autorité de Régulation des Télécommunications/TIC de Côte d'Ivoire", kind: "web", url: "https://www.artci.ci", axis: "reglementaire", active: true },
+  { name: "BCEAO — Banque Centrale des États de l'Afrique de l'Ouest", kind: "web", url: "https://www.bceao.int", axis: "reglementaire", active: true },
+  // AO & financements
   { name: "SIGMAP / DGMP (marchés publics CI)", kind: "portal", url: "https://www.marchespublics.ci", axis: "clients_prospects", active: true },
   { name: "ARMP — Autorité de Régulation des Marchés Publics", kind: "web", url: "https://www.armp.ci", axis: "clients_prospects", active: true },
   { name: "Banque Africaine de Développement — Avis d'appels d'offres", kind: "rss", url: "https://www.afdb.org", axis: "clients_prospects", active: true },
-  { name: "ARTCI — Autorité de Régulation des Télécommunications/TIC de Côte d'Ivoire", kind: "web", url: "https://www.artci.ci", axis: "reglementaire", active: true },
-  { name: "BCEAO — Banque Centrale des États de l'Afrique de l'Ouest", kind: "web", url: "https://www.bceao.int", axis: "reglementaire", active: true },
+  // Partenaires / éditeurs
   { name: "Cisco EOL/EOS Bulletins", kind: "rss", url: "https://www.cisco.com/c/en/us/products/eos-eol-listing.html", axis: "partenaires", active: true },
+  { name: "Cisco Newsroom (RSS)", kind: "rss", url: "https://newsroom.cisco.com/c/services/i/servlets/newsroom/rssfeed.json", axis: "partenaires", active: true },
+  // Presse économique / tech régionale (candidats RSS — auto-élagués si morts)
+  { name: "Agence Ecofin (RSS)", kind: "rss", url: "https://www.agenceecofin.com/rss/toute-lactu", axis: "clients_prospects", active: true },
+  { name: "Jeune Afrique (RSS)", kind: "rss", url: "https://www.jeuneafrique.com/feed/", axis: "clients_prospects", active: true },
+  { name: "Financial Afrik (RSS)", kind: "rss", url: "https://www.financialafrik.com/feed/", axis: "clients_prospects", active: true },
+  { name: "Sika Finance (RSS)", kind: "rss", url: "https://www.sikafinance.com/rss/news", axis: "clients_prospects", active: true },
+  { name: "Abidjan.net Actualités (RSS)", kind: "rss", url: "https://news.abidjan.net/rss", axis: "clients_prospects", active: true },
+  { name: "APA News (RSS)", kind: "rss", url: "https://apanews.net/feed/", axis: "clients_prospects", active: true },
+  // Tendances tech / cybersécurité (mondial, pertinent pour le Tech Radar)
+  { name: "The Hacker News (RSS)", kind: "rss", url: "https://feeds.feedburner.com/TheHackersNews", axis: "tech", active: true },
+  { name: "BleepingComputer (RSS)", kind: "rss", url: "https://www.bleepingcomputer.com/feed/", axis: "tech", active: true },
 ];
 
 async function seed() {

@@ -55,6 +55,9 @@ const SOURCE_FETCH_HEADERS = {
   Accept: "text/html,application/xhtml+xml,application/xml,application/rss+xml;q=0.9,*/*;q=0.8",
 };
 
+/** Source health: auto-deactivate a source after this many consecutive fetch failures. */
+const MAX_CONSECUTIVE_FAILURES = 5;
+
 /** The 8 profiles from BUILD_KIT.md §7 / firestore.rules. */
 const VALID_ROLES = [
   "direction",
@@ -443,11 +446,34 @@ async function runSyncSources(db) {
         continue;
       }
 
-      await sourceDoc.ref.update({ lastFetch: FieldValue.serverTimestamp() });
+      await sourceDoc.ref.update({
+        lastFetch: FieldValue.serverTimestamp(),
+        lastStatus: "ok",
+        consecutiveFailures: 0,
+      });
       sourcesProcessed += 1;
     } catch (err) {
       // Documented per task brief: one failing source must never abort the whole sync.
       logger.error(`syncSources: source ${source.id} (${source.kind}) failed — ${err.message}`);
+      // Source health tracking (self-curating pipeline — "100% automatique"): record the failure
+      // on the source doc; after MAX_CONSECUTIVE_FAILURES straight failures the source is
+      // auto-deactivated so dead feeds stop wasting fetch/AI cycles and surface visibly in the UI
+      // (active=false). A human can re-activate after fixing the URL.
+      try {
+        const failures = (source.consecutiveFailures || 0) + 1;
+        const deactivate = failures >= MAX_CONSECUTIVE_FAILURES;
+        await sourceDoc.ref.update({
+          lastFetch: FieldValue.serverTimestamp(),
+          lastStatus: `error: ${String(err.message).slice(0, 200)}`,
+          consecutiveFailures: failures,
+          ...(deactivate ? { active: false } : {}),
+        });
+        if (deactivate) {
+          logger.warn(`syncSources: source ${source.id} auto-deactivated after ${failures} consecutive failures`);
+        }
+      } catch (updateErr) {
+        logger.error(`syncSources: failed to record failure on source ${source.id} — ${updateErr.message}`);
+      }
     }
   }
 
