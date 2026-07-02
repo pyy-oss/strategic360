@@ -134,7 +134,7 @@ export function Simulateur() {
         }}
       >
         <span>🎛️ Manipulez les leviers : le revenu projeté, la marge, la part de récurrent, la valeur en jeu et le score stratégique se recalculent en direct.</span>
-        <Badge c={calibrated ? T.emerald : T.faint}>{calibrated ? "Calibré sur données réelles" : "Valeurs de référence (maquette)"}</Badge>
+        <Badge c={calibrated ? T.emerald : T.faint}>{calibrated ? "Calibré sur données réelles" : "Valeurs de référence — en attente de calibrage (imports internes)"}</Badge>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, alignItems: "start" }} className="g2">
         <Card>
