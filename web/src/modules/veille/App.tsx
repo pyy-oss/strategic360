@@ -1,6 +1,10 @@
 import React, { useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { signOut } from "firebase/auth";
 import { T } from "../../design/tokens";
+import { Badge } from "../../design/ui";
+import { auth } from "../../lib/firebase";
+import { useAuthClaims } from "../../lib/AuthProvider";
 import { LENS, NAV } from "./data";
 import { RadarExecutif } from "./views/RadarExecutif";
 import { Fil } from "./views/Fil";
