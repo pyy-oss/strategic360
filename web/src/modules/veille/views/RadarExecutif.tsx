@@ -3,6 +3,7 @@ import { T } from "../../../design/tokens";
 import { AX, IMP, STANCE, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { SIGNAUX, KPIS, DECISIONS } from "../data";
+import { useWatchlist } from "../lib/intel";
 
 export interface RadarExecutifProps {
   lens: string;
@@ -11,6 +12,7 @@ export interface RadarExecutifProps {
 
 /** "Radar exécutif" — ported from `Radar_` in the maquette (renamed to avoid clashing with Recharts' Radar). */
 export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
+  const { entries: watchlist, loading: watchLoading } = useWatchlist();
   const sorted = [...SIGNAUX].sort((a, b) => b.score - a.score);
   const menaces = sorted.filter((s) => s.stance === "threat");
   const opps = sorted.filter((s) => s.stance === "opportunity");
@@ -96,6 +98,31 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
               <span style={{ color: T.faint }}>
                 {d.by} · {d.lien}
               </span>
+            </div>
+          ))}
+        </div>
+      </Card>
+      <Card style={{ marginTop: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Eyebrow color={T.plum}>Watchlist — entités surveillées</Eyebrow>
+          <Badge c={T.plum}>{watchlist.filter((w) => w.active).length} actives</Badge>
+        </div>
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          {watchLoading && watchlist.length === 0 && (
+            <div style={{ fontSize: 12, color: T.faint }}>Chargement de la watchlist…</div>
+          )}
+          {!watchLoading && watchlist.length === 0 && (
+            <div style={{ fontSize: 12, color: T.faint }}>Aucune entité en watchlist pour l'instant.</div>
+          )}
+          {watchlist.map((w, i) => (
+            <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, padding: "7px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
+              <Badge c={w.priority === "Haute" ? T.clay : w.priority === "Moyenne" ? T.gold : T.faint}>{w.priority}</Badge>
+              <span style={{ flex: 1, color: T.ink }}>{w.name}</span>
+              <span style={{ color: T.faint }}>
+                {w.type}
+                {w.geo ? ` · ${w.geo}` : ""}
+              </span>
+              {!w.active && <Badge c={T.faint}>Inactive</Badge>}
             </div>
           ))}
         </div>
