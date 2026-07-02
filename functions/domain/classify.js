@@ -153,6 +153,14 @@ function parseClassificationResponse(rawJsonResponse, context) {
     status: "new",
   };
 
+  // Firestore rejects `undefined` values outright ("Cannot use undefined as a Firestore value" —
+  // hit in production on 2026-07-02 when Gemini legitimately returned entity:null for a signal
+  // matching no watchlist entry). Optional fields the AI didn't provide must be ABSENT from the
+  // doc, not present-with-undefined.
+  for (const key of Object.keys(item)) {
+    if (item[key] === undefined) delete item[key];
+  }
+
   return item;
 }
 

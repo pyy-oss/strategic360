@@ -83,6 +83,19 @@ describe("parseClassificationResponse — missing fields", () => {
     expect(item.status).toBe("new");
     expect(item.title.length).toBeLessThanOrEqual(80);
   });
+
+  it("never emits undefined-valued keys (Firestore rejects them — hit in production)", () => {
+    // Gemini legitimately returns entity:null when a signal matches no watchlist entry; the
+    // resulting doc must simply OMIT `ent` (and every other absent optional field), because
+    // Firestore throws 'Cannot use "undefined" as a Firestore value' on write otherwise.
+    const raw = { title: "Signal sans entité", entity: null };
+    const item = parseClassificationResponse(raw, {});
+    expect(item).not.toBeNull();
+    expect(Object.keys(item)).not.toContain("ent");
+    for (const [key, value] of Object.entries(item)) {
+      expect(value, `field "${key}" must not be undefined`).not.toBeUndefined();
+    }
+  });
 });
 
 describe("parseClassificationResponse — malformed input", () => {
