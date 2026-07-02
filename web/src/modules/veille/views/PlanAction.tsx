@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, ReferenceLine, Cell } from "recharts";
-import { T, fmt } from "../../../design/tokens";
+import { T } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge, Tip } from "../../../design/ui";
 import { quadrant } from "../data";
 import { useIsExec } from "../../../lib/rbac";
@@ -185,7 +185,7 @@ export function PlanAction() {
         <>
           <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 14 }}>
             <Card>
-              <Kpi label="Valeur attendue du plan" value={fmt(totEv * 1e6)} accent={T.emerald} sub="Σ des actions" />
+              <Kpi label="Score du plan (impact×urgence/effort)" value={`${totEv} pts`} accent={T.emerald} sub="Σ des scores d'action" />
             </Card>
             <Card>
               <Kpi label="À faire maintenant" value={now} accent={T.clay} sub="impact & urgence forts" />
@@ -195,7 +195,7 @@ export function PlanAction() {
             </Card>
           </div>
           <Card style={{ marginBottom: 14 }}>
-            <Eyebrow color={T.gold}>Matrice de priorisation — impact × urgence (taille = valeur attendue)</Eyebrow>
+            <Eyebrow color={T.gold}>Matrice de priorisation — impact × urgence (taille = score de priorité)</Eyebrow>
             <div style={{ height: 300, marginTop: 10 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{ left: 6, right: 20, top: 10, bottom: 20 }}>
@@ -239,7 +239,7 @@ export function PlanAction() {
                     <th style={{ padding: "6px 8px" }}>#</th>
                     <th style={{ padding: "6px 8px" }}>Action</th>
                     <th style={{ padding: "6px 8px" }}>Zone</th>
-                    <th style={{ padding: "6px 8px", textAlign: "right" }}>Val. att.</th>
+                    <th style={{ padding: "6px 8px", textAlign: "right" }}>Score</th>
                     <th style={{ padding: "6px 8px" }}>Porteur</th>
                     <th style={{ padding: "6px 8px" }}>Échéance</th>
                     <th style={{ padding: "6px 8px" }}>Statut</th>
@@ -258,7 +258,7 @@ export function PlanAction() {
                       <td style={{ padding: "8px" }}>
                         <Badge c={a.q.c}>{a.q.l}</Badge>
                       </td>
-                      <td style={{ padding: "8px", textAlign: "right", color: T.emerald, fontVariantNumeric: "tabular-nums" }}>{fmt(a.ev * 1e6)}</td>
+                      <td style={{ padding: "8px", textAlign: "right", color: T.emerald, fontVariantNumeric: "tabular-nums" }}>{a.ev} pts</td>
                       <td style={{ padding: "8px", color: T.dim }}>{a.owner}</td>
                       <td style={{ padding: "8px", color: T.dim }}>{a.ech}</td>
                       <td style={{ padding: "8px" }}>

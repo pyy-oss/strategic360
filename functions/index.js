@@ -22,7 +22,7 @@ const { parsePnl } = require("./parsers/pnl");
 const { parseLive } = require("./parsers/live");
 const { parseFacturationDf } = require("./parsers/facturationDf");
 const { parseFiche } = require("./parsers/fiche");
-const { computePorterForces, computeBcg, computeCasSummary, computePipeline, computeKris, computeValueAtStake } = require("./domain/quanti");
+const { computePorterForces, computeBcg, computeCasSummary, computePipeline, computeKris, computeValueAtStake, computePipelineInfluenced } = require("./domain/quanti");
 const { intelItemId } = require("./domain/ids");
 const { buildClassificationPrompt, parseClassificationResponse } = require("./domain/classify");
 const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
@@ -649,8 +649,25 @@ exports.aggregateVeille = onDocumentWritten({ document: "intelItems/{id}", regio
  * decisions/winLoss/initiatives/summaries.quanti are later roadmap phases (V4/V6).
  */
 async function computeVeilleExecSummary(db) {
-  const snap = await db.collection("intelItems").get();
+  const [snap, watchlistSnap, quantiSnap] = await Promise.all([
+    db.collection("intelItems").get(),
+    db.collection("intelWatchlist").get(),
+    db.doc("summaries/quanti").get(),
+  ]);
   const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const quanti = quantiSnap.exists ? quantiSnap.data() : null;
+
+  // Pipeline influencé par la veille (wired 2026-07-02, once the internal pipeline landed via
+  // nt360): value-at-stake carried by clients the veille tracks (watchlist) or has produced
+  // signals about (intelItems.ent). Pure matching logic in domain/quanti.js.
+  const entities = [
+    ...watchlistSnap.docs.map((d) => d.data().name),
+    ...items.map((i) => i.ent),
+  ].filter(Boolean);
+  const pipelineInfluenced = computePipelineInfluenced({
+    valueAtStake: quanti ? quanti.valueAtStake : null,
+    entities,
+  });
 
   const menacesTotal = items.filter((i) => i.stance === "threat").length;
   const menacesTraitees = items.filter((i) => i.stance === "threat" && i.status === "actioned").length;
@@ -669,9 +686,9 @@ async function computeVeilleExecSummary(db) {
       tti: null, // time-to-insight needs decision timestamps — V6 (decisions collection)
     },
     decisionsPending: [], // decisions collection is V6
-    porter: null, // summaries/quanti (Porter forces from internal data) is V4
+    porter: quanti ? quanti.porterForces ?? null : null, // from summaries/quanti (nt360 sync)
     winRateByCompetitor: {}, // winLoss collection is V6
-    pipelineInfluenced: 0, // needs opportunities/pipeline linkage — V4+
+    pipelineInfluenced, // veille-tracked clients' value-at-stake — see computation above
     threatsExposure,
     okrProgress: null, // initiatives collection is V6
     updatedAt: FieldValue.serverTimestamp(),

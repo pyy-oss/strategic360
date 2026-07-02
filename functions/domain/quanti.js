@@ -336,6 +336,8 @@ function computeValueAtStake({ opportunities } = {}) {
     .filter((o) => o && o.etape !== "Gagné" && o.etape !== "Perdu")
     .map((o) => ({
       n: o.client ? `${o.client}${o.idc ? " · " + o.idc : ""}` : o.idc || "Opportunité",
+      client: o.client || null, // kept separate from the display label so downstream matching
+      // (computePipelineInfluenced) doesn't have to parse `n` back apart
       type: "opp",
       p: etapeProbability(o.etape),
       impact: Math.round(Number(o.montant) || 0),
@@ -343,8 +345,72 @@ function computeValueAtStake({ opportunities } = {}) {
     .sort((a, b) => Math.abs(b.p * b.impact) - Math.abs(a.p * a.impact));
 }
 
+/* ------------------------------------------------------------------------------------------- *
+ * Pipeline influencé par la veille (Radar exécutif — "pipeline influencé", BUILD_KIT.md §6
+ * summaries/veille_exec.pipelineInfluenced). Left at 0 until 2026-07-02, when the internal
+ * pipeline became available via nt360 — now computed as the value-at-stake carried by clients
+ * that the veille actually tracks or has produced signals about.
+ * ------------------------------------------------------------------------------------------- */
+
+/** Uppercases, strips accents, collapses non-alphanumerics to single spaces — tolerant matching
+ * between free-typed entity names ("Orange CI") and pipeline client names ("ORANGE-CI SA"). */
+function normalizeEntityName(name) {
+  if (typeof name !== "string") return "";
+  return name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * computePipelineInfluenced({valueAtStake, entities}) -> number|null
+ * Σ `impact` (raw XOF) of value-at-stake rows whose `client` matches one of the veille's entities
+ * (intelWatchlist names + intelItems.ent values). Match = whole-token containment either way
+ * ("ORANGE CI" tokens appear in "ORANGE CI SA", or vice versa) — token-based to avoid substring
+ * false positives ("BAD" must be its own word, not part of another). Returns null (not 0) when
+ * there is no value-at-stake data at all — "no pipeline yet" must not render as "0 influencé".
+ */
+function computePipelineInfluenced({ valueAtStake, entities } = {}) {
+  if (!Array.isArray(valueAtStake) || valueAtStake.length === 0) return null;
+  const entityTokenSets = (Array.isArray(entities) ? entities : [])
+    .map(normalizeEntityName)
+    .filter(Boolean)
+    .map((n) => n.split(" "));
+  if (entityTokenSets.length === 0) return 0;
+
+  const containsSeq = (haystack, needle) => {
+    if (needle.length === 0 || needle.length > haystack.length) return false;
+    for (let i = 0; i + needle.length <= haystack.length; i++) {
+      let ok = true;
+      for (let j = 0; j < needle.length; j++) {
+        if (haystack[i + j] !== needle[j]) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) return true;
+    }
+    return false;
+  };
+
+  let total = 0;
+  for (const row of valueAtStake) {
+    const clientTokens = normalizeEntityName(row && row.client).split(" ").filter(Boolean);
+    if (clientTokens.length === 0) continue;
+    const matched = entityTokenSets.some(
+      (ent) => containsSeq(clientTokens, ent) || containsSeq(ent, clientTokens)
+    );
+    if (matched) total += Number(row.impact) || 0;
+  }
+  return Math.round(total);
+}
+
 module.exports = {
   computePorterForces,
+  computePipelineInfluenced,
+  normalizeEntityName,
   computeBcg,
   computeCasSummary,
   computePipeline,

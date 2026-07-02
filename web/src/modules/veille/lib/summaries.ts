@@ -61,7 +61,7 @@ export interface VeilleExecSummary {
   decisionsPending: unknown[]; // pending V6
   porter: unknown | null; // pending V4 (summaries/quanti)
   winRateByCompetitor: Record<string, number>; // pending V6 (winLoss)
-  pipelineInfluenced: number; // pending V4+ (opportunities/pipeline linkage)
+  pipelineInfluenced: number | null; // XOF — value-at-stake des clients suivis/cités par la veille (null tant que summaries/quanti est absent)
   threatsExposure: number; // placeholder metric (count of high-impact, unactioned threats)
   okrProgress: number | null; // pending V6 (initiatives)
   updatedAt?: Timestamp | FieldValue;

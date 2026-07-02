@@ -37,7 +37,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
         <Card>
           <Kpi
             label="Pipeline influencé par la veille"
-            value={exec ? fmt(exec.pipelineInfluenced) : "—"}
+            value={exec && exec.pipelineInfluenced != null ? fmt(exec.pipelineInfluenced) : "—"}
             accent={T.emerald}
             sub="opportunités issues de signaux"
           />
