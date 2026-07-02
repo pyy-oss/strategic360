@@ -1,0 +1,52 @@
+name: Seed data (propulse-business-87f7a / strategic360)
+
+# Manual trigger only. Runs functions/seed.js against the real "strategic360" named Firestore
+# database — idempotent (check-before-insert per collection, see seed.js's own comments), so
+# safe to re-run. Seeds: config/permissions (RBAC matrix), config/bootstrap, intelWatchlist,
+# intelSources, strategicThemes, initiatives, decisions, battlecards, winLoss, scenarios,
+# techRadar, innovationPortfolio, frameworks/diagnostic.
+#
+# Deliberately NOT seeded (by design, see seed.js comments): intelItems and actions — those are
+# meant to be populated through the app's own contribution forms (Fil de veille, Plan d'action),
+# not faked with sample data in a live database.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tapez "seed" pour confirmer'
+        required: true
+
+jobs:
+  seed:
+    name: Run seed.js
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Refuse to run without explicit confirmation
+        if: ${{ github.event.inputs.confirm != 'seed' }}
+        run: |
+          echo "Le champ 'confirm' doit valoir exactement 'seed'. Annulé."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install functions dependencies
+        working-directory: functions
+        run: npm install
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
+
+      - name: Run seed.js
+        working-directory: functions
+        env:
+          GCLOUD_PROJECT: propulse-business-87f7a
+          FIRESTORE_DATABASE_ID: strategic360
+        run: node seed.js
