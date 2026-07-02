@@ -1,17 +1,38 @@
 import React, { useState } from "react";
-import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, ReferenceLine, Cell } from "recharts";
-import { T, zColor, pct } from "../../../design/tokens";
-import { Eyebrow, Card, Badge, Tip } from "../../../design/ui";
-import { GE9, HORIZONS, SEGMENTS, OFFRES, GRAN } from "../data";
+import { T, fmt, pct } from "../../../design/tokens";
+import { Eyebrow, Card, Badge } from "../../../design/ui";
+import { useInitiatives } from "../lib/execution";
+import { useQuantiSummary } from "../lib/quanti";
 
-/** "Portefeuille & Croissance" (GE-McKinsey · Three Horizons · Granularité) — ported from `Portefeuille`. */
+/**
+ * "Portefeuille & Croissance" (GE-McKinsey · Three Horizons · Granularité).
+ *
+ * Granularité reads `summaries/quanti.granularite` (croissance CAS N vs N-1 par BU, XOF bruts —
+ * calculée depuis nt360). GE-McKinsey stays an explicit empty state: its market-attractiveness
+ * axis needs EXTERNAL market data no internal source provides (not an import problem — a data
+ * problem). Three Horizons is derived live from the `initiatives` collection, grouped by
+ * `horizon` (H1/H2/H3), so it fills up as initiatives are created in "Exécution & Décisions".
+ */
 export function Portefeuille() {
   const [c, setC] = useState("ge9");
+  const { initiatives, loading } = useInitiatives();
+  const { data: quanti } = useQuantiSummary();
+  const gran = quanti?.granularite ?? [];
+  const granMax = Math.max(...gran.map((g) => Math.abs(g.delta)), 1);
   const CN: [string, string][] = [
     ["ge9", "Matrice GE-McKinsey"],
     ["horizons", "Three Horizons"],
     ["gran", "Granularité de la croissance"],
   ];
+
+  const HMETA: { h: string; label: string; c: string; d: string }[] = [
+    { h: "H1", label: "Horizon 1 — Cœur", c: T.emerald, d: "Défendre et optimiser le cœur d'activité : efficacité, marge, fidélisation." },
+    { h: "H2", label: "Horizon 2 — Émergent", c: T.gold, d: "Construire les moteurs de croissance rentable de demain." },
+    { h: "H3", label: "Horizon 3 — Options", c: T.steel, d: "Créer des options de rupture et de nouveaux modèles." },
+  ];
+  const byHorizon = (h: string) => initiatives.filter((i) => i.horizon === h);
+  const total = initiatives.length;
+
   return (
     <div>
       <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 14 }}>
@@ -23,103 +44,99 @@ export function Portefeuille() {
       </div>
       {c === "ge9" && (
         <Card>
-          <Eyebrow color={T.emerald}>Matrice GE-McKinsey — attractivité du marché × position concurrentielle (taille = marge)</Eyebrow>
-          <div style={{ height: 340, marginTop: 10 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
-                <CartesianGrid stroke={T.line} />
-                <XAxis type="number" dataKey="str" name="Position" domain={[0, 3]} ticks={[1, 2]} tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Position concurrentielle →", position: "insideBottom", offset: -8, fill: T.dim, fontSize: 11 }} />
-                <YAxis type="number" dataKey="attr" name="Attractivité" domain={[0, 3]} ticks={[1, 2]} tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Attractivité du marché →", angle: -90, position: "insideLeft", fill: T.dim, fontSize: 11 }} />
-                <ZAxis type="number" dataKey="val" range={[300, 2400]} />
-                <ReferenceLine x={1} stroke={T.faint} />
-                <ReferenceLine x={2} stroke={T.faint} />
-                <ReferenceLine y={1} stroke={T.faint} />
-                <ReferenceLine y={2} stroke={T.faint} />
-                <Tooltip content={<Tip />} cursor={{ stroke: T.faint }} />
-                <Scatter data={[...GE9]}>
-                  {GE9.map((g, i) => (
-                    <Cell key={i} fill={zColor(g.attr, g.str)} />
-                  ))}
-                </Scatter>
-              </ScatterChart>
-            </ResponsiveContainer>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
-            {GE9.map((g, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
-                <span style={{ color: T.ink }}>
-                  <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 9, background: zColor(g.attr, g.str), marginRight: 6 }} />
-                  {g.n}
-                </span>
-                <Badge c={zColor(g.attr, g.str)}>{g.z}</Badge>
-              </div>
-            ))}
+          <Eyebrow color={T.emerald}>Matrice GE-McKinsey — attractivité du marché × position concurrentielle</Eyebrow>
+          <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>
+            Nécessite un axe « attractivité du marché » (donnée externe : taille/croissance des marchés adressés) qu'aucune
+            source interne ne fournit — la position concurrentielle interne est déjà couverte par le BCG (vue Cadres).
           </div>
         </Card>
       )}
       {c === "horizons" && (
         <div>
-          <Card style={{ marginBottom: 14 }}>
-            <Eyebrow color={T.gold}>Three Horizons — allocation de la valeur & de l'ambition</Eyebrow>
-            <div style={{ display: "flex", height: 26, borderRadius: 6, overflow: "hidden", marginTop: 14 }}>
-              {HORIZONS.map((h, i) => (
-                <div key={i} style={{ width: `${h.share * 100}%`, background: h.c, display: "grid", placeItems: "center", fontSize: 11, color: "#0E1613", fontWeight: 700 }}>
-                  {pct(h.share)}
+          {!loading && total === 0 && (
+            <Card>
+              <Eyebrow color={T.gold}>Three Horizons — allocation de l'ambition</Eyebrow>
+              <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>
+                À alimenter via les initiatives (Exécution & Décisions) — chaque initiative porte un horizon H1/H2/H3.
+              </div>
+            </Card>
+          )}
+          {total > 0 && (
+            <div>
+              <Card style={{ marginBottom: 14 }}>
+                <Eyebrow color={T.gold}>Three Horizons — répartition des initiatives</Eyebrow>
+                <div style={{ display: "flex", height: 26, borderRadius: 6, overflow: "hidden", marginTop: 14 }}>
+                  {HMETA.filter((h) => byHorizon(h.h).length > 0).map((h) => {
+                    const share = byHorizon(h.h).length / total;
+                    return (
+                      <div key={h.h} style={{ width: `${share * 100}%`, background: h.c, display: "grid", placeItems: "center", fontSize: 11, color: "#0E1613", fontWeight: 700 }}>
+                        {pct(share)}
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-          </Card>
-          <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
-            {HORIZONS.map((h, i) => (
-              <Card key={i} style={{ borderTop: `3px solid ${h.c}` }}>
-                <Eyebrow color={h.c}>{h.h}</Eyebrow>
-                <div style={{ marginTop: 8, fontSize: 12.5, color: T.dim, lineHeight: 1.55 }}>{h.d}</div>
-                <ul style={{ margin: "10px 0 0", paddingLeft: 16, fontSize: 12, color: T.dim, lineHeight: 1.7 }}>
-                  {h.items.map((x, j) => (
-                    <li key={j}>{x}</li>
-                  ))}
-                </ul>
               </Card>
-            ))}
-          </div>
+              <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
+                {HMETA.map((h) => {
+                  const items = byHorizon(h.h);
+                  return (
+                    <Card key={h.h} style={{ borderTop: `3px solid ${h.c}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                        <Eyebrow color={h.c}>{h.label}</Eyebrow>
+                        <Badge c={h.c}>{items.length}</Badge>
+                      </div>
+                      <div style={{ marginTop: 8, fontSize: 12.5, color: T.dim, lineHeight: 1.55 }}>{h.d}</div>
+                      {items.length === 0 ? (
+                        <div style={{ marginTop: 10, fontSize: 12, color: T.faint }}>Aucune initiative sur cet horizon.</div>
+                      ) : (
+                        <ul style={{ margin: "10px 0 0", paddingLeft: 16, fontSize: 12, color: T.dim, lineHeight: 1.7 }}>
+                          {items.map((it) => (
+                            <li key={it.id}>
+                              {it.title} <span style={{ color: T.faint }}>({pct(it.progress)})</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
       {c === "gran" && (
         <Card>
-          <Eyebrow color={T.steel}>Granularité de la croissance — où gagner (segment × offre)</Eyebrow>
-          <div style={{ marginTop: 14, overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: "left", padding: "6px 8px", color: T.faint, fontSize: 11 }}>Segment \ Offre</th>
-                  {OFFRES.map((o) => (
-                    <th key={o} style={{ padding: "6px 8px", color: T.faint, fontSize: 11 }}>
-                      {o}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {SEGMENTS.map((s) => (
-                  <tr key={s}>
-                    <td style={{ padding: "6px 8px", color: T.ink, fontWeight: 600 }}>{s}</td>
-                    {OFFRES.map((o) => {
-                      const v = GRAN[s][o];
-                      const c2 = v >= 5 ? T.emerald : v >= 4 ? T.gold : v >= 3 ? T.steel : T.faint;
-                      return (
-                        <td key={o} style={{ padding: "4px" }}>
-                          <div style={{ background: c2 + "22", border: `1px solid ${c2}55`, borderRadius: 7, textAlign: "center", padding: "10px 0", color: c2, fontWeight: 700, fontFamily: "'Bricolage Grotesque'" }}>{v}</div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Eyebrow color={T.steel}>Granularité de la croissance — où gagner (par BU, CAS N vs N-1)</Eyebrow>
+            {gran.length > 0 && <Badge c={T.emerald}>Temps réel (nt360)</Badge>}
           </div>
-          <div style={{ marginTop: 10, fontSize: 12, color: T.dim }}>
-            Score attractivité × position (1-5). Les cellules <b style={{ color: T.emerald }}>5</b> (ex. Cyber & Managed dans les banques) sont les <b style={{ color: T.ink }}>micro-batailles prioritaires</b> — concentrer les ressources là où l'on peut gagner.
-          </div>
+          {gran.length === 0 && (
+            <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente de la première synchronisation interne (nt360).</div>
+          )}
+          {gran.length > 0 && (
+            <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+              {gran.map((g) => (
+                <div key={g.seg}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}>
+                    <span style={{ color: T.ink, fontWeight: 600 }}>
+                      {g.seg} <span style={{ color: T.faint, fontWeight: 400 }}>· {fmt(g.casN1)} → {fmt(g.casN)}</span>
+                    </span>
+                    <span style={{ color: g.delta >= 0 ? T.emerald : T.clay, fontVariantNumeric: "tabular-nums" }}>
+                      {g.delta >= 0 ? "+" : ""}
+                      {fmt(g.delta)}
+                    </span>
+                  </div>
+                  <div style={{ height: 7, background: T.panel2, borderRadius: 4 }}>
+                    <div style={{ width: `${(Math.abs(g.delta) / granMax) * 100}%`, height: "100%", background: g.delta >= 0 ? T.emerald : T.clay, borderRadius: 4 }} />
+                  </div>
+                </div>
+              ))}
+              <div style={{ fontSize: 11.5, color: T.faint, marginTop: 4 }}>
+                Segment = BU (un axe segment × offre plus fin nécessitera un tag « offre » côté données internes). Montants en FCFA.
+              </div>
+            </div>
+          )}
         </Card>
       )}
     </div>

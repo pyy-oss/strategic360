@@ -1,14 +1,226 @@
-import React from "react";
+import React, { useState } from "react";
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { T, RING, QUAD_TECH, pct } from "../../../design/tokens";
-import { Eyebrow, Card, Tip } from "../../../design/ui";
-import { RADAR_TECH, INNOV } from "../data";
+import { Eyebrow, Card, Tip, Badge } from "../../../design/ui";
+import { useClaims } from "../../../lib/rbac";
+import {
+  createInnovationBet,
+  createTechRadarBlip,
+  riceScore,
+  useInnovationPortfolio,
+  useTechRadar,
+  type TechRadarMomentum,
+  type TechRadarRing,
+} from "../lib/innovation";
 
-/** "Tech Radar & Innovation" — ported from `Innovation` in the maquette. */
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  background: T.panel2,
+  border: `1px solid ${T.line}`,
+  borderRadius: 8,
+  padding: "7px 10px",
+  color: T.ink,
+  fontSize: 12.5,
+  fontFamily: "inherit",
+};
+const labelStyle: React.CSSProperties = { fontSize: 11, color: T.faint, display: "block", marginBottom: 4 };
+
+/** "Ajouter une technologie" — gated on role ∈ {direction, innovation} (matches
+ * firestore.rules' techRadar write gate), same panel convention as Execution.tsx. */
+function NewBlipPanel({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [quadrant, setQuadrant] = useState(0);
+  const [ring, setRing] = useState<TechRadarRing>("evaluer");
+  const [momentum, setMomentum] = useState<TechRadarMomentum>("→");
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) {
+      setErr("Le nom est requis.");
+      return;
+    }
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await createTechRadarBlip({ name: name.trim(), quadrant, ring, momentum, linkedItems: [] });
+      onClose();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Échec de l'enregistrement.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card style={{ marginBottom: 14, borderColor: T.gold }}>
+      <form onSubmit={submit}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Ajouter une technologie</span>
+          <button type="button" className="pill" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+        <div className="g4" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={labelStyle}>Nom *</label>
+            <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} required />
+          </div>
+          <div>
+            <label style={labelStyle}>Quadrant</label>
+            <select style={inputStyle} value={quadrant} onChange={(e) => setQuadrant(Number(e.target.value))}>
+              {QUAD_TECH.map((q, i) => (
+                <option key={i} value={i}>
+                  {q}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Anneau</label>
+            <select style={inputStyle} value={ring} onChange={(e) => setRing(e.target.value as TechRadarRing)}>
+              {(["adopter", "essayer", "evaluer", "suspendre"] as TechRadarRing[]).map((r) => (
+                <option key={r} value={r}>
+                  {RING[r].l}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Momentum</label>
+            <select style={inputStyle} value={momentum} onChange={(e) => setMomentum(e.target.value as TechRadarMomentum)}>
+              <option value="↑">↑</option>
+              <option value="→">→</option>
+              <option value="↓">↓</option>
+            </select>
+          </div>
+        </div>
+        {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
+        <button type="submit" className="pill on" disabled={submitting}>
+          {submitting ? "Enregistrement…" : "Enregistrer la technologie"}
+        </button>
+      </form>
+    </Card>
+  );
+}
+
+/** "Ajouter un pari" — innovationPortfolio contribution (RICE computed at write time). */
+function NewBetPanel({ onClose }: { onClose: () => void }) {
+  const [form, setForm] = useState({ title: "", reach: 5, impact: 5, confidence: 0.7, effort: 5, stage: "idée", owner: "", horizon: "H2" });
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.title.trim()) {
+      setErr("Le titre est requis.");
+      return;
+    }
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await createInnovationBet({
+        title: form.title.trim(),
+        reach: form.reach,
+        impact: form.impact,
+        confidence: form.confidence,
+        effort: form.effort,
+        stage: form.stage,
+        owner: form.owner.trim() || undefined,
+        horizon: form.horizon,
+      });
+      onClose();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Échec de l'enregistrement.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card style={{ marginBottom: 14, borderColor: T.gold }}>
+      <form onSubmit={submit}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Ajouter un pari d'innovation</span>
+          <button type="button" className="pill" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+        <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 10 }}>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={labelStyle}>Titre *</label>
+            <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} required />
+          </div>
+          <div>
+            <label style={labelStyle}>Reach (1-10)</label>
+            <input type="number" min={1} max={10} style={inputStyle} value={form.reach} onChange={(e) => set("reach", Number(e.target.value))} />
+          </div>
+          <div>
+            <label style={labelStyle}>Impact (1-10)</label>
+            <input type="number" min={1} max={10} style={inputStyle} value={form.impact} onChange={(e) => set("impact", Number(e.target.value))} />
+          </div>
+          <div>
+            <label style={labelStyle}>Confiance (0-1)</label>
+            <input type="number" min={0} max={1} step={0.05} style={inputStyle} value={form.confidence} onChange={(e) => set("confidence", Number(e.target.value))} />
+          </div>
+          <div>
+            <label style={labelStyle}>Effort (1-10)</label>
+            <input type="number" min={1} max={10} style={inputStyle} value={form.effort} onChange={(e) => set("effort", Number(e.target.value))} />
+          </div>
+          <div>
+            <label style={labelStyle}>Stade</label>
+            <select style={inputStyle} value={form.stage} onChange={(e) => set("stage", e.target.value)}>
+              {["idée", "exploration", "poc", "pilote", "scale"].map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Porteur</label>
+            <input style={inputStyle} value={form.owner} onChange={(e) => set("owner", e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Horizon</label>
+            <select style={inputStyle} value={form.horizon} onChange={(e) => set("horizon", e.target.value)}>
+              <option value="H1">H1</option>
+              <option value="H2">H2</option>
+              <option value="H3">H3</option>
+            </select>
+          </div>
+        </div>
+        {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
+        <button type="submit" className="pill on" disabled={submitting}>
+          {submitting ? "Enregistrement…" : "Enregistrer le pari"}
+        </button>
+      </form>
+    </Card>
+  );
+}
+
+/**
+ * "Tech Radar & Innovation" — reads the live Firestore `techRadar` + `innovationPortfolio`
+ * collections only (no sample fallback), with contribution forms gated on role ∈
+ * {direction, innovation} (the server-side write gate for both collections).
+ */
 export function Innovation() {
   const R = 150,
     CX = 170,
     CY = 170;
+
+  const { blips: liveBlips, loading: loadingRadar } = useTechRadar();
+  const { bets: liveBets, loading: loadingInnov } = useInnovationPortfolio();
+  const { role } = useClaims();
+  const canContribute = role === "direction" || role === "innovation";
+  const [showBlipForm, setShowBlipForm] = useState(false);
+  const [showBetForm, setShowBetForm] = useState(false);
+
+  const RADAR_TECH = liveBlips.map((b) => ({ n: b.name, quad: b.quadrant, ring: b.ring, mom: b.momentum }));
+  const INNOV = liveBets.map((b) => ({ n: b.title, reach: b.reach, impact: b.impact, conf: b.confidence, effort: b.effort }));
+
   const quadCount: Record<number, number> = {};
   RADAR_TECH.forEach((b) => {
     quadCount[b.quad] = (quadCount[b.quad] || 0) + 1;
@@ -23,80 +235,116 @@ export function Innovation() {
     const rad = RING[b.ring].r * R;
     return { ...b, x: CX + rad * Math.cos(a), y: CY - rad * Math.sin(a) };
   });
-  const rice = INNOV.map((o) => ({ ...o, rice: Math.round((o.reach * o.impact * o.conf) / o.effort * 10) / 10 }));
+  const rice = INNOV.map((o) => ({ ...o, rice: riceScore({ reach: o.reach, impact: o.impact, confidence: o.conf, effort: o.effort }) }));
   return (
     <div>
+      {showBlipForm && canContribute && <NewBlipPanel onClose={() => setShowBlipForm(false)} />}
+      {showBetForm && canContribute && <NewBetPanel onClose={() => setShowBetForm(false)} />}
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <Card>
-          <Eyebrow color={T.plum}>Tech Radar</Eyebrow>
-          <svg viewBox="0 0 340 360" style={{ width: "100%", height: 320, marginTop: 6 }}>
-            {["suspendre", "evaluer", "essayer", "adopter"].map((r) => (
-              <circle key={r} cx={CX} cy={CY} r={RING[r].r * R} fill="none" stroke={T.line} />
-            ))}
-            <line x1={CX - R} y1={CY} x2={CX + R} y2={CY} stroke={T.line} />
-            <line x1={CX} y1={CY - R} x2={CX} y2={CY + R} stroke={T.line} />
-            {QUAD_TECH.map((q, i) => {
-              const a = ((i * 90 + 45) * Math.PI) / 180;
-              return (
-                <text key={i} x={CX + (R + 8) * Math.cos(a)} y={CY - (R + 8) * Math.sin(a)} fill={T.faint} fontSize="10" textAnchor="middle">
-                  {q}
-                </text>
-              );
-            })}
-            {blips.map((b, i) => (
-              <g key={i}>
-                <circle cx={b.x} cy={b.y} r="5" fill={RING[b.ring].c} />
-                <text x={b.x + 7} y={b.y + 3} fill={T.dim} fontSize="8.5">
-                  {b.n}
-                </text>
-              </g>
-            ))}
-          </svg>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, justifyContent: "center" }}>
-            {Object.keys(RING).map((r) => (
-              <span key={r} style={{ color: T.dim }}>
-                <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 9, background: RING[r].c, marginRight: 4 }} />
-                {RING[r].l}
-              </span>
-            ))}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Eyebrow color={T.plum}>Tech Radar</Eyebrow>
+            {canContribute && (
+              <button className="pill on" onClick={() => setShowBlipForm((v) => !v)}>
+                + Ajouter une technologie
+              </button>
+            )}
           </div>
+          {loadingRadar && liveBlips.length === 0 && <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>Chargement…</div>}
+          {!loadingRadar && liveBlips.length === 0 && (
+            <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>Tech Radar vide — ajoutez des technologies.</div>
+          )}
+          {liveBlips.length > 0 && (
+            <>
+              <svg viewBox="0 0 340 360" style={{ width: "100%", height: 320, marginTop: 6 }}>
+                {["suspendre", "evaluer", "essayer", "adopter"].map((r) => (
+                  <circle key={r} cx={CX} cy={CY} r={RING[r].r * R} fill="none" stroke={T.line} />
+                ))}
+                <line x1={CX - R} y1={CY} x2={CX + R} y2={CY} stroke={T.line} />
+                <line x1={CX} y1={CY - R} x2={CX} y2={CY + R} stroke={T.line} />
+                {QUAD_TECH.map((q, i) => {
+                  const a = ((i * 90 + 45) * Math.PI) / 180;
+                  return (
+                    <text key={i} x={CX + (R + 8) * Math.cos(a)} y={CY - (R + 8) * Math.sin(a)} fill={T.faint} fontSize="10" textAnchor="middle">
+                      {q}
+                    </text>
+                  );
+                })}
+                {blips.map((b, i) => (
+                  <g key={i}>
+                    <circle cx={b.x} cy={b.y} r="5" fill={RING[b.ring].c} />
+                    <text x={b.x + 7} y={b.y + 3} fill={T.dim} fontSize="8.5">
+                      {b.n}
+                    </text>
+                  </g>
+                ))}
+              </svg>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, justifyContent: "center" }}>
+                {Object.keys(RING).map((r) => (
+                  <span key={r} style={{ color: T.dim }}>
+                    <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 9, background: RING[r].c, marginRight: 4 }} />
+                    {RING[r].l}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
         </Card>
         <Card>
-          <Eyebrow color={T.emerald}>Portefeuille d'innovation (RICE)</Eyebrow>
-          <div style={{ height: 250, marginTop: 10 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart margin={{ left: 6, right: 16, top: 10, bottom: 16 }}>
-                <CartesianGrid stroke={T.line} />
-                <XAxis type="number" dataKey="effort" name="Effort" domain={[0, 10]} tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Effort →", position: "insideBottom", offset: -6, fill: T.dim, fontSize: 11 }} />
-                <YAxis type="number" dataKey="impact" name="Impact" domain={[0, 10]} tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Impact →", angle: -90, position: "insideLeft", fill: T.dim, fontSize: 11 }} />
-                <ZAxis type="number" dataKey="rice" range={[120, 900]} />
-                <Tooltip content={<Tip />} cursor={{ stroke: T.faint }} />
-                <Scatter data={rice}>
-                  {rice.map((o, i) => (
-                    <Cell key={i} fill={o.effort <= o.impact ? T.emerald : T.gold} />
-                  ))}
-                </Scatter>
-              </ScatterChart>
-            </ResponsiveContainer>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Eyebrow color={T.emerald}>Portefeuille d'innovation (RICE)</Eyebrow>
+            {canContribute && (
+              <button className="pill on" onClick={() => setShowBetForm((v) => !v)}>
+                + Ajouter un pari
+              </button>
+            )}
           </div>
-          <div style={{ marginTop: 6, fontSize: 11.5, color: T.faint }}>Bulle = score RICE. Quadrant haut-gauche (impact fort / effort faible) = à lancer en priorité.</div>
+          {loadingInnov && liveBets.length === 0 && <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>Chargement…</div>}
+          {!loadingInnov && liveBets.length === 0 && (
+            <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>Portefeuille d'innovation vide.</div>
+          )}
+          {liveBets.length > 0 && (
+            <>
+              <div style={{ height: 250, marginTop: 10 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ left: 6, right: 16, top: 10, bottom: 16 }}>
+                    <CartesianGrid stroke={T.line} />
+                    <XAxis type="number" dataKey="effort" name="Effort" domain={[0, 10]} tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Effort →", position: "insideBottom", offset: -6, fill: T.dim, fontSize: 11 }} />
+                    <YAxis type="number" dataKey="impact" name="Impact" domain={[0, 10]} tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Impact →", angle: -90, position: "insideLeft", fill: T.dim, fontSize: 11 }} />
+                    <ZAxis type="number" dataKey="rice" range={[120, 900]} />
+                    <Tooltip content={<Tip />} cursor={{ stroke: T.faint }} />
+                    <Scatter data={rice}>
+                      {rice.map((o, i) => (
+                        <Cell key={i} fill={o.effort <= o.impact ? T.emerald : T.gold} />
+                      ))}
+                    </Scatter>
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ marginTop: 6, fontSize: 11.5, color: T.faint }}>Bulle = score RICE. Quadrant haut-gauche (impact fort / effort faible) = à lancer en priorité.</div>
+            </>
+          )}
         </Card>
       </div>
       <Card>
         <Eyebrow color={T.emerald}>Paris d'innovation — priorisation RICE</Eyebrow>
-        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-          {[...rice]
-            .sort((a, b) => b.rice - a.rice)
-            .map((o, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, padding: "7px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
-                <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, color: T.emerald, minWidth: 40 }}>{o.rice}</div>
-                <span style={{ flex: 1, color: T.ink }}>{o.n}</span>
-                <span style={{ color: T.faint }}>
-                  R{o.reach}·I{o.impact}·C{pct(o.conf)}·E{o.effort}
-                </span>
-              </div>
-            ))}
-        </div>
+        {rice.length === 0 ? (
+          <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>Portefeuille d'innovation vide.</div>
+        ) : (
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            {[...rice]
+              .sort((a, b) => b.rice - a.rice)
+              .map((o, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, padding: "7px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
+                  <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, color: T.emerald, minWidth: 40 }}>{o.rice}</div>
+                  <span style={{ flex: 1, color: T.ink }}>{o.n}</span>
+                  <span style={{ color: T.faint }}>
+                    R{o.reach}·I{o.impact}·C{pct(o.conf)}·E{o.effort}
+                  </span>
+                </div>
+              ))}
+          </div>
+        )}
       </Card>
     </div>
   );

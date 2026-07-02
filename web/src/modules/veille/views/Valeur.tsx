@@ -1,66 +1,53 @@
 import React from "react";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { T, fmt, pct, AMBITION_LABEL } from "../../../design/tokens";
-import { Eyebrow, Card, Kpi, Tip } from "../../../design/ui";
-import { BRIDGE, VAS } from "../data";
+import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
+import { useQuantiSummary } from "../lib/quanti";
 
-/** "Création de valeur" (value bridge · value-at-stake · driver tree) — ported from `Valeur`. */
+/**
+ * "Création de valeur" (value bridge · value-at-stake · driver tree).
+ *
+ * Value-at-stake reads `summaries/quanti.valueAtStake` (open opportunities from the internal
+ * pipeline — nt360 since 2026-07-02, or a LIVE Excel import — `ev = probabilité-étape × montant`)
+ * — an explicit empty state is shown until the first sync lands. The "pont de valeur" waterfall
+ * needs a lever-level decomposition (current CAS → ambition) that no internal source provides
+ * yet, so it too is an empty state — no illustrative numbers are rendered.
+ *
+ * UNITS (audit affichage montants, 2026-07-02): `valueAtStake[].impact` is RAW XOF (opportunity
+ * `montant` passed through by computeValueAtStake) — so `ev` is raw XOF too and is formatted with
+ * `fmt(ev)` directly. The maquette's `* 1e6` convention only applies to M-FCFA domains (SIM_BASE).
+ */
 export function Valeur() {
-  let cum = 0;
-  const wf = BRIDGE.map((b) => {
-    if (b.kind === "start" || b.kind === "end") {
-      cum = b.v as number;
-      return { name: b.name, base: 0, pos: b.v as number, neg: 0, total: b.v as number, kind: b.kind };
-    }
-    const d = b.d as number;
-    const base = d >= 0 ? cum : cum + d;
-    cum += d;
-    return { name: b.name, base, pos: d >= 0 ? d : 0, neg: d < 0 ? -d : 0, total: cum, d };
-  });
-  const vas = [...VAS].map((v) => ({ ...v, ev: Math.round(v.p * v.impact) })).sort((a, b) => Math.abs(b.ev) - Math.abs(a.ev));
+  const { data: quanti } = useQuantiSummary();
+  const liveVas = quanti?.valueAtStake && quanti.valueAtStake.length > 0 ? quanti.valueAtStake : null;
+  const vas = (liveVas ?? []).map((v) => ({ ...v, ev: Math.round(v.p * v.impact) })).sort((a, b) => Math.abs(b.ev) - Math.abs(a.ev));
   const evOpp = vas.filter((v) => v.type === "opp").reduce((s, v) => s + v.ev, 0);
-  const evThreat = vas.filter((v) => v.type === "threat").reduce((s, v) => s + v.ev, 0);
+  const evThreat = vas.filter((v) => (v.type as string) === "threat").reduce((s, v) => s + v.ev, 0);
   return (
     <div>
       <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 14 }}>
         <Card>
-          <Kpi label="Valeur attendue — opportunités" value={fmt(evOpp * 1e6)} accent={T.emerald} sub="Σ (proba × impact)" />
+          <Kpi label="Valeur attendue — opportunités" value={liveVas ? fmt(evOpp) : "—"} accent={T.emerald} sub="Σ (proba × impact)" />
         </Card>
         <Card>
-          <Kpi label="Valeur à risque — menaces" value={fmt(evThreat * 1e6)} accent={T.clay} sub="Σ (proba × impact)" />
+          <Kpi label="Valeur à risque — menaces" value={liveVas ? fmt(evThreat) : "—"} accent={T.clay} sub="Σ (proba × impact)" />
         </Card>
         <Card>
-          <Kpi label="Valeur nette en jeu" value={fmt((evOpp + evThreat) * 1e6)} accent={T.gold} sub="net at stake" />
+          <Kpi label="Valeur nette en jeu" value={liveVas ? fmt(evOpp + evThreat) : "—"} accent={T.gold} sub="net at stake" />
         </Card>
       </div>
       <Card style={{ marginBottom: 14 }}>
         <Eyebrow color={T.gold}>Pont de création de valeur — {AMBITION_LABEL}</Eyebrow>
-        <div style={{ height: 280, marginTop: 10 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={wf} margin={{ left: 0, right: 10, top: 10, bottom: 30 }}>
-              <CartesianGrid stroke={T.line} vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: T.dim, fontSize: 10 }} axisLine={false} tickLine={false} interval={0} angle={-15} textAnchor="end" height={60} />
-              <YAxis tickFormatter={(v) => fmt(v * 1e6)} tick={{ fill: T.faint, fontSize: 10 }} axisLine={false} tickLine={false} />
-              <Tooltip content={<Tip />} cursor={{ fill: T.panel2 }} />
-              <Bar dataKey="base" stackId="a" fill="transparent" />
-              <Bar dataKey="pos" stackId="a" radius={[3, 3, 0, 0]}>
-                {wf.map((r, i) => (
-                  <Cell key={i} fill={r.kind === "start" ? T.steel : r.kind === "end" ? T.gold : T.emerald} />
-                ))}
-              </Bar>
-              <Bar dataKey="neg" stackId="a" radius={[3, 3, 0, 0]}>
-                {wf.map((_r, i) => (
-                  <Cell key={i} fill={T.clay} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <div style={{ fontSize: 11.5, color: T.faint }}>En M FCFA (illustratif). Vert = leviers de croissance, rouge = pertes/menaces, or = ambition cible.</div>
+        <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>Pont de valeur — en attente des imports internes.</div>
       </Card>
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <Card>
-          <Eyebrow color={T.emerald}>Value-at-stake (proba × impact)</Eyebrow>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Eyebrow color={T.emerald}>Value-at-stake (proba × impact)</Eyebrow>
+            {liveVas && <Badge c={T.emerald}>Temps réel (pipeline interne nt360)</Badge>}
+          </div>
+          {!liveVas && (
+            <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente de la première synchronisation interne (nt360).</div>
+          )}
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
             {vas.map((v, i) => (
               <div key={i}>
@@ -70,11 +57,11 @@ export function Valeur() {
                   </span>
                   <span style={{ color: v.ev >= 0 ? T.emerald : T.clay, fontVariantNumeric: "tabular-nums" }}>
                     {v.ev >= 0 ? "+" : ""}
-                    {fmt(v.ev * 1e6)}
+                    {fmt(v.ev)}
                   </span>
                 </div>
                 <div style={{ height: 6, background: T.panel2, borderRadius: 4 }}>
-                  <div style={{ width: `${Math.min((Math.abs(v.ev) / 2000) * 100, 100)}%`, height: "100%", background: v.ev >= 0 ? T.emerald : T.clay, borderRadius: 4 }} />
+                  <div style={{ width: `${Math.min((Math.abs(v.ev) / Math.max(...vas.map((x) => Math.abs(x.ev)), 1)) * 100, 100)}%`, height: "100%", background: v.ev >= 0 ? T.emerald : T.clay, borderRadius: 4 }} />
                 </div>
               </div>
             ))}

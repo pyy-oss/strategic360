@@ -2,7 +2,9 @@ import React from "react";
 import { T } from "../../../design/tokens";
 import { AX, IMP, STANCE, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
-import { SIGNAUX, KPIS, DECISIONS } from "../data";
+import { useDecisions } from "../lib/execution";
+import { useIntelItems, useWatchlist } from "../lib/intel";
+import { useVeilleExecSummary } from "../lib/summaries";
 
 export interface RadarExecutifProps {
   lens: string;
@@ -11,10 +13,14 @@ export interface RadarExecutifProps {
 
 /** "Radar exécutif" — ported from `Radar_` in the maquette (renamed to avoid clashing with Recharts' Radar). */
 export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
-  const sorted = [...SIGNAUX].sort((a, b) => b.score - a.score);
+  const { entries: watchlist, loading: watchLoading } = useWatchlist();
+  const { decisions, loading: decisionsLoading } = useDecisions();
+  const { items } = useIntelItems();
+  const { data: exec } = useVeilleExecSummary();
+  const sorted = [...items].sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
   const menaces = sorted.filter((s) => s.stance === "threat");
   const opps = sorted.filter((s) => s.stance === "opportunity");
-  const cell = (imp: string, st: string) => SIGNAUX.filter((s) => s.imp === imp && s.stance === st).length;
+  const cell = (imp: string, st: string) => items.filter((s) => s.impact === imp && s.stance === st).length;
   const intro = (
     {
       dg: "Situation, menaces et opportunités majeures, décisions en attente — l'essentiel pour arbitrer.",
@@ -29,16 +35,31 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
       </div>
       <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 14 }}>
         <Card>
-          <Kpi label="Pipeline influencé par la veille" value={fmt(KPIS.pipelineInf)} accent={T.emerald} sub="opportunités issues de signaux" />
+          <Kpi
+            label="Pipeline influencé par la veille"
+            value={exec && exec.pipelineInfluenced != null ? fmt(exec.pipelineInfluenced) : "—"}
+            accent={T.emerald}
+            sub="opportunités issues de signaux"
+          />
         </Card>
         <Card>
-          <Kpi label="Menaces (traitées / total)" value={KPIS.menacesTraitees + " / " + KPIS.menaces} accent={T.clay} sub="couverture décisionnelle" />
+          <Kpi
+            label="Menaces (traitées / total)"
+            value={exec ? `${exec.boardKpis.menacesTraitees} / ${exec.boardKpis.menacesTotal}` : "—"}
+            accent={T.clay}
+            sub="couverture décisionnelle"
+          />
         </Card>
         <Card>
-          <Kpi label="Taux de victoire" value={pct(KPIS.winRate)} accent={T.gold} sub="vs concurrents (win/loss)" />
+          <Kpi label="Taux de victoire" value="—" accent={T.gold} sub="vs concurrents (win/loss) — à venir V6" />
         </Card>
         <Card>
-          <Kpi label="Avancement OKR" value={pct(KPIS.okr)} accent={T.steel} sub="initiatives stratégiques" />
+          <Kpi
+            label="Avancement OKR"
+            value={exec && exec.okrProgress != null ? pct(exec.okrProgress) : "—"}
+            accent={T.steel}
+            sub="initiatives stratégiques — à venir V6"
+          />
         </Card>
       </div>
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 14, marginBottom: 14 }}>
@@ -47,13 +68,13 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
             {sorted.slice(0, 6).map((s) => (
               <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${STANCE[s.stance].c}` }}>
-                <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16, color: STANCE[s.stance].c, minWidth: 30, textAlign: "center" }}>{s.score}</div>
+                <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16, color: STANCE[s.stance].c, minWidth: 30, textAlign: "center" }}>{s.priorityScore ?? "—"}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.t}</div>
+                  <div style={{ fontSize: 12.5, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title}</div>
                   <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
-                    <Badge c={AX[s.ax].c}>{AX[s.ax].l}</Badge>
-                    <Badge c={IMP[s.imp].c}>{IMP[s.imp].l}</Badge>
-                    <Badge c={T.faint}>{s.src}</Badge>
+                    <Badge c={AX[s.axis]?.c}>{AX[s.axis]?.l ?? s.axis}</Badge>
+                    <Badge c={IMP[s.impact]?.c}>{IMP[s.impact]?.l ?? s.impact}</Badge>
+                    <Badge c={T.faint}>{s.sourceRating}</Badge>
                   </div>
                 </div>
               </div>
@@ -82,20 +103,52 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
             ))}
           </div>
           <div style={{ marginTop: 14, fontSize: 12, color: T.dim }}>
-            {opps.length} opportunités · {menaces.length} menaces sur {SIGNAUX.length} signaux actifs.
+            {opps.length} opportunités · {menaces.length} menaces sur {items.length} signaux actifs.
           </div>
         </Card>
       </div>
       <Card>
         <Eyebrow color={T.steel}>Décisions en attente / récentes</Eyebrow>
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-          {DECISIONS.map((d, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, padding: "7px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
+          {decisionsLoading && decisions.length === 0 && (
+            <div style={{ fontSize: 12, color: T.faint }}>Chargement des décisions…</div>
+          )}
+          {!decisionsLoading && decisions.length === 0 && (
+            <div style={{ fontSize: 12, color: T.faint }}>Aucune décision enregistrée pour l'instant.</div>
+          )}
+          {decisions.map((d, i) => (
+            <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, padding: "7px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
               <Badge c={d.statut === "Actée" ? T.emerald : d.statut === "En cours" ? T.gold : T.clay}>{d.statut}</Badge>
-              <span style={{ flex: 1, color: T.ink }}>{d.t}</span>
+              <span style={{ flex: 1, color: T.ink }}>{d.title}</span>
               <span style={{ color: T.faint }}>
-                {d.by} · {d.lien}
+                {d.decidedBy}
+                {d.linkedItems?.length ? ` · ${d.linkedItems.join(", ")}` : ""}
               </span>
+            </div>
+          ))}
+        </div>
+      </Card>
+      <Card style={{ marginTop: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Eyebrow color={T.plum}>Watchlist — entités surveillées</Eyebrow>
+          <Badge c={T.plum}>{watchlist.filter((w) => w.active).length} actives</Badge>
+        </div>
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          {watchLoading && watchlist.length === 0 && (
+            <div style={{ fontSize: 12, color: T.faint }}>Chargement de la watchlist…</div>
+          )}
+          {!watchLoading && watchlist.length === 0 && (
+            <div style={{ fontSize: 12, color: T.faint }}>Aucune entité en watchlist pour l'instant.</div>
+          )}
+          {watchlist.map((w, i) => (
+            <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, padding: "7px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
+              <Badge c={w.priority === "Haute" ? T.clay : w.priority === "Moyenne" ? T.gold : T.faint}>{w.priority}</Badge>
+              <span style={{ flex: 1, color: T.ink }}>{w.name}</span>
+              <span style={{ color: T.faint }}>
+                {w.type}
+                {w.geo ? ` · ${w.geo}` : ""}
+              </span>
+              {!w.active && <Badge c={T.faint}>Inactive</Badge>}
             </div>
           ))}
         </div>

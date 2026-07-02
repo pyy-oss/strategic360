@@ -1,0 +1,49 @@
+name: Cleanup sample data (propulse-business-87f7a / strategic360)
+
+# Manual trigger only. One-shot purge of the maquette-derived FICTIONAL business records that the
+# original seed.js wrote (decisions, initiatives, strategicThemes, battlecards, winLoss, scenarios,
+# techRadar, innovationPortfolio, frameworks/diagnostic) — per the "données réelles partout"
+# decision. Keeps config/*, intelWatchlist, intelSources, intelItems (real data). See
+# functions/cleanupSampleData.js for the authoritative keep/purge list. Idempotent — safe to
+# re-run (already-empty collections are skipped).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tapez "purge" pour confirmer la suppression des données fictives'
+        required: true
+
+jobs:
+  cleanup:
+    name: Purge fictional sample data
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Refuse to run without explicit confirmation
+        if: ${{ github.event.inputs.confirm != 'purge' }}
+        run: |
+          echo "Le champ 'confirm' doit valoir exactement 'purge'. Annulé."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install functions dependencies
+        working-directory: functions
+        run: npm install
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
+
+      - name: Run cleanupSampleData.js
+        working-directory: functions
+        env:
+          GCLOUD_PROJECT: propulse-business-87f7a
+          FIRESTORE_DATABASE_ID: strategic360
+        run: node cleanupSampleData.js

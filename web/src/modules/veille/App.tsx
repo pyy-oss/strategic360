@@ -1,6 +1,10 @@
 import React, { useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { signOut } from "firebase/auth";
 import { T } from "../../design/tokens";
+import { Badge } from "../../design/ui";
+import { auth } from "../../lib/firebase";
+import { useAuthClaims } from "../../lib/AuthProvider";
 import { LENS, NAV } from "./data";
 import { RadarExecutif } from "./views/RadarExecutif";
 import { Fil } from "./views/Fil";
@@ -29,6 +33,7 @@ export default function VeilleApp() {
   const [lens, setLens] = useState("dg");
   const navigate = useNavigate();
   const { view } = useParams<{ view: string }>();
+  const { user, role } = useAuthClaims();
 
   if (!view || !VIEW_KEYS.includes(view)) {
     return <Navigate to="/veille/radar" replace />;
@@ -55,12 +60,21 @@ export default function VeilleApp() {
             <div style={{ fontSize: 11.5, color: T.dim }}>Neurones Technologies CI · intelligence & aide à la décision · Afrique / UEMOA / CI</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
           {LENS.map(([k, l]) => (
             <button key={k} className={`pill ${k === lens ? "on" : ""}`} onClick={() => setLens(k)}>
               {l}
             </button>
           ))}
+          <Badge c={T.steel}>{role ?? "sans rôle"}</Badge>
+          {user?.email && <span style={{ fontSize: 11, color: T.faint }}>{user.email}</span>}
+          <button
+            className="pill"
+            onClick={() => signOut(auth)}
+            title="Se déconnecter"
+          >
+            Déconnexion
+          </button>
         </div>
       </header>
       <div className="navwrap" style={{ display: "flex", gap: 18, borderBottom: `1px solid ${T.line}`, marginBottom: 18, overflowX: "auto" }}>
@@ -88,7 +102,7 @@ export default function VeilleApp() {
       {view === "briefing" && <Briefing />}
 
       <footer style={{ marginTop: 22, paddingTop: 14, borderTop: `1px solid ${T.line}`, fontSize: 11.5, color: T.faint, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <span>Maquette · données d'exemple · cadres SWOT/PESTEL/Porter/BCG/Canvas + Tech Radar</span>
+        <span>Veille Stratégique · données réelles (Firestore) · IA Gemini avec revue humaine</span>
         <span>Focale : {LENS.find((l) => l[0] === lens)?.[1]}</span>
       </footer>
     </div>

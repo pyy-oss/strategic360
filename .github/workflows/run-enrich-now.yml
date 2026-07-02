@@ -1,0 +1,72 @@
+name: Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360)
+
+# Manual trigger only. Force-runs the enrichStrategicArtifacts scheduled Cloud Function
+# immediately, instead of waiting for its weekly Monday 05:00 Africa/Abidjan slot — useful for
+# generating the first AI SWOT/PESTEL/tech-radar/battlecard artifacts on demand. Same pattern as
+# run-sync-now.yml: `gcloud scheduler jobs run` on the Cloud Scheduler job Firebase auto-creates
+# for a v2 onSchedule function ("firebase-schedule-<functionName>-<region>"), needing
+# roles/cloudscheduler.admin on the service account. This bypasses the exec-gated `enrichNow`
+# callable (that one requires an authenticated exec-role ID token, meant for an in-app button).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tapez "enrich" pour confirmer'
+        required: true
+
+jobs:
+  run-enrich:
+    name: Force-run enrichStrategicArtifacts
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Refuse to run without explicit confirmation
+        if: ${{ github.event.inputs.confirm != 'enrich' }}
+        run: |
+          echo "Le champ 'confirm' doit valoir exactement 'enrich'. Annulé."
+          exit 1
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
+
+      - name: Find and run the enrichStrategicArtifacts scheduler job
+        run: |
+          set -e
+          JOB=$(gcloud scheduler jobs list \
+            --project=propulse-business-87f7a \
+            --location=europe-west1 \
+            --format="value(name)" \
+            --filter="name:firebase-schedule-enrichStrategicArtifacts" | head -n1)
+          if [ -z "$JOB" ]; then
+            echo "::error::Aucun job Cloud Scheduler trouvé pour enrichStrategicArtifacts — vérifier qu'il est bien déployé (functions:veille) et lister les jobs existants pour ajuster le filtre."
+            gcloud scheduler jobs list --project=propulse-business-87f7a --location=europe-west1
+            exit 1
+          fi
+          echo "Running $JOB"
+          gcloud scheduler jobs run "$JOB" --project=propulse-business-87f7a --location=europe-west1
+
+      # AI enrichment does up to 3 sequential Gemini calls (SWOT/PESTEL, radar, battlecards) —
+      # give it longer than syncSources before reading logs.
+      - name: Wait for the function to run (Pub/Sub trigger is asynchronous)
+        run: sleep 60
+
+      - name: Fetch enrichStrategicArtifacts logs
+        run: |
+          echo "--- Logs enrichStrategicArtifacts (dernières exécutions) ---"
+          gcloud functions logs read enrichStrategicArtifacts \
+            --project=propulse-business-87f7a \
+            --region=europe-west1 \
+            --gen2 \
+            --limit=100 \
+            2>&1 || echo "::warning::Impossible de lire les logs via 'gcloud functions logs read' — essai via gcloud logging read en repli."
+          echo "--- Repli : gcloud logging read ---"
+          gcloud logging read \
+            'resource.type="cloud_run_revision" resource.labels.service_name="enrichstrategicartifacts"' \
+            --project=propulse-business-87f7a \
+            --limit=50 \
+            --format="table(timestamp, severity, textPayload)" \
+            --freshness=10m \
+            2>&1 || true
