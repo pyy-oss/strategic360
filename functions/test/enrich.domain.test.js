@@ -43,7 +43,7 @@ const SIGNALS = [
 describe("prompt builders", () => {
   it("buildSwotPestelPrompt embeds company context, signals, and the exact SWOT/PESTEL contract", () => {
     const prompt = buildSwotPestelPrompt(SIGNALS);
-    expect(prompt).toContain("Neurones Technologies CI");
+    expect(prompt).toContain("Neurones Technologies S.A."); // contexte unique (domain/companyContext.js)
     expect(prompt).toContain("Orange CI lance une offre SOC managé");
     for (const key of SWOT_KEYS) expect(prompt).toContain(`"${key}"`);
     for (const f of ["Politique", "Économique", "Social", "Technologique", "Environnemental", "Légal"]) {

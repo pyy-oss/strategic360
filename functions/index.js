@@ -757,7 +757,8 @@ async function runGenerateBriefing(db, generatedBy) {
   const veilleExecSummary = veilleExecSnap.exists ? veilleExecSnap.data() : null;
   const topItems = topItemsSnap.docs.map((d) => {
     const it = d.data();
-    return { title: it.title, axis: it.axis, impact: it.impact, stance: it.stance, soWhat: it.soWhat, priorityScore: it.priorityScore };
+    // ent/date rendus par briefing.js#itemsBlock (Action 4.3) — recommandations nominatives.
+    return { title: it.title, axis: it.axis, impact: it.impact, stance: it.stance, soWhat: it.soWhat, priorityScore: it.priorityScore, ent: it.ent, date: it.date };
   });
 
   const now = new Date();
