@@ -17,6 +17,8 @@
  * without any layout change — see that file's fallback-to-maquette-static-content wiring.
  */
 
+const { COMPANY_CONTEXT } = require("./companyContext");
+
 const VALID_AXES = ["1. La demande est là", "2. Nous pouvons gagner", "3. Il faut agir vite"];
 
 /**
@@ -24,7 +26,7 @@ const VALID_AXES = ["1. La demande est là", "2. Nous pouvons gagner", "3. Il fa
  * @param {{
  *   veilleSummary: object|null,        // summaries/veille
  *   veilleExecSummary: object|null,    // summaries/veille_exec
- *   topItems: Array<{title:string, axis?:string, impact?:string, stance?:string, soWhat?:string, priorityScore?:number}>,
+ *   topItems: Array<{title:string, axis?:string, impact?:string, stance?:string, soWhat?:string, priorityScore?:number, ent?:string, date?:string}>,
  *   period: string,                    // e.g. "semaine du 30/06/2026"
  * }} input
  * @returns {string}
@@ -33,11 +35,13 @@ function buildBriefingPrompt(input) {
   const { veilleSummary, veilleExecSummary, topItems, period } = input || {};
   const items = Array.isArray(topItems) ? topItems : [];
 
+  // Action 4.3 : `ent` (entité watchlist résolue) et `date` sont rendus quand ils sont présents,
+  // pour que les recommandations puissent nommer un compte/AO précis et être datées.
   const itemsBlock = items.length
     ? items
         .map(
           (i) =>
-            `- [${i.stance ?? "?"}/${i.impact ?? "?"}] ${i.title}${i.soWhat ? ` — so-what: ${i.soWhat}` : ""} (score ${i.priorityScore ?? "?"})`
+            `- [${i.stance ?? "?"}/${i.impact ?? "?"}${i.ent ? ` — ${i.ent}` : ""}${i.date ? ` — ${i.date}` : ""}] ${i.title}${i.soWhat ? ` — so-what: ${i.soWhat}` : ""} (score ${i.priorityScore ?? "?"})`
         )
         .join("\n")
     : "(aucun signal prioritaire disponible)";
@@ -46,8 +50,10 @@ function buildBriefingPrompt(input) {
   const countsBlock = veilleSummary?.countsByAxis ? JSON.stringify(veilleSummary.countsByAxis) : "(indisponible)";
 
   return `Tu es un consultant en stratégie qui prépare un briefing exécutif hebdomadaire pour le
-comité de direction de Neurones Technologies CI (ESN, Côte d'Ivoire / UEMOA), au format
-"Pyramide de Minto" (idée directrice, puis 3 arguments MECE qui la soutiennent).
+comité de direction de l'entreprise suivante :
+${COMPANY_CONTEXT}
+
+Format attendu : "Pyramide de Minto" (idée directrice, puis 3 arguments MECE qui la soutiennent).
 
 Période : ${period || "période courante"}
 
@@ -70,8 +76,14 @@ respectant exactement ce schéma :
   "topOpportunities": [ { "title": string, "score": number } ],   // jusqu'à 3
   "topThreats": [ { "title": string, "score": number } ],          // jusqu'à 3
   "narrative": string,                // paragraphe de synthèse (contexte du trimestre)
-  "recommendations": [ string ]        // 3 à 5 recommandations concrètes au comité
+  "recommendations": [                // 3 à 5, orientées DÉCISION
+    { "action": string, "owner": string, "deadline": string, "expectedValue": string | null }
+  ],
+  "decisionsRequested": [ string ]    // 1 à 3 décisions explicites demandées au comité (go/no-go AO, budget certification Cisco 360 avant expiration CPI juillet 2026, agrément PASSI)
 }
+
+Consigne impérative : chaque recommandation doit nommer un compte, un AO, un programme partenaire
+ou une obligation réglementaire précise issue des signaux.
 
 Réponds avec le JSON uniquement.`;
 }
@@ -91,6 +103,30 @@ function coerceArgumentTriple(rawArguments) {
     out.push({ title, body });
   }
   return out;
+}
+
+/**
+ * Coerces one recommendation to the decision-oriented shape (Action 4.3):
+ * `{action, owner, deadline, expectedValue}`. RÉTRO-COMPATIBILITÉ : si le modèle renvoie encore
+ * une string simple (ancien schéma), elle devient `{action: s, owner: "—", deadline: "—",
+ * expectedValue: null}`. Entrées inexploitables → null (droppées par le filter appelant).
+ * `expectedValue` reste explicitement null quand absent — jamais undefined (contrainte Firestore).
+ * @param {unknown} raw
+ * @returns {{action:string, owner:string, deadline:string, expectedValue:string|null} | null}
+ */
+function coerceRecommendation(raw) {
+  if (typeof raw === "string" && raw.trim()) {
+    return { action: raw.trim(), owner: "—", deadline: "—", expectedValue: null };
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const action = coerceString(raw.action, null);
+  if (!action) return null;
+  return {
+    action,
+    owner: coerceString(raw.owner, "—"),
+    deadline: coerceString(raw.deadline, "—"),
+    expectedValue: coerceString(raw.expectedValue, null),
+  };
 }
 
 function coerceTopList(rawList) {
@@ -133,7 +169,10 @@ function parseBriefingResponse(rawJsonResponse, context) {
   const topThreats = coerceTopList(r.topThreats);
   const narrative = coerceString(r.narrative, "");
   const recommendations = Array.isArray(r.recommendations)
-    ? r.recommendations.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim())
+    ? r.recommendations.map(coerceRecommendation).filter(Boolean)
+    : [];
+  const decisionsRequested = Array.isArray(r.decisionsRequested)
+    ? r.decisionsRequested.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim())
     : [];
 
   return {
@@ -145,6 +184,7 @@ function parseBriefingResponse(rawJsonResponse, context) {
       topOpportunities,
       topThreats,
       recommendations,
+      decisionsRequested,
     },
     kpis: ctx.kpis || null,
     generatedBy: ctx.generatedBy || "vertex-ai",

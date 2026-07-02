@@ -64,6 +64,32 @@ const WATCHLIST_SEED = [
   { name: "Orange CI", type: "Client/Prospect", geo: "Côte d'Ivoire", priority: "Haute", active: true },
   { name: "BAD", type: "Client/Bailleur", geo: "Afrique de l'Ouest", priority: "Haute", active: true },
   { name: "BCEAO", type: "Client/Régulateur", geo: "Afrique de l'Ouest", priority: "Haute", active: true },
+  // Concurrents ESN / intégrateurs (cartographie terrain 2026 — CI & UEMOA)
+  { name: "Talentys", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Haute", active: true, note: "Concurrent cyber le plus direct : Fortinet West Africa + Wallix (mêmes éditeurs), références SOC CNPS/CNAM" },
+  { name: "CBI Côte d'Ivoire", type: "Concurrent", geo: "UEMOA", priority: "Haute", active: true, note: "Intégrateur marocain Cisco Gold, Abidjan (2016) et Dakar — frontal sur les gros deals Cisco" },
+  { name: "Orange Business CI / OC2S", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Haute", active: true, note: "Filiale cloud souverain + cyber créée 2025, 60+ experts, 3 datacenters ISO27001 — grands comptes ; Orange CI est aussi notre client" },
+  { name: "SNDI", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Haute", active: true, note: "Société d'État, prestataire IT quasi-captif du secteur public ivoirien (SIGFIP), présente au Sénégal/Bénin/Togo" },
+  { name: "Inovatec", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Haute", active: true, note: "Pure player cyber Abidjan : SOC 24/7, partenaire Fortinet/Palo Alto/Veeam (cybersecurite.ci)" },
+  { name: "SNEDAI Groupe", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Moyenne", active: true, note: "Champion national (biométrie, cyber, datacenters), très introduit auprès de l'État" },
+  { name: "Groupe INOVA", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Moyenne", active: true, note: "SSII 1999, Microsoft/ERP + centre de formation certifié — concurrent direct BU Formation" },
+  { name: "SGCI", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Moyenne", active: true, note: "ESN 23+ ans : cyber, audit, formation, digitalisation — recoupe conseil+formation sur le mid-market" },
+  { name: "New Digital Africa (ex-NSIA Technologies)", type: "Concurrent", geo: "Afrique francophone", priority: "Moyenne", active: true, note: "Leader services managés/datacenters Afrique francophone, repositionné après rachat" },
+  { name: "Inetum Côte d'Ivoire", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Moyenne", active: true, note: "ESN internationale (ex-Somafor 2015), partenaire Sage — conseil et applicatif grands comptes" },
+  { name: "Atos", type: "Concurrent", geo: "UEMOA", priority: "Moyenne", active: true, note: "Présent Abidjan Plateau + Dakar, acteur SOC managé Sénégal — comptes bancaires et régulateurs" },
+  { name: "MTN Business CI", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Moyenne", active: true, note: "Opérateur B2B : réseaux managés, cloud, Security-as-a-Service" },
+  { name: "Sonatel CyberDefense", type: "Concurrent", geo: "Sénégal", priority: "Moyenne", active: true, note: "Acteur SOC dominant au Sénégal — barrière d'entrée si expansion Dakar (obligation SOC BCEAO 2025)" },
+  { name: "GTN CI", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Basse", active: true, note: "Intégrateur sécurité réseau/identité/email Abidjan" },
+  { name: "Cloudmania (Liquid C2)", type: "Concurrent", geo: "Afrique", priority: "Basse", active: true, note: "Microsoft Partner of the Year CI, 22 pays — concurrent sur le CSP/cloud Microsoft" },
+  // Éditeurs / constructeurs complémentaires
+  { name: "WALLIX", type: "Éditeur", geo: "Afrique", priority: "Haute", active: true, note: "Partenariat Premier confirmé (PAM) — annonces produit et programme partenaires" },
+  { name: "Odoo", type: "Éditeur", geo: "Afrique de l'Ouest", priority: "Moyenne", active: true, note: "Partenaire Odoo CI — axe ERP/logiciel" },
+  { name: "Huawei", type: "Constructeur", geo: "Côte d'Ivoire", priority: "Haute", active: true, note: "Challenger agressif en CI (ESATIC, formation 1000 Ivoiriens, AO publics) face à Cisco/HPE" },
+  { name: "VMware / Broadcom", type: "Éditeur", geo: "Afrique", priority: "Moyenne", active: true, note: "Hausses de prix 800-1500%, purge VCSP — opportunité migrations Nutanix/alternatives" },
+  { name: "Kaspersky", type: "Éditeur", geo: "Afrique de l'Ouest", priority: "Moyenne", active: true, note: "Hub ouest-africain à Abidjan (KNext 2026), push EDR/XDR/SOC — partenariat ou concurrence" },
+  // Régulateurs générateurs d'obligations monétisables
+  { name: "ANSSI-CI", type: "Régulateur", geo: "Côte d'Ivoire", priority: "Haute", active: true, note: "Audits SI triennaux obligatoires (décret 2021-917), agréments PASSI, RGSSI, OIV — générateur n°1 d'obligations monétisables" },
+  { name: "ARTCI", type: "Régulateur", geo: "Côte d'Ivoire", priority: "Haute", active: true, note: "Homologation équipements, données personnelles (loi 2013-450), agréments PSCE" },
+  { name: "AMF-UMOA", type: "Régulateur", geo: "Afrique de l'Ouest", priority: "Moyenne", active: true, note: "Instructions mars 2024 sur les SI BRVM/DC-BR/SGI — levier d'upsell direct chez la BRVM cliente" },
 ];
 
 // intelSources seed entries — first jet per BUILD_KIT.md §9.B (AO & financements, réglementaire,
@@ -74,17 +100,50 @@ const WATCHLIST_SEED = [
 // SELF-CURATING instead: syncSources tracks per-source health (lastStatus, consecutiveFailures)
 // and auto-deactivates any source after 5 consecutive failures, so dead candidates prune
 // themselves out within a few daily runs and working ones keep feeding the AI classifier.
+// NOTE parsing (index.js runSyncSources) : kind 'rss' | 'newsletter' | 'portal' → extractRssItems (XML attendu) ;
+// kind 'web' → extractWebText (HTML). Un portail d'AO en HTML (SIGOMAP, ARCOP, DGMP) doit donc être kind: 'web'.
+// Les URLs de feeds n'ont pas pu être vérifiées depuis le sandbox (proxy 403) — le pipeline s'auto-cure
+// (désactivation après 5 échecs consécutifs), mais vérifier lastStatus après le premier run réel.
 const SOURCES_SEED = [
   // Réglementaire / institutions
   { name: "ARTCI — Autorité de Régulation des Télécommunications/TIC de Côte d'Ivoire", kind: "web", url: "https://www.artci.ci", axis: "reglementaire", active: true },
   { name: "BCEAO — Banque Centrale des États de l'Afrique de l'Ouest", kind: "web", url: "https://www.bceao.int", axis: "reglementaire", active: true },
-  // AO & financements
-  { name: "SIGMAP / DGMP (marchés publics CI)", kind: "portal", url: "https://www.marchespublics.ci", axis: "clients_prospects", active: true },
-  { name: "ARMP — Autorité de Régulation des Marchés Publics", kind: "web", url: "https://www.armp.ci", axis: "clients_prospects", active: true },
-  { name: "Banque Africaine de Développement — Avis d'appels d'offres", kind: "rss", url: "https://www.afdb.org", axis: "clients_prospects", active: true },
-  // Partenaires / éditeurs
-  { name: "Cisco EOL/EOS Bulletins", kind: "rss", url: "https://www.cisco.com/c/en/us/products/eos-eol-listing.html", axis: "partenaires", active: true },
-  { name: "Cisco Newsroom (RSS)", kind: "rss", url: "https://newsroom.cisco.com/c/services/i/servlets/newsroom/rssfeed.json", axis: "partenaires", active: true },
+  // Renfort réglementaire (audit 2026-07, Action 3.3)
+  { name: "ANSSI-CI — réglementations & agréments PASSI", kind: "web", url: "https://anssi.gouv.ci/reglementations/textes-nationaux/", axis: "reglementaire", active: true },
+  { name: "ARTCI — actualités & décisions", kind: "web", url: "https://www.artci.ci/", axis: "reglementaire", active: true },
+  { name: "Autorité de protection des données (CI)", kind: "web", url: "https://www.autoritedeprotection.ci/", axis: "reglementaire", active: true },
+  { name: "BCEAO — Réglementations", kind: "web", url: "https://www.bceao.int/fr/reglementations", axis: "reglementaire", active: true },
+  { name: "AMF-UMOA — Instructions", kind: "web", url: "https://www.amf-umoa.org/reglementation/instruction", axis: "reglementaire", active: true },
+  { name: "Ministère de la Transition Numérique — publications", kind: "web", url: "https://telecom.gouv.ci/new/publications/sous-categorie/1", axis: "reglementaire", active: true },
+  { name: "Africa Cybersecurity Magazine", kind: "rss", url: "https://cybersecuritymag.africa/feed/", axis: "reglementaire", active: true },
+  // AO & financements (audit 2026-07, Actions 3.1 + 3.4 — remplace SIGMAP/ARMP sénégalais/BAD racine)
+  { name: "SIGOMAP — portail officiel des marchés publics CI", kind: "web", url: "https://www.sigomap.gouv.ci", axis: "clients_prospects", active: true },
+  { name: "DGMP — marchespublics.ci (avis d'AO)", kind: "web", url: "https://www.marchespublics.ci/appel_offre", axis: "clients_prospects", active: true },
+  { name: "ARCOP — Autorité de Régulation de la Commande Publique (ex-ANRMP)", kind: "web", url: "https://arcop.ci/", axis: "clients_prospects", active: true },
+  { name: "BAD — Corporate procurement (avis d'AO)", kind: "web", url: "https://www.afdb.org/fr/about/corporate-procurement", axis: "clients_prospects", active: true },
+  { name: "BCEAO — Appels d'offres", kind: "web", url: "https://www.bceao.int/fr/appels_offres", axis: "clients_prospects", active: true },
+  { name: "Banque mondiale — projets Côte d'Ivoire", kind: "web", url: "https://projects.worldbank.org/en/projects-operations/projects-list?countrycode_exact=CI", axis: "clients_prospects", active: true },
+  { name: "UEMOA — Appels d'offres", kind: "web", url: "https://www.uemoa.int/appel-d-offre", axis: "clients_prospects", active: true },
+  // Concurrents (audit 2026-07, Action 3.2 — aucune source n'existait sur cet axe)
+  { name: "CIO Mag (RSS)", kind: "rss", url: "https://cio-mag.com/feed/", axis: "concurrents", active: true },
+  { name: "Agence Ecofin — Numérique (RSS)", kind: "rss", url: "https://www.agenceecofin.com/actualites-numerique?format=feed", axis: "concurrents", active: true },
+  { name: "Afrique IT News (RSS)", kind: "rss", url: "https://afriqueitnews.com/feed/", axis: "concurrents", active: true },
+  { name: "Talentys — actualités & réalisations", kind: "web", url: "https://talentys.ci/nos-realisations/", axis: "concurrents", active: true },
+  { name: "SNDI — actualités", kind: "web", url: "https://sndi.ci/", axis: "concurrents", active: true },
+  { name: "Orange Business CI", kind: "web", url: "https://business.orange.ci/", axis: "concurrents", active: true },
+  { name: "CBI — actualités", kind: "web", url: "https://www.cbi.ma/", axis: "concurrents", active: true },
+  // Partenaires / éditeurs (audit 2026-07, Actions 3.1 + 3.5 — remplace les 2 sources Cisco mortes-nées)
+  { name: "Cisco EOL/EOS Bulletins", kind: "web", url: "https://www.cisco.com/c/en/us/support/eol/index.html", axis: "partenaires", active: true },
+  { name: "Cisco Blogs (RSS)", kind: "rss", url: "https://blogs.cisco.com/feed", axis: "partenaires", active: true }, // remplace le feed JSON newsroom
+  { name: "Fortinet Blog (RSS)", kind: "rss", url: "https://www.fortinet.com/blog/rss", axis: "partenaires", active: true },
+  { name: "Palo Alto Networks Blog (RSS)", kind: "rss", url: "https://www.paloaltonetworks.com/blog/feed/", axis: "partenaires", active: true },
+  { name: "HPE Newsroom", kind: "web", url: "https://www.hpe.com/us/en/newsroom.html", axis: "partenaires", active: true },
+  { name: "WALLIX Newsroom", kind: "web", url: "https://www.wallix.com/newsroom/", axis: "partenaires", active: true },
+  { name: "Microsoft Partner Blog", kind: "web", url: "https://partner.microsoft.com/en-US/blog", axis: "partenaires", active: true },
+  { name: "Westcon-Comstor — News (distributeur)", kind: "web", url: "https://www.westconcomstor.com/global/en/news.html", axis: "partenaires", active: true },
+  { name: "Exclusive Networks — Media centre (distributeur)", kind: "web", url: "https://www.exclusive-networks.com/resources/media-centre/news", axis: "partenaires", active: true },
+  { name: "Huawei — News", kind: "web", url: "https://www.huawei.com/en/news", axis: "partenaires", active: true },
+  { name: "Broadcom Newsroom (VMware)", kind: "web", url: "https://news.broadcom.com/", axis: "partenaires", active: true },
   // Presse économique / tech régionale (candidats RSS — auto-élagués si morts)
   { name: "Agence Ecofin (RSS)", kind: "rss", url: "https://www.agenceecofin.com/rss/toute-lactu", axis: "clients_prospects", active: true },
   { name: "Jeune Afrique (RSS)", kind: "rss", url: "https://www.jeuneafrique.com/feed/", axis: "clients_prospects", active: true },
@@ -95,6 +154,9 @@ const SOURCES_SEED = [
   // Tendances tech / cybersécurité (mondial, pertinent pour le Tech Radar)
   { name: "The Hacker News (RSS)", kind: "rss", url: "https://feeds.feedburner.com/TheHackersNews", axis: "tech", active: true },
   { name: "BleepingComputer (RSS)", kind: "rss", url: "https://www.bleepingcomputer.com/feed/", axis: "tech", active: true },
+  // Équilibrage des feeds mondiaux anglophones (audit 2026-07, Action 3.6)
+  { name: "Check Point Blog (RSS)", kind: "rss", url: "https://blog.checkpoint.com/feed/", axis: "tech", active: true },
+  { name: "We Are Tech Africa (RSS)", kind: "rss", url: "https://www.wearetech.africa/fr/?format=feed", axis: "tech", active: true },
 ];
 
 async function seed() {

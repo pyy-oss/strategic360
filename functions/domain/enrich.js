@@ -27,15 +27,15 @@ const PESTEL_FACTORS = ["Politique", "Économique", "Social", "Technologique", "
 const RADAR_RINGS = ["adopter", "essayer", "evaluer", "suspendre"];
 const TRENDS = ["↑", "→", "↓"];
 
-/**
- * Company context embedded in every enrichment prompt so the synthesis is grounded in who
- * Neurones Technologies CI actually is (not a generic ESN).
- */
-const COMPANY_CONTEXT =
-  "Neurones Technologies CI — ESN/intégrateur multi-éditeurs (Cisco, Palo Alto, Fortinet, HPE, " +
-  "Microsoft) en Côte d'Ivoire/UEMOA : intégration réseau/infra, cybersécurité, cloud, managed " +
-  "services ; clients banques/télécoms/institutions ; enjeux : souveraineté, conformité " +
-  "ARTCI/BCEAO, financements bailleurs (BAD), concurrence ESN régionales/telcos B2B.";
+// Company context embedded in every enrichment prompt so the synthesis is grounded in who
+// Neurones Technologies actually is (not a generic ESN). Single source of truth since Action 1.1
+// (audit 2026-07): domain/companyContext.js — re-exported below for backward compatibility with
+// existing consumers of `require("./enrich").COMPANY_CONTEXT`.
+const { COMPANY_CONTEXT } = require("./companyContext");
+
+const VALID_HORIZONS = ["imminent", "court", "moyen", "horizon"];
+const VALID_PROBABILITIES = ["high", "medium", "low"];
+const VALID_OPP_BUS = ["ICT", "FORMATION"];
 
 /**
  * Deterministic Firestore doc id from a display name: lowercase, NFD accent-strip,
@@ -57,11 +57,13 @@ function slugId(name) {
  * Filters/sorts/truncates real `intelItems` docs into the lightweight signal shape the enrichment
  * prompts consume: drops archived items, sorts by priorityScore desc then date desc, keeps at
  * most `maxTotal`, and maps each to {title, summary (≤~300 chars), axis, impact, stance, soWhat,
- * date} — everything else (urls, ratings, internal fields) is deliberately excluded to keep the
- * prompt compact.
+ * date, ent, subtype, prox, recommendedAction} — everything else (urls, ratings, internal fields)
+ * is deliberately excluded to keep the prompt compact. (ent/subtype/prox/recommendedAction added
+ * by Action 4.4 so the opportunity detector and battlecards see the business framing the
+ * classifier already produced.)
  * @param {Array<object>} items Raw intelItems doc bodies.
  * @param {{maxTotal?: number}} [options]
- * @returns {Array<{title:string, summary:string, axis:string, impact:string, stance:string, soWhat?:string, date:string}>}
+ * @returns {Array<{title:string, summary:string, axis:string, impact:string, stance:string, soWhat?:string, date:string, ent?:string, subtype?:string, prox?:string, recommendedAction?:string}>}
  */
 function pickSignalsForEnrichment(items, options) {
   const maxTotal = options && Number.isFinite(options.maxTotal) ? options.maxTotal : 60;
@@ -89,6 +91,14 @@ function pickSignalsForEnrichment(items, options) {
         date: it.date,
       };
       if (typeof it.soWhat === "string" && it.soWhat.trim()) signal.soWhat = it.soWhat;
+      // Action 4.4 — mêmes gardes que soWhat : champ présent seulement si non vide (jamais
+      // undefined, contrainte Firestore/prompt).
+      if (typeof it.ent === "string" && it.ent.trim()) signal.ent = it.ent;
+      if (typeof it.subtype === "string" && it.subtype.trim()) signal.subtype = it.subtype;
+      if (typeof it.prox === "string" && it.prox.trim()) signal.prox = it.prox;
+      if (typeof it.recommendedAction === "string" && it.recommendedAction.trim()) {
+        signal.recommendedAction = it.recommendedAction;
+      }
       return signal;
     });
 }
@@ -100,9 +110,10 @@ function signalsBlock(items) {
   return list
     .map((s, i) => {
       const parts = [
-        `${i + 1}. [${s.axis ?? "?"}/${s.impact ?? "?"}/${s.stance ?? "?"}${s.date ? ` — ${s.date}` : ""}] ${s.title ?? ""}`,
+        `${i + 1}. [${s.axis ?? "?"}/${s.impact ?? "?"}/${s.stance ?? "?"}${s.prox ? `/${s.prox}` : ""}${s.ent ? ` — ${s.ent}` : ""}${s.date ? ` — ${s.date}` : ""}] ${s.title ?? ""}`,
         s.summary ? `   Résumé : ${s.summary}` : null,
         s.soWhat ? `   So-what : ${s.soWhat}` : null,
+        s.recommendedAction ? `   Action proposée : ${s.recommendedAction}` : null,
       ];
       return parts.filter(Boolean).join("\n");
     })

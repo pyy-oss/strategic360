@@ -1,6 +1,6 @@
 import React from "react";
 import { T } from "../../../design/tokens";
-import { AX, IMP, STANCE, fmt, pct } from "../../../design/tokens";
+import { AX, IMP, PROX, STANCE, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { useDecisions } from "../lib/execution";
 import { useIntelItems, useWatchlist } from "../lib/intel";
@@ -20,6 +20,11 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   const sorted = [...items].sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
   const menaces = sorted.filter((s) => s.stance === "threat");
   const opps = sorted.filter((s) => s.stance === "opportunity");
+  // « Business imminent » (plan d'audit §5.4) : signaux à échéance proche OU à contenu business
+  // direct (AO, fins de vie, réglementation, financements), déjà triés par priorityScore.
+  const bizImminent = sorted
+    .filter((s) => s.prox === "imminent" || s.prox === "court" || ["tender", "eol", "regulation", "funding"].includes(s.subtype ?? ""))
+    .slice(0, 6);
   const cell = (imp: string, st: string) => items.filter((s) => s.impact === imp && s.stance === st).length;
   const intro = (
     {
@@ -107,6 +112,29 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
           </div>
         </Card>
       </div>
+      <Card style={{ marginBottom: 14 }}>
+        <Eyebrow color={T.emerald}>💼 Business imminent</Eyebrow>
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          {bizImminent.length === 0 && (
+            <div style={{ fontSize: 12, color: T.faint }}>Aucun signal business à échéance proche pour l'instant.</div>
+          )}
+          {bizImminent.map((s) => (
+            <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${s.prox === "imminent" ? T.clay : T.emerald}` }}>
+              <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16, color: STANCE[s.stance]?.c ?? T.ink, minWidth: 30, textAlign: "center" }}>{s.priorityScore ?? "—"}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title}</div>
+                <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                  <Badge c={s.prox === "imminent" ? T.clay : T.gold}>
+                    {s.dueDate ? `Échéance ${s.dueDate}` : s.prox ? PROX[s.prox]?.l ?? s.prox : "Échéance non datée"}
+                  </Badge>
+                  {s.ent && <Badge c={T.plum}>{s.ent}</Badge>}
+                  <Badge c={AX[s.axis]?.c}>{AX[s.axis]?.l ?? s.axis}</Badge>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
       <Card>
         <Eyebrow color={T.steel}>Décisions en attente / récentes</Eyebrow>
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>

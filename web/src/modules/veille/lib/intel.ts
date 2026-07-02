@@ -59,6 +59,7 @@ export interface IntelItem {
   recommendedAction?: string;
   owner?: string;
   dueDate?: string;
+  budgetIdentified?: boolean;
   prox?: IntelProx;
   neuf?: boolean;
   linkedFp?: string;
@@ -304,4 +305,72 @@ export function useSources(): { sources: IntelSource[]; loading: boolean; error:
 export async function createSource(input: IntelSourceInput): Promise<string> {
   const ref = await addDoc(collection(db, "intelSources"), { ...input, lastFetch: null });
   return ref.id;
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * bizOpportunities (pipeline d'opportunités business détectées par l'IA — plan d'audit §6.1/§6.2)
+ *
+ * Documents written by the backend opportunity detector (functions enrichment, statut `new`
+ * forcé) ; the web app only reads them and lets exec roles qualify/drop (`updateBizOpportunity`).
+ * ------------------------------------------------------------------------------------------- */
+
+export type BizOpportunityHorizon = "imminent" | "court" | "moyen" | "horizon";
+export type BizOpportunityProbability = "high" | "medium" | "low";
+export type BizOpportunityStatus = "new" | "qualified" | "dropped";
+
+export interface BizOpportunity {
+  id: string;
+  name: string;
+  client: string;
+  bu: "ICT" | "FORMATION";
+  offering: string;
+  estAmount?: string | null; // montant extrait du texte source (string, jamais recalculé côté client)
+  deadline?: string | null;
+  horizon: BizOpportunityHorizon;
+  probability: BizOpportunityProbability;
+  nextAction: string;
+  sourceSignals?: number[];
+  competitorsLikely?: string[];
+  status: BizOpportunityStatus;
+  generatedBy?: string;
+}
+
+const HORIZON_ORDER: Record<BizOpportunityHorizon, number> = { imminent: 0, court: 1, moyen: 2, horizon: 3 };
+const PROBABILITY_ORDER: Record<BizOpportunityProbability, number> = { high: 0, medium: 1, low: 2 };
+
+/** Live (`onSnapshot`) list of `bizOpportunities`, sorted client-side (horizon puis probabilité puis nom). */
+export function useBizOpportunities(): { opportunities: BizOpportunity[]; loading: boolean; error: Error | null } {
+  const [opportunities, setOpportunities] = useState<BizOpportunity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    const q = query(collection(db, "bizOpportunities"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const docs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<BizOpportunity, "id">) }));
+        docs.sort(
+          (a, b) =>
+            (HORIZON_ORDER[a.horizon] ?? 9) - (HORIZON_ORDER[b.horizon] ?? 9) ||
+            (PROBABILITY_ORDER[a.probability] ?? 9) - (PROBABILITY_ORDER[b.probability] ?? 9) ||
+            (a.name ?? "").localeCompare(b.name ?? "")
+        );
+        setOpportunities(docs);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        setError(err as Error);
+        setLoading(false);
+      }
+    );
+    return unsub;
+  }, []);
+
+  return { opportunities, loading, error };
+}
+
+export async function updateBizOpportunity(id: string, patch: Partial<BizOpportunity>): Promise<void> {
+  await updateDoc(doc(db, "bizOpportunities", id), patch as Record<string, unknown>);
 }
