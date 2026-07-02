@@ -1,7 +1,8 @@
 import React, { createContext, useContext } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { T } from "../design/tokens";
-import { useClaims, useCan, type Claims } from "./rbac";
+import { useClaims, useCan, useIsExec, type Claims } from "./rbac";
+import { MfaBanner } from "../modules/auth/MfaEnrollment";
 
 /** Shares a single `useClaims()` subscription across the app instead of re-subscribing per hook call. */
 const ClaimsContext = createContext<Claims | null>(null);
@@ -37,12 +38,25 @@ function CenteredMessage({ children }: { children: React.ReactNode }) {
 
 /** Redirects to /login when unauthenticated; shows a loading state while auth resolves. */
 export function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuthClaims();
+  const claims = useAuthClaims();
+  const { user, loading } = claims;
   const location = useLocation();
+  const isExec = useIsExec(claims);
 
   if (loading) return <CenteredMessage>Chargement…</CenteredMessage>;
   if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
-  return <>{children}</>;
+  return (
+    <>
+      {/* MFA nudge for exec roles (V8 Durcissement, BUILD_KIT.md §7/§13) — non-blocking, shown
+          above the app shell regardless of active view. See modules/auth/MfaEnrollment.tsx. */}
+      {isExec && (
+        <div style={{ padding: "14px 24px 0", background: T.bg }}>
+          <MfaBanner user={user} />
+        </div>
+      )}
+      {children}
+    </>
+  );
 }
 
 /** Route/section-level gating on top of RequireAuth: requires at least `level` on `module`. */

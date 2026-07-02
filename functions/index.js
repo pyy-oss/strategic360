@@ -29,6 +29,7 @@ const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefin
 const { buildBriefingPdf } = require("./domain/pdf");
 const { generateJson } = require("./domain/vertex");
 const PDFDocument = require("pdfkit");
+const { v1: firestoreAdminV1 } = require("@google-cloud/firestore");
 
 initializeApp();
 
@@ -65,6 +66,29 @@ function requireExecCaller(request, action) {
     throw new HttpsError("permission-denied", `Seuls les profils exécutifs (direction/strategie/innovation) peuvent ${action}.`);
   }
 }
+
+/**
+ * App Check enforcement (V8 Durcissement, BUILD_KIT.md §3 "App Check" / §13). App Check itself
+ * must be configured in the Firebase Console (register the web app, enable a reCAPTCHA v3
+ * provider, and — for a smooth rollout — set enforcement to "monitor" before "enforce") AND the
+ * client must be initializing it (see web/src/lib/firebase.ts, VITE_FIREBASE_APPCHECK_SITE_KEY)
+ * BEFORE these callables reject unattested requests. Turning `enforceAppCheck: true` on for a
+ * callable that real clients aren't sending App Check tokens to yet is a well-known App Check
+ * footgun — every call from that client instantly starts failing with 401 UNAUTHENTICATED.
+ *
+ * Kept OPT-IN via an env/Functions-config flag rather than hardcoded `true`, so the safe rollout
+ * order is: 1) deploy with App Check console-side "monitoring" + client-side initializeAppCheck
+ * live for a while, 2) confirm real traffic is carrying valid App Check tokens (Console >
+ * App Check > Requests metrics), 3) THEN set `APPCHECK_ENFORCE=true` (Functions config/env var,
+ * e.g. `firebase functions:config:set appcheck.enforce=true` or a `.env` for gen2) and redeploy.
+ * Defaults to `false` (not enforced) so this ships without accidentally locking anyone out.
+ */
+const ENFORCE_APP_CHECK = process.env.APPCHECK_ENFORCE === "true";
+/** Shared `onCall` options for the exec-gated callables (setUserRole, classifyAI,
+ * generateBriefing, exportPdf) — region + conditional App Check enforcement, applied
+ * consistently across all four so none of them is accidentally left unprotected once enforcement
+ * is switched on project-wide. */
+const CALLABLE_OPTS = { region: "europe-west1", enforceAppCheck: ENFORCE_APP_CHECK };
 
 const NOT_IMPLEMENTED = (fn, phase) => {
   const msg = `${fn} not implemented — see BUILD_KIT.md roadmap ${phase}`;
@@ -177,35 +201,43 @@ exports.ingestInternal = onObjectFinalized({ region: "europe-west1" }, async (ev
 
   const filename = segments[segments.length - 1];
   const db = getFirestore();
-  const bucket = getStorage().bucket(event.data.bucket);
-  const [buffer] = await bucket.file(filePath).download();
 
-  const parsed = config.parse(buffer);
-  const rows = parsed[config.resultKey] || [];
-  const { rowsIn, rowsOk, warnings } = parsed;
+  try {
+    const bucket = getStorage().bucket(event.data.bucket);
+    const [buffer] = await bucket.file(filePath).download();
 
-  await db.doc(`imports_state/${kind}`).set({
-    [config.stateField]: rows,
-    filename,
-    rowsIn,
-    rowsOk,
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+    const parsed = config.parse(buffer);
+    const rows = parsed[config.resultKey] || [];
+    const { rowsIn, rowsOk, warnings } = parsed;
 
-  await db.collection("imports").add({
-    uid: null, // system-triggered (Storage onFinalize) — no calling user
-    kind,
-    filename,
-    rowsIn,
-    rowsOk,
-    report: { warnings },
-    ts: FieldValue.serverTimestamp(),
-  });
+    await db.doc(`imports_state/${kind}`).set({
+      [config.stateField]: rows,
+      filename,
+      rowsIn,
+      rowsOk,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
-  const summary = await computeSummaryQuanti(db);
-  await db.doc("summaries/quanti").set(summary);
+    await db.collection("imports").add({
+      uid: null, // system-triggered (Storage onFinalize) — no calling user
+      kind,
+      filename,
+      rowsIn,
+      rowsOk,
+      report: { warnings },
+      ts: FieldValue.serverTimestamp(),
+    });
 
-  logger.info(`ingestInternal: kind=${kind} file=${filePath} rowsIn=${rowsIn} rowsOk=${rowsOk} warnings=${warnings.length}`);
+    const summary = await computeSummaryQuanti(db);
+    await db.doc("summaries/quanti").set(summary);
+
+    logger.info(`ingestInternal: kind=${kind} file=${filePath} rowsIn=${rowsIn} rowsOk=${rowsOk} warnings=${warnings.length}`);
+  } catch (err) {
+    // Observability (V8): a parse/Firestore failure here must be loud — nothing downstream
+    // (aggregates, UI) will otherwise explain why summaries/quanti didn't update.
+    logger.error(`ingestInternal: kind=${kind} file=${filePath} FAILED — ${err.message}`, { err });
+    throw err; // let Cloud Functions mark the invocation as failed (retries/alerting rely on this)
+  }
 });
 
 /**
@@ -392,7 +424,7 @@ exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abid
  * exec-triggered request for new AI review, not a mass background overwrite.
  * Roadmap: V7 IA & sync.
  */
-exports.classifyAI = onCall({ region: "europe-west1" }, async (request) => {
+exports.classifyAI = onCall(CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "reclassifier un signal");
 
   const { itemId } = request.data || {};
@@ -502,10 +534,17 @@ async function computeVeilleSummary(db) {
  * priorityScore update, is exactly what keeps this summary fresh).
  * Roadmap: V3 Scoring & agrégats veille.
  */
-exports.aggregateVeille = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1" }, async () => {
+exports.aggregateVeille = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1" }, async (event) => {
   const db = getFirestore();
-  const summary = await computeVeilleSummary(db);
-  await db.doc("summaries/veille").set(summary);
+  try {
+    const summary = await computeVeilleSummary(db);
+    await db.doc("summaries/veille").set(summary);
+  } catch (err) {
+    // Observability (V8): without this, a failure here silently leaves summaries/veille stale —
+    // Radar exécutif/Fil would keep showing outdated counts with no visible error anywhere.
+    logger.error(`aggregateVeille: FAILED for ${event.document} — ${err.message}`, { err });
+    throw err;
+  }
 });
 
 /**
@@ -550,10 +589,17 @@ async function computeVeilleExecSummary(db) {
  * Construit summaries/veille_exec (boardKpis, decisionsPending, porter, winRateByCompetitor, ...).
  * Roadmap: V3 Scoring & agrégats veille.
  */
-exports.aggregateVeilleExec = onSchedule({ schedule: "every 60 minutes", region: "europe-west1" }, async () => {
+exports.aggregateVeilleExec = onSchedule({ schedule: "every 60 minutes", timeZone: "Africa/Abidjan", region: "europe-west1" }, async () => {
   const db = getFirestore();
-  const summary = await computeVeilleExecSummary(db);
-  await db.doc("summaries/veille_exec").set(summary);
+  try {
+    const summary = await computeVeilleExecSummary(db);
+    await db.doc("summaries/veille_exec").set(summary);
+  } catch (err) {
+    logger.error(`aggregateVeilleExec: FAILED — ${err.message}`, { err });
+    // Scheduled job: don't rethrow — a transient failure shouldn't mark the whole scheduler
+    // invocation as an alert-worthy crash beyond the logged error; the hourly/onWrite companion
+    // trigger will retry on the next tick/write anyway.
+  }
 });
 
 /**
@@ -563,10 +609,15 @@ exports.aggregateVeilleExec = onSchedule({ schedule: "every 60 minutes", region:
  * avoid duplicating the computation (BUILD_KIT.md §10 lists this pair as "onWrite + planifié").
  * Roadmap: V3 Scoring & agrégats veille.
  */
-exports.aggregateVeilleExecOnWrite = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1" }, async () => {
+exports.aggregateVeilleExecOnWrite = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1" }, async (event) => {
   const db = getFirestore();
-  const summary = await computeVeilleExecSummary(db);
-  await db.doc("summaries/veille_exec").set(summary);
+  try {
+    const summary = await computeVeilleExecSummary(db);
+    await db.doc("summaries/veille_exec").set(summary);
+  } catch (err) {
+    logger.error(`aggregateVeilleExecOnWrite: FAILED for ${event.document} — ${err.message}`, { err });
+    throw err;
+  }
 });
 
 /**
@@ -582,7 +633,7 @@ exports.aggregateVeilleExecOnWrite = onDocumentWritten({ document: "intelItems/{
  * gate, BUILD_KIT.md §1).
  * Roadmap: V7 IA & sync.
  */
-exports.generateBriefing = onCall({ region: "europe-west1" }, async (request) => {
+exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "générer un briefing");
 
   const db = getFirestore();
@@ -630,7 +681,7 @@ exports.generateBriefing = onCall({ region: "europe-west1" }, async (request) =>
  * exportPdf.test.js; only the Storage upload/signed-URL plumbing below is unverified.
  * Roadmap: V7 IA & sync.
  */
-exports.exportPdf = onCall({ region: "europe-west1" }, async (request) => {
+exports.exportPdf = onCall(CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "exporter un briefing en PDF");
 
   const db = getFirestore();
@@ -677,6 +728,65 @@ exports.exportPdf = onCall({ region: "europe-west1" }, async (request) => {
 });
 
 /**
+ * scheduledFirestoreExport — Scheduler (quotidien 02:00, Africa/Abidjan) (V8 Durcissement,
+ * BUILD_KIT.md §13 "export Firestore planifié").
+ *
+ * Uses the Firestore Admin API's managed export (`google.firestore.admin.v1.FirestoreAdminClient
+ * #exportDocuments`, from `@google-cloud/firestore`'s `v1` namespace — this is DISTINCT from the
+ * regular `firebase-admin`/`@google-cloud/firestore` document-CRUD client used everywhere else in
+ * this file; it talks to the separate "Firestore Admin" API surface) to snapshot the entire
+ * default database to Cloud Storage. Output path: `gs://{projectId}.appspot.com/scheduled-exports/
+ * {YYYY-MM-DD}/` (one dated folder per run — the export API itself writes several files under
+ * that prefix, it is NOT a single downloadable file).
+ *
+ * UNVERIFIABLE IN THIS SANDBOX: there is no real GCP project/credentials here, no Firestore Admin
+ * API enabled, and no emulator support for managed exports — this has NOT been exercised
+ * end-to-end. It is implemented per the documented API surface (verified to load/construct
+ * correctly — `new firestoreAdminV1.FirestoreAdminClient()` and `.databasePath()` both work in
+ * this sandbox, see V8 task notes) and kept maximally defensive: any failure is caught and logged
+ * at `error` level rather than thrown, because a scheduled maintenance job crashing must never be
+ * mistaken for a user-facing incident (BUILD_KIT.md doesn't put this on any request path).
+ *
+ * Deployment prerequisites (manual, console/gcloud side — see README.md "Deployment Checklist"):
+ *   - Firestore Admin API enabled for the project (usually on by default once Firestore is used).
+ *   - The Cloud Functions service account needs `roles/datastore.importExportAdmin` (or
+ *     equivalent) on the project, and the target bucket needs to exist with write access granted
+ *     to that same service account.
+ *   - The default `{projectId}.appspot.com` bucket (created automatically with most projects) is
+ *     used as the export target here; override via `FIRESTORE_EXPORT_BUCKET` env var if a
+ *     dedicated bucket is preferred.
+ */
+exports.scheduledFirestoreExport = onSchedule(
+  { schedule: "0 2 * * *", timeZone: "Africa/Abidjan", region: "europe-west1" },
+  async () => {
+    try {
+      const client = new firestoreAdminV1.FirestoreAdminClient();
+      const projectId = await client.getProjectId();
+      const bucket = process.env.FIRESTORE_EXPORT_BUCKET || `${projectId}.appspot.com`;
+      const dateFolder = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const outputUriPrefix = `gs://${bucket}/scheduled-exports/${dateFolder}`;
+      const databaseName = client.databasePath(projectId, "(default)");
+
+      const [operation] = await client.exportDocuments({
+        name: databaseName,
+        outputUriPrefix,
+        // Empty collectionIds = export ALL collections (per API docs: omitted/empty means "all").
+        collectionIds: [],
+      });
+
+      logger.info(
+        `scheduledFirestoreExport: export started — operation=${operation?.name ?? "unknown"} target=${outputUriPrefix}`
+      );
+    } catch (err) {
+      // Defensive by design: a scheduled backup job failing must never look like a production
+      // incident to end users — it just means the daily export didn't happen, logged for whoever
+      // monitors Cloud Logging/alerts on this function.
+      logger.error(`scheduledFirestoreExport: FAILED — ${err.message}`, { err });
+    }
+  }
+);
+
+/**
  * setUserRole — callable (admin `direction`)
  * Pose le custom claim `role` + audit (BUILD_KIT.md §7/§10).
  *
@@ -688,7 +798,7 @@ exports.exportPdf = onCall({ region: "europe-west1" }, async (request) => {
  * data: { uid: string, role: Role }
  * Roadmap: V1 Auth & RBAC.
  */
-exports.setUserRole = onCall({ region: "europe-west1" }, async (request) => {
+exports.setUserRole = onCall(CALLABLE_OPTS, async (request) => {
   const { uid, role } = request.data || {};
 
   if (typeof uid !== "string" || !uid) {

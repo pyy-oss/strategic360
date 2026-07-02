@@ -7,6 +7,7 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { getFunctions, type Functions } from "firebase/functions";
+import { initializeAppCheck, ReCaptchaV3Provider, type AppCheck } from "firebase/app-check";
 
 /**
  * Firebase client SDK bootstrap. Reads config from `import.meta.env.VITE_FIREBASE_*`
@@ -29,10 +30,23 @@ export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId
 );
 
+/**
+ * App Check (V8 Durcissement, BUILD_KIT.md §13/§3 "Firebase Hosting ... App Check"). Site key for
+ * the reCAPTCHA v3 provider — Firebase Console > App Check > register a reCAPTCHA v3 site key for
+ * this web app, then set VITE_FIREBASE_APPCHECK_SITE_KEY (see web/.env.example). Deliberately
+ * OPTIONAL/best-effort: App Check is enabled client-side only when the key is present, so local
+ * dev / this sandbox (no real key) keeps working without it. `functions/index.js` documents the
+ * matching server-side `enforceAppCheck` rollout sequencing — DO NOT flip enforcement on in
+ * Functions before this client-side piece is actually configured against a real site key, or
+ * every callable will start rejecting requests.
+ */
+const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY;
+
 let app: FirebaseApp;
 let auth: Auth;
 let db: Firestore;
 let functions: Functions;
+let appCheck: AppCheck | undefined;
 
 if (isFirebaseConfigured) {
   app = initializeApp(firebaseConfig);
@@ -41,6 +55,20 @@ if (isFirebaseConfigured) {
     localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
   });
   functions = getFunctions(app);
+
+  if (appCheckSiteKey) {
+    appCheck = initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(appCheckSiteKey),
+      isTokenAutoRefreshEnabled: true,
+    });
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[firebase] VITE_FIREBASE_APPCHECK_SITE_KEY is not set — App Check is NOT enabled client-side. " +
+        "Requests will still work as long as Functions haven't turned on enforceAppCheck yet " +
+        "(see functions/index.js). Set the site key before enabling server-side enforcement."
+    );
+  }
 } else {
   // eslint-disable-next-line no-console
   console.warn(
@@ -58,4 +86,4 @@ if (isFirebaseConfigured) {
   functions = getFunctions(app);
 }
 
-export { app, auth, db, functions };
+export { app, auth, db, functions, appCheck };
