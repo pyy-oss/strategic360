@@ -346,6 +346,36 @@ function computeValueAtStake({ opportunities } = {}) {
 }
 
 /* ------------------------------------------------------------------------------------------- *
+ * Granularité de la croissance (Portefeuille — "où gagner", BUILD_KIT.md §5.4)
+ * ------------------------------------------------------------------------------------------- */
+
+/**
+ * computeGranularite({orders}) -> Array<{seg, casN, casN1, delta}>
+ * Decomposes portfolio growth by segment (BU): for each BU, current-year CAS, prior-year CAS and
+ * the raw delta (casN − casN1, raw XOF — can be negative, unlike computeBcg's clamped 0-1
+ * `croissance`). Sorted by delta descending so the view reads top-to-bottom as "où l'on gagne →
+ * où l'on perd". Same `orders` row shape as computeBcg ({bu, cas, casN1, ...}). Returns [] when
+ * empty — an empty list is a renderable state.
+ * "Segment" is the BU for now — a finer segment×offre axis needs an offer/segment tag that the
+ * internal sources don't carry yet (same prerequisite pattern as recurrentShare).
+ */
+function computeGranularite({ orders } = {}) {
+  if (!Array.isArray(orders) || orders.length === 0) return [];
+  const byBu = new Map();
+  for (const r of orders) {
+    const bu = r && r.bu;
+    if (!bu) continue;
+    const entry = byBu.get(bu) || { casN: 0, casN1: 0 };
+    entry.casN += Number(r.cas) || 0;
+    entry.casN1 += Number(r.casN1) || 0;
+    byBu.set(bu, entry);
+  }
+  return [...byBu.entries()]
+    .map(([seg, v]) => ({ seg, casN: Math.round(v.casN), casN1: Math.round(v.casN1), delta: Math.round(v.casN - v.casN1) }))
+    .sort((a, b) => b.delta - a.delta);
+}
+
+/* ------------------------------------------------------------------------------------------- *
  * Pipeline influencé par la veille (Radar exécutif — "pipeline influencé", BUILD_KIT.md §6
  * summaries/veille_exec.pipelineInfluenced). Left at 0 until 2026-07-02, when the internal
  * pipeline became available via nt360 — now computed as the value-at-stake carried by clients
@@ -409,6 +439,7 @@ function computePipelineInfluenced({ valueAtStake, entities } = {}) {
 
 module.exports = {
   computePorterForces,
+  computeGranularite,
   computePipelineInfluenced,
   normalizeEntityName,
   computeBcg,

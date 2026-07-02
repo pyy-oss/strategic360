@@ -50,9 +50,17 @@ export interface QuantiValueAtStakeEntry {
   impact: number;
 }
 
+export interface QuantiGranulariteEntry {
+  seg: string; // segment = BU (un axe segment×offre plus fin attend un tag offre côté source)
+  casN: number; // CAS exercice courant (XOF)
+  casN1: number; // CAS exercice précédent (XOF)
+  delta: number; // casN − casN1 (XOF, peut être négatif)
+}
+
 export interface QuantiSummary {
   porterForces: QuantiPorterForces;
   bcg: QuantiBcgEntry[];
+  granularite?: QuantiGranulariteEntry[]; // croissance par segment (BU), XOF bruts — nt360 sync
   ge9: unknown[] | null; // not derivable from internal data alone — see Portefeuille.tsx
   casTotal: number | null; // portfolio-wide CAS (current year), from P&L `orders` — Simulateur SIM_BASE.cas calibration
   casN1Total: number | null; // portfolio-wide CAS (prior year), from P&L `orders`

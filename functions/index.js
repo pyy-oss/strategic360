@@ -22,7 +22,7 @@ const { parsePnl } = require("./parsers/pnl");
 const { parseLive } = require("./parsers/live");
 const { parseFacturationDf } = require("./parsers/facturationDf");
 const { parseFiche } = require("./parsers/fiche");
-const { computePorterForces, computeBcg, computeCasSummary, computePipeline, computeKris, computeValueAtStake, computePipelineInfluenced } = require("./domain/quanti");
+const { computePorterForces, computeBcg, computeCasSummary, computePipeline, computeKris, computeValueAtStake, computePipelineInfluenced, computeGranularite } = require("./domain/quanti");
 const { intelItemId } = require("./domain/ids");
 const { buildClassificationPrompt, parseClassificationResponse } = require("./domain/classify");
 const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
@@ -192,10 +192,12 @@ async function computeSummaryQuanti(db) {
   const { pipelinePondere, winRate } = computePipeline({ opportunities });
   const kris = computeKris({ orders, opportunities, invoices });
   const valueAtStake = computeValueAtStake({ opportunities });
+  const granularite = computeGranularite({ orders });
 
   return {
     porterForces,
     bcg,
+    granularite,
     ge9: null, // not derivable from internal data alone — see comment above
     // casTotal/casN1Total: portfolio-wide CAS (current/prior year), from P&L `orders` — feeds the
     // Simulateur's SIM_BASE.cas calibration (BUILD_KIT.md §8.2/§11, web/.../views/Simulateur.tsx).
@@ -995,10 +997,12 @@ async function runInternalQuantiSync(db) {
   const { pipelinePondere, winRate } = computePipeline({ opportunities });
   const kris = computeKris({ orders: supplierRows, opportunities, invoices });
   const valueAtStake = computeValueAtStake({ opportunities });
+  const granularite = computeGranularite({ orders });
 
   const summary = {
     porterForces,
     bcg,
+    granularite,
     ge9: null, // still not derivable — needs an external market-attractiveness axis
     casTotal,
     casN1Total,

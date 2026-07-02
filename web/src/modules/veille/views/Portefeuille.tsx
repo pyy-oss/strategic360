@@ -1,19 +1,24 @@
 import React, { useState } from "react";
-import { T, pct } from "../../../design/tokens";
+import { T, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Badge } from "../../../design/ui";
 import { useInitiatives } from "../lib/execution";
+import { useQuantiSummary } from "../lib/quanti";
 
 /**
  * "Portefeuille & Croissance" (GE-McKinsey · Three Horizons · Granularité).
  *
- * GE-McKinsey and Granularité need internal quantitative imports (P&L/LIVE) that don't exist as
- * summaries yet — both tabs show explicit empty states (no sample data is ever rendered).
- * Three Horizons is derived live from the `initiatives` collection, grouped by `horizon`
- * (H1/H2/H3), so it fills up as initiatives are created in "Exécution & Décisions".
+ * Granularité reads `summaries/quanti.granularite` (croissance CAS N vs N-1 par BU, XOF bruts —
+ * calculée depuis nt360). GE-McKinsey stays an explicit empty state: its market-attractiveness
+ * axis needs EXTERNAL market data no internal source provides (not an import problem — a data
+ * problem). Three Horizons is derived live from the `initiatives` collection, grouped by
+ * `horizon` (H1/H2/H3), so it fills up as initiatives are created in "Exécution & Décisions".
  */
 export function Portefeuille() {
   const [c, setC] = useState("ge9");
   const { initiatives, loading } = useInitiatives();
+  const { data: quanti } = useQuantiSummary();
+  const gran = quanti?.granularite ?? [];
+  const granMax = Math.max(...gran.map((g) => Math.abs(g.delta)), 1);
   const CN: [string, string][] = [
     ["ge9", "Matrice GE-McKinsey"],
     ["horizons", "Three Horizons"],
@@ -40,7 +45,10 @@ export function Portefeuille() {
       {c === "ge9" && (
         <Card>
           <Eyebrow color={T.emerald}>Matrice GE-McKinsey — attractivité du marché × position concurrentielle</Eyebrow>
-          <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente des imports internes (P&L/LIVE).</div>
+          <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>
+            Nécessite un axe « attractivité du marché » (donnée externe : taille/croissance des marchés adressés) qu'aucune
+            source interne ne fournit — la position concurrentielle interne est déjà couverte par le BCG (vue Cadres).
+          </div>
         </Card>
       )}
       {c === "horizons" && (
@@ -99,8 +107,36 @@ export function Portefeuille() {
       )}
       {c === "gran" && (
         <Card>
-          <Eyebrow color={T.steel}>Granularité de la croissance — où gagner (segment × offre)</Eyebrow>
-          <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente des imports internes (P&L/LIVE).</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Eyebrow color={T.steel}>Granularité de la croissance — où gagner (par BU, CAS N vs N-1)</Eyebrow>
+            {gran.length > 0 && <Badge c={T.emerald}>Temps réel (nt360)</Badge>}
+          </div>
+          {gran.length === 0 && (
+            <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente de la première synchronisation interne (nt360).</div>
+          )}
+          {gran.length > 0 && (
+            <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+              {gran.map((g) => (
+                <div key={g.seg}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}>
+                    <span style={{ color: T.ink, fontWeight: 600 }}>
+                      {g.seg} <span style={{ color: T.faint, fontWeight: 400 }}>· {fmt(g.casN1)} → {fmt(g.casN)}</span>
+                    </span>
+                    <span style={{ color: g.delta >= 0 ? T.emerald : T.clay, fontVariantNumeric: "tabular-nums" }}>
+                      {g.delta >= 0 ? "+" : ""}
+                      {fmt(g.delta)}
+                    </span>
+                  </div>
+                  <div style={{ height: 7, background: T.panel2, borderRadius: 4 }}>
+                    <div style={{ width: `${(Math.abs(g.delta) / granMax) * 100}%`, height: "100%", background: g.delta >= 0 ? T.emerald : T.clay, borderRadius: 4 }} />
+                  </div>
+                </div>
+              ))}
+              <div style={{ fontSize: 11.5, color: T.faint, marginTop: 4 }}>
+                Segment = BU (un axe segment × offre plus fin nécessitera un tag « offre » côté données internes). Montants en FCFA.
+              </div>
+            </div>
+          )}
         </Card>
       )}
     </div>

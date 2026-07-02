@@ -117,3 +117,24 @@ describe("pickObjectives / pickCurrentFy", () => {
     expect(pickCurrentFy([], 2030)).toBe(2030);
   });
 });
+
+describe("computeGranularite (via mapOrders)", () => {
+  it("decomposes growth by BU in raw XOF, sorted by delta descending, negatives allowed", async () => {
+    const { computeGranularite } = await import("../domain/quanti.js");
+    const rows = mapOrders(
+      [
+        { bu: "ICT", cas: 150, yearPo: 2026 },
+        { bu: "ICT", cas: 100, yearPo: 2025 },
+        { bu: "FORMATION", cas: 20, yearPo: 2026 },
+        { bu: "FORMATION", cas: 60, yearPo: 2025 },
+      ],
+      2026
+    );
+    const gran = computeGranularite({ orders: rows });
+    expect(gran).toEqual([
+      { seg: "ICT", casN: 150, casN1: 100, delta: 50 },
+      { seg: "FORMATION", casN: 20, casN1: 60, delta: -40 },
+    ]);
+    expect(computeGranularite({ orders: [] })).toEqual([]);
+  });
+});
