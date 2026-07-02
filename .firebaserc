@@ -1,5 +1,12 @@
 {
   "projects": {
-    "default": "veille-nt-ci"
+    "default": "propulse-business-87f7a"
+  },
+  "targets": {
+    "propulse-business-87f7a": {
+      "hosting": {
+        "strategic360": ["strategic360"]
+      }
+    }
   }
 }

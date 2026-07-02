@@ -42,6 +42,15 @@ export const isFirebaseConfigured = Boolean(
  */
 const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY;
 
+/**
+ * Named Firestore database (shared-project isolation). When this Firebase project hosts other
+ * apps, set VITE_FIREBASE_FIRESTORE_DATABASE_ID to a dedicated database (e.g. "strategic360") so
+ * this app never reads/writes the project's "(default)" database, which other apps may already
+ * be using. Defaults to "(default)" — the standard single-database behavior — when unset.
+ * Mirrors functions/index.js's FIRESTORE_DATABASE_ID (must match for client/server reads to agree).
+ */
+const firestoreDatabaseId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || "(default)";
+
 let app: FirebaseApp;
 let auth: Auth;
 let db: Firestore;
@@ -51,9 +60,11 @@ let appCheck: AppCheck | undefined;
 if (isFirebaseConfigured) {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
-  db = initializeFirestore(app, {
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-  });
+  db = initializeFirestore(
+    app,
+    { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) },
+    firestoreDatabaseId
+  );
   functions = getFunctions(app);
 
   if (appCheckSiteKey) {

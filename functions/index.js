@@ -90,6 +90,33 @@ const ENFORCE_APP_CHECK = process.env.APPCHECK_ENFORCE === "true";
  * is switched on project-wide. */
 const CALLABLE_OPTS = { region: "europe-west1", enforceAppCheck: ENFORCE_APP_CHECK };
 
+/**
+ * Shared-project isolation (this Firebase project — e.g. "propulse-business-87f7a" — hosts
+ * OTHER apps too). To never read/write/overwrite their data:
+ *  - FIRESTORE_DATABASE_ID: a dedicated NAMED Firestore database (e.g. "strategic360"), entirely
+ *    separate from "(default)" (and from any other named database other apps use). Set via the
+ *    functions/.env(.<project-id>) file — see functions/.env.example. Falls back to "(default)"
+ *    so this codebase still works standalone against a project with no other apps.
+ *  - STORAGE_BUCKET_NAME: a dedicated Cloud Storage bucket (e.g. "strategic360"), separate from
+ *    the project's default bucket other apps may already be using. Falls back to the default
+ *    bucket (`getStorage().bucket()` with no args) when unset.
+ * See docs/BUILD_KIT.md / README.md "Checklist de déploiement" for the full multi-app rationale.
+ */
+const FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || "(default)";
+const STORAGE_BUCKET_NAME = process.env.STORAGE_BUCKET_NAME || undefined;
+
+/** Firestore handle scoped to FIRESTORE_DATABASE_ID — use this everywhere instead of a bare
+ * `getFirestore()` call, so every read/write in this codebase stays confined to this app's
+ * dedicated database and never touches another app's "(default)" (or other named) database. */
+function firestoreDb() {
+  return FIRESTORE_DATABASE_ID === "(default)" ? getFirestore() : getFirestore(FIRESTORE_DATABASE_ID);
+}
+
+/** Storage bucket handle scoped to STORAGE_BUCKET_NAME — same rationale as db() above. */
+function defaultBucket() {
+  return STORAGE_BUCKET_NAME ? getStorage().bucket(STORAGE_BUCKET_NAME) : getStorage().bucket();
+}
+
 const NOT_IMPLEMENTED = (fn, phase) => {
   const msg = `${fn} not implemented — see BUILD_KIT.md roadmap ${phase}`;
   logger.warn(msg);
@@ -187,9 +214,16 @@ async function computeSummaryQuanti(db) {
  * note: "Imports & agrégats écrits par l'Admin SDK (Functions) contournent les rules").
  * Roadmap: V4 Quanti interne.
  */
-exports.ingestInternal = onObjectFinalized({ region: "europe-west1" }, async (event) => {
-  const filePath = event.data?.name;
-  if (!filePath || !filePath.startsWith("imports/")) return;
+exports.ingestInternal = onObjectFinalized(
+  {
+    region: "europe-west1",
+    // Watch the dedicated bucket (STORAGE_BUCKET_NAME) when set — otherwise this trigger defaults
+    // to the project's default bucket, which in a shared project may belong to another app.
+    ...(STORAGE_BUCKET_NAME ? { bucket: STORAGE_BUCKET_NAME } : {}),
+  },
+  async (event) => {
+    const filePath = event.data?.name;
+    if (!filePath || !filePath.startsWith("imports/")) return;
 
   const segments = filePath.split("/");
   const kind = segments[1];
@@ -200,7 +234,7 @@ exports.ingestInternal = onObjectFinalized({ region: "europe-west1" }, async (ev
   }
 
   const filename = segments[segments.length - 1];
-  const db = getFirestore();
+  const db = firestoreDb();
 
   try {
     const bucket = getStorage().bucket(event.data.bucket);
@@ -337,7 +371,7 @@ async function upsertClassifiedItem(db, classified) {
  * Roadmap: V7 IA & sync.
  */
 exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1" }, async () => {
-  const db = getFirestore();
+  const db = firestoreDb();
 
   const [sourcesSnap, watchlistSnap] = await Promise.all([
     db.collection("intelSources").where("active", "==", true).get(),
@@ -432,7 +466,7 @@ exports.classifyAI = onCall(CALLABLE_OPTS, async (request) => {
     throw new HttpsError("invalid-argument", "itemId (string) est requis.");
   }
 
-  const db = getFirestore();
+  const db = firestoreDb();
   const ref = db.doc(`intelItems/${itemId}`);
   const snap = await ref.get();
   if (!snap.exists) {
@@ -535,7 +569,7 @@ async function computeVeilleSummary(db) {
  * Roadmap: V3 Scoring & agrégats veille.
  */
 exports.aggregateVeille = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1" }, async (event) => {
-  const db = getFirestore();
+  const db = firestoreDb();
   try {
     const summary = await computeVeilleSummary(db);
     await db.doc("summaries/veille").set(summary);
@@ -590,7 +624,7 @@ async function computeVeilleExecSummary(db) {
  * Roadmap: V3 Scoring & agrégats veille.
  */
 exports.aggregateVeilleExec = onSchedule({ schedule: "every 60 minutes", timeZone: "Africa/Abidjan", region: "europe-west1" }, async () => {
-  const db = getFirestore();
+  const db = firestoreDb();
   try {
     const summary = await computeVeilleExecSummary(db);
     await db.doc("summaries/veille_exec").set(summary);
@@ -610,7 +644,7 @@ exports.aggregateVeilleExec = onSchedule({ schedule: "every 60 minutes", timeZon
  * Roadmap: V3 Scoring & agrégats veille.
  */
 exports.aggregateVeilleExecOnWrite = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1" }, async (event) => {
-  const db = getFirestore();
+  const db = firestoreDb();
   try {
     const summary = await computeVeilleExecSummary(db);
     await db.doc("summaries/veille_exec").set(summary);
@@ -636,7 +670,7 @@ exports.aggregateVeilleExecOnWrite = onDocumentWritten({ document: "intelItems/{
 exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "générer un briefing");
 
-  const db = getFirestore();
+  const db = firestoreDb();
   const [veilleSnap, veilleExecSnap, topItemsSnap] = await Promise.all([
     db.doc("summaries/veille").get(),
     db.doc("summaries/veille_exec").get(),
@@ -684,7 +718,7 @@ exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
 exports.exportPdf = onCall(CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "exporter un briefing en PDF");
 
-  const db = getFirestore();
+  const db = firestoreDb();
   const { briefingId } = request.data || {};
 
   let ref;
@@ -713,7 +747,7 @@ exports.exportPdf = onCall(CALLABLE_OPTS, async (request) => {
     doc.end();
   });
 
-  const bucket = getStorage().bucket();
+  const bucket = defaultBucket();
   const filePath = `exports/${ref.id}.pdf`;
   const file = bucket.file(filePath);
   await file.save(buffer, { contentType: "application/pdf" });
@@ -811,7 +845,7 @@ exports.setUserRole = onCall(CALLABLE_OPTS, async (request) => {
     );
   }
 
-  const db = getFirestore();
+  const db = firestoreDb();
   const bootstrapRef = db.doc("config/bootstrap");
   const bootstrapSnap = await bootstrapRef.get();
   const bootstrapDone = bootstrapSnap.exists && bootstrapSnap.data()?.done === true;
@@ -835,7 +869,13 @@ exports.setUserRole = onCall(CALLABLE_OPTS, async (request) => {
     );
   }
 
-  await getAuth().setCustomUserClaims(uid, { role });
+  // Firebase Auth is shared across every app in this project (there is no per-app Auth
+  // namespace short of paid Identity Platform tenancy). setCustomUserClaims() REPLACES the
+  // user's entire custom-claims object — calling it with only `{role}` would silently wipe out
+  // any claim another app already set on this same account. Merge into the existing claims
+  // instead, so this app only ever touches its own `role` key.
+  const existingClaims = (await getAuth().getUser(uid)).customClaims || {};
+  await getAuth().setCustomUserClaims(uid, { ...existingClaims, role });
 
   await db.collection("auditLog").add({
     uid: request.auth?.uid ?? null,

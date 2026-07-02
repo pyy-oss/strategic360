@@ -180,7 +180,11 @@ const INNOVATION_PORTFOLIO_SEED = [
 
 async function seed() {
   initializeApp();
-  const db = getFirestore();
+  // FIRESTORE_DATABASE_ID: set this when this project is shared with other apps, to seed the
+  // dedicated named database (e.g. "strategic360") instead of "(default)" — see index.js's
+  // matching comment and functions/.env.example. Falls back to "(default)" when unset.
+  const databaseId = process.env.FIRESTORE_DATABASE_ID || "(default)";
+  const db = databaseId === "(default)" ? getFirestore() : getFirestore(databaseId);
 
   await db.doc("config/permissions").set({ matrix: DEFAULT_PERMISSIONS_MATRIX });
   console.log("Seeded config/permissions with default RBAC matrix.");

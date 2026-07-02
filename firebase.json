@@ -1,20 +1,23 @@
 {
   "hosting": {
+    "target": "strategic360",
     "public": "web/dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [{ "source": "**", "destination": "/index.html" }]
   },
   "firestore": {
+    "database": "strategic360",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
   "storage": {
+    "bucket": "strategic360",
     "rules": "storage.rules"
   },
   "functions": [
     {
       "source": "functions",
-      "codebase": "default",
+      "codebase": "veille",
       "runtime": "nodejs20"
     }
   ],
