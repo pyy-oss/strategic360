@@ -430,3 +430,29 @@ describe("parseDiagnosticResponse", () => {
     walk(partial);
   });
 });
+
+describe("contexte entreprise dynamique", () => {
+  it("les builders acceptent un contexte custom injecté à la place du statique", async () => {
+    const { buildSwotPestelPrompt, buildOpportunitiesPrompt } = await import("../domain/enrich.js");
+    const custom = "CONTEXTE DE TEST DYNAMIQUE";
+    expect(buildSwotPestelPrompt([], custom)).toContain(custom);
+    expect(buildOpportunitiesPrompt([], custom)).toContain(custom);
+  });
+
+  it("parseContextRefreshResponse accepte une mise à jour valide et retourne text+changes", async () => {
+    const { parseContextRefreshResponse, COMPANY_CONTEXT } = await import("../domain/enrich.js");
+    const updated = COMPANY_CONTEXT.replace("OBJECTIF COMMERCIAL", "OBJECTIF COMMERCIAL (révisé)");
+    const parsed = parseContextRefreshResponse({ context: updated, changes: ["révision objectif"] }, COMPANY_CONTEXT);
+    expect(parsed).not.toBeNull();
+    expect(parsed.text).toContain("HOMONYMIE");
+    expect(parsed.changes).toEqual(["révision objectif"]);
+  });
+
+  it("rejette une réécriture qui perd les sections critiques ou raccourcit brutalement", async () => {
+    const { parseContextRefreshResponse, COMPANY_CONTEXT } = await import("../domain/enrich.js");
+    expect(parseContextRefreshResponse({ context: "trop court", changes: [] }, COMPANY_CONTEXT)).toBeNull();
+    const sansHomonymie = COMPANY_CONTEXT.replace(/HOMONYMIE/g, "X");
+    expect(parseContextRefreshResponse({ context: sansHomonymie, changes: [] }, COMPANY_CONTEXT)).toBeNull();
+    expect(parseContextRefreshResponse(null, COMPANY_CONTEXT)).toBeNull();
+  });
+});

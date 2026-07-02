@@ -349,6 +349,81 @@ function CanvasTab() {
   );
 }
 
+
+/* ---- Contexte entreprise (dynamique — frameworks/companyContext) ---- */
+
+type ContexteContent = { text: string; changes?: string[] };
+
+function ContexteEditor({ initial, onClose }: { initial: ContexteContent | null; onClose: () => void }) {
+  const [text, setText] = useState(initial?.text ?? "");
+  const { saving, err, save } = useSave("companyContext");
+  return (
+    <EditorShell
+      title="Contexte entreprise — édition"
+      onClose={onClose}
+      saving={saving}
+      err={err}
+      onSave={() => {
+        if (text.trim()) void save({ text: text.trim() } satisfies ContexteContent, onClose);
+      }}
+    >
+      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 8 }}>
+        Ce texte est injecté dans TOUS les prompts IA (classification des signaux, SWOT/PESTEL, opportunités, briefing).
+        Après votre édition, l'IA ne le réécrira plus automatiquement — vous en gardez la main.
+      </div>
+      <textarea style={{ ...inputStyle, minHeight: 380, resize: "vertical", fontSize: 12, lineHeight: 1.55 }} value={text} onChange={(e) => setText(e.target.value)} />
+    </EditorShell>
+  );
+}
+
+function ContexteTab() {
+  const { data: fw, loading } = useFramework<ContexteContent>("companyContext");
+  const isExec = useIsExec();
+  const [editing, setEditing] = useState(false);
+  if (loading) return <Card><div style={{ fontSize: 12.5, color: T.faint }}>Chargement…</div></Card>;
+  const text = fw?.content?.text ?? "";
+  const changes = fw?.content?.changes ?? [];
+  const aiMaintained = typeof fw?.updatedBy === "string" && fw.updatedBy.startsWith("ai:");
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <Badge c={aiMaintained ? T.emerald : T.gold}>{aiMaintained ? "Maintenu par l'IA (rafraîchi chaque lundi)" : "Édité par la Direction — IA en lecture seule"}</Badge>
+          {fw?.version != null && <Badge c={T.faint}>v{fw.version}</Badge>}
+        </div>
+        {isExec && !editing && (
+          <button className="pill on" onClick={() => setEditing(true)}>
+            {text ? "Modifier le contexte" : "+ Renseigner le contexte"}
+          </button>
+        )}
+      </div>
+      {editing && isExec && <ContexteEditor initial={fw?.content ?? null} onClose={() => setEditing(false)} />}
+      {!text && !editing && (
+        <Card>
+          <Eyebrow color={T.faint}>Contexte entreprise</Eyebrow>
+          <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>
+            Pas encore initialisé — le seed ou le prochain enrichissement IA le créera.
+          </div>
+        </Card>
+      )}
+      {text && (
+        <Card>
+          <Eyebrow color={T.plum}>Contexte injecté dans tous les prompts IA</Eyebrow>
+          <div style={{ marginTop: 10, fontSize: 12.5, color: T.dim, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{text}</div>
+          {changes.length > 0 && (
+            <div style={{ marginTop: 12, borderTop: `1px solid ${T.line}`, paddingTop: 8 }}>
+              <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 4 }}>Dernières mises à jour IA :</div>
+              <ul style={{ margin: 0, paddingLeft: 16, fontSize: 11.5, color: T.faint, lineHeight: 1.6 }}>
+                {changes.map((c, i) => (<li key={i}>{c}</li>))}
+              </ul>
+            </div>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
+
 /* ---- Porter / BCG (summaries/quanti) ---- */
 
 function PorterTab() {
@@ -450,6 +525,7 @@ export function Cadres() {
     ["porter", "Porter"],
     ["bcg", "BCG"],
     ["canvas", "Canvas"],
+    ["contexte", "Contexte entreprise"],
   ];
   return (
     <div>
@@ -467,6 +543,7 @@ export function Cadres() {
       {c === "porter" && <PorterTab />}
       {c === "bcg" && <BcgTab />}
       {c === "canvas" && <CanvasTab />}
+      {c === "contexte" && <ContexteTab />}
     </div>
   );
 }

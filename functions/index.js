@@ -132,6 +132,39 @@ function defaultBucket() {
   return STORAGE_BUCKET_NAME ? getStorage().bucket(STORAGE_BUCKET_NAME) : getStorage().bucket();
 }
 
+/* ------------------------------------------------------------------------------------------- *
+ * Contexte entreprise DYNAMIQUE (décision 2026-07 : « le contexte est aussi censé être
+ * dynamique »). La vérité vit dans frameworks/companyContext (versionné, éditable Direction,
+ * rafraîchi par l'enrichissement hebdo avec la garde anti-écrasement humain de
+ * writeFrameworkDoc) ; domain/companyContext.js n'est plus que le seed initial + le repli.
+ * Cache en mémoire d'instance (TTL 10 min) pour ne pas relire le doc à chaque classification.
+ * ------------------------------------------------------------------------------------------- */
+const { COMPANY_CONTEXT: STATIC_COMPANY_CONTEXT } = require("./domain/companyContext");
+const COMPANY_CONTEXT_TTL_MS = 10 * 60 * 1000;
+let companyContextCache = { text: null, ts: 0 };
+
+async function getCompanyContext() {
+  const now = Date.now();
+  if (companyContextCache.text && now - companyContextCache.ts < COMPANY_CONTEXT_TTL_MS) {
+    return companyContextCache.text;
+  }
+  try {
+    const snap = await firestoreDb().doc("frameworks/companyContext").get();
+    const text = snap.exists ? snap.data()?.content?.text : null;
+    companyContextCache = { text: typeof text === "string" && text.trim() ? text : STATIC_COMPANY_CONTEXT, ts: now };
+  } catch (err) {
+    logger.warn(`getCompanyContext: lecture frameworks/companyContext échouée (${err.message}) — repli sur le contexte statique`);
+    companyContextCache = { text: STATIC_COMPANY_CONTEXT, ts: now };
+  }
+  return companyContextCache.text;
+}
+
+/** Invalide le cache après une écriture du contexte (rafraîchissement IA) pour que les étapes
+ * suivantes du même run utilisent immédiatement la nouvelle version. */
+function invalidateCompanyContextCache() {
+  companyContextCache = { text: null, ts: 0 };
+}
+
 const NOT_IMPLEMENTED = (fn, phase) => {
   const msg = `${fn} not implemented — see BUILD_KIT.md roadmap ${phase}`;
   logger.warn(msg);
@@ -345,7 +378,8 @@ function extractWebText(html, maxChars = 4000) {
  * response was unusable (mirrors `parseClassificationResponse`'s contract).
  */
 async function classifyRawText(rawText, watchlistEntities, context) {
-  const prompt = buildClassificationPrompt(rawText, watchlistEntities);
+  const companyContext = await getCompanyContext();
+  const prompt = buildClassificationPrompt(rawText, watchlistEntities, companyContext);
   const response = await generateJson(prompt);
   return parseClassificationResponse(response, context);
 }
@@ -764,7 +798,8 @@ async function runGenerateBriefing(db, generatedBy) {
   const now = new Date();
   const period = `semaine du ${now.toISOString().slice(0, 10)}`;
 
-  const prompt = buildBriefingPrompt({ veilleSummary, veilleExecSummary, topItems, period });
+  const companyContext = await getCompanyContext();
+  const prompt = buildBriefingPrompt({ veilleSummary, veilleExecSummary, topItems, period, companyContext });
   const response = await generateJson(prompt);
   const briefing = parseBriefingResponse(response, {
     period,
@@ -824,6 +859,8 @@ const {
   parseCanvasResponse,
   buildDiagnosticPrompt,
   parseDiagnosticResponse,
+  buildContextRefreshPrompt,
+  parseContextRefreshResponse,
   pickSignalsForEnrichment,
   slugId: enrichSlugId,
 } = require("./domain/enrich");
@@ -871,11 +908,36 @@ async function runEnrichment(db) {
     return { skipped: true };
   }
 
+  // 0. Rafraîchissement du contexte entreprise (dynamique) — AVANT les autres générations pour
+  // qu'elles utilisent la version à jour. writeFrameworkDoc applique la garde humaine : un
+  // contexte édité par la Direction n'est jamais réécrit par l'IA.
+  let companyContext = await getCompanyContext();
+  try {
+    const parsed = parseContextRefreshResponse(
+      await generateJson(buildContextRefreshPrompt(companyContext, signals)),
+      companyContext
+    );
+    if (!parsed) {
+      logger.warn("runEnrichment: context refresh response rejected by guards — contexte inchangé");
+    } else if (parsed.text === companyContext || parsed.changes.length === 0) {
+      logger.info("runEnrichment: contexte entreprise inchangé (aucune mise à jour justifiée)");
+    } else {
+      const status = await writeFrameworkDoc(db, "companyContext", { text: parsed.text, changes: parsed.changes });
+      if (status === "written") {
+        invalidateCompanyContextCache();
+        companyContext = parsed.text;
+        logger.info(`runEnrichment: contexte entreprise mis à jour — ${parsed.changes.join(" ; ")}`);
+      }
+    }
+  } catch (err) {
+    logger.error(`runEnrichment: context refresh FAILED — ${err.message}`, { err });
+  }
+
   const summary = { swotPestel: "failed", techRadarBlips: 0, battlecardMoves: 0 };
 
   // 1. SWOT + PESTEL frameworks -----------------------------------------------------------------
   try {
-    const parsed = parseSwotPestelResponse(await generateJson(buildSwotPestelPrompt(signals)));
+    const parsed = parseSwotPestelResponse(await generateJson(buildSwotPestelPrompt(signals, companyContext)));
     if (!parsed) {
       summary.swotPestel = "parse-failed";
       logger.error("runEnrichment: SWOT/PESTEL response unusable (parse returned null)");
@@ -894,7 +956,7 @@ async function runEnrichment(db) {
     if (!techSignals.length) {
       logger.info("runEnrichment: no tech-axis signals — tech radar left untouched");
     } else {
-      const parsed = parseTechRadarResponse(await generateJson(buildTechRadarPrompt(techSignals)));
+      const parsed = parseTechRadarResponse(await generateJson(buildTechRadarPrompt(techSignals, companyContext)));
       if (!parsed) {
         logger.error("runEnrichment: tech radar response unusable (parse returned null)");
       } else {
@@ -926,7 +988,7 @@ async function runEnrichment(db) {
     if (!competitorSignals.length) {
       logger.info("runEnrichment: no concurrents-axis signals — battlecards left untouched");
     } else {
-      const parsed = parseBattlecardMovesResponse(await generateJson(buildBattlecardMovesPrompt(competitorSignals)));
+      const parsed = parseBattlecardMovesResponse(await generateJson(buildBattlecardMovesPrompt(competitorSignals, companyContext)));
       if (!parsed) {
         logger.error("runEnrichment: battlecard moves response unusable (parse returned null)");
       } else {
@@ -947,7 +1009,7 @@ async function runEnrichment(db) {
 
   // 4. Business Model Canvas (frameworks/canvas) — added 2026-07-02 ("encore des vues vides") ----
   try {
-    const parsed = parseCanvasResponse(await generateJson(buildCanvasPrompt(signals)));
+    const parsed = parseCanvasResponse(await generateJson(buildCanvasPrompt(signals, companyContext)));
     if (!parsed) {
       summary.canvas = "parse-failed";
       logger.error("runEnrichment: canvas response unusable (parse returned null)");
@@ -961,7 +1023,7 @@ async function runEnrichment(db) {
 
   // 5. Diagnostic (frameworks/diagnostic : arbre MECE + 7S + maturité) ---------------------------
   try {
-    const parsed = parseDiagnosticResponse(await generateJson(buildDiagnosticPrompt(signals)));
+    const parsed = parseDiagnosticResponse(await generateJson(buildDiagnosticPrompt(signals, companyContext)));
     if (!parsed) {
       summary.diagnostic = "parse-failed";
       logger.error("runEnrichment: diagnostic response unusable (parse returned null)");
@@ -977,7 +1039,7 @@ async function runEnrichment(db) {
   // signaux en pipeline de leads qualifiés. Upsert par slugId(name) ; statut "new" forcé à la
   // création uniquement — un statut humain (qualified/dropped) déjà posé n'est JAMAIS écrasé.
   try {
-    const parsed = parseOpportunitiesResponse(await generateJson(buildOpportunitiesPrompt(signals)));
+    const parsed = parseOpportunitiesResponse(await generateJson(buildOpportunitiesPrompt(signals, companyContext)));
     if (!parsed) {
       summary.bizOpportunities = "parse-failed";
       logger.error("runEnrichment: opportunities response unusable (parse returned null)");

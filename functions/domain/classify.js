@@ -70,14 +70,14 @@ const AXIS_TO_DETECTION_CAT = {
  *   the model so it can disambiguate entities and sharpen soWhat/recommendedAction (Action 4.5).
  * @returns {string}
  */
-function buildClassificationPrompt(rawText, watchlistEntities) {
+function buildClassificationPrompt(rawText, watchlistEntities, companyContext = COMPANY_CONTEXT) {
   const watchlist = Array.isArray(watchlistEntities) ? watchlistEntities : [];
   const watchlistLines = watchlist.length
     ? watchlist.map((e) => `- ${e.name}${e.type ? ` (${e.type})` : ""}${e.note ? ` — ${e.note}` : ""}`).join("\n")
     : "(watchlist vide — aucune entité connue à rapprocher)";
 
   return `Tu es un analyste de veille stratégique ET de développement commercial pour l'entreprise suivante :
-${COMPANY_CONTEXT}
+${companyContext}
 
 RÈGLE DE FILTRAGE — HOMONYMIE : si le texte concerne le groupe français coté NEURONES (neurones.net), Neurones Technologies SA (Genève) ou Neurones IT Asia, ce N'EST PAS notre entreprise — ne le rattache à aucune entité de la watchlist, classe impact "low", stance "neutral", et signale-le dans le summary, sauf lien explicite avec la Côte d'Ivoire/UEMOA.
 

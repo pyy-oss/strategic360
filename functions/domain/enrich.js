@@ -125,9 +125,9 @@ function signalsBlock(items) {
  * @param {Array<object>} items Lightweight signals from `pickSignalsForEnrichment`.
  * @returns {string}
  */
-function buildSwotPestelPrompt(items) {
+function buildSwotPestelPrompt(items, companyContext = COMPANY_CONTEXT) {
   return `Tu es un analyste de stratégie senior travaillant pour l'entreprise suivante :
-${COMPANY_CONTEXT}
+${companyContext}
 
 À partir des signaux de veille stratégique réels ci-dessous (accumulés par l'équipe de veille),
 produis une synthèse stratégique SWOT + PESTEL pour cette entreprise. Réponds UNIQUEMENT avec un
@@ -218,9 +218,9 @@ function parseSwotPestelResponse(raw) {
  * @param {Array<object>} items Lightweight signals (typically axis === 'tech').
  * @returns {string}
  */
-function buildTechRadarPrompt(items) {
+function buildTechRadarPrompt(items, companyContext = COMPANY_CONTEXT) {
   return `Tu es un analyste technologique senior travaillant pour l'entreprise suivante :
-${COMPANY_CONTEXT}
+${companyContext}
 
 À partir des signaux de veille technologique réels ci-dessous, propose les entrées ("blips") d'un
 radar technologique pour cette entreprise. Réponds UNIQUEMENT avec un objet JSON valide (pas de
@@ -291,9 +291,9 @@ function parseTechRadarResponse(raw) {
  * @param {Array<object>} items Lightweight signals (typically axis === 'concurrents').
  * @returns {string}
  */
-function buildBattlecardMovesPrompt(items) {
+function buildBattlecardMovesPrompt(items, companyContext = COMPANY_CONTEXT) {
   return `Tu es un analyste en intelligence concurrentielle travaillant pour l'entreprise suivante :
-${COMPANY_CONTEXT}
+${companyContext}
 
 À partir des signaux de veille concurrentielle réels ci-dessous, extrais les mouvements récents des
 concurrents (annonces, contrats gagnés, recrutements clés, partenariats, expansions, offres…).
@@ -363,9 +363,9 @@ function parseBattlecardMovesResponse(raw) {
  * @param {Array<object>} items Lightweight signals from `pickSignalsForEnrichment`.
  * @returns {string}
  */
-function buildOpportunitiesPrompt(items) {
+function buildOpportunitiesPrompt(items, companyContext = COMPANY_CONTEXT) {
   return `Tu es un directeur du développement commercial travaillant pour l'entreprise suivante :
-${COMPANY_CONTEXT}
+${companyContext}
 
 À partir des signaux de veille stratégique réels ci-dessous (numérotés), identifie les
 opportunités business concrètes que l'entreprise devrait poursuivre (appels d'offres, obligations
@@ -485,9 +485,9 @@ const S7_DIMENSIONS = ["Stratégie", "Structure", "Systèmes", "Valeurs partagé
  * @param {Array<object>} items Lightweight signals from `pickSignalsForEnrichment`.
  * @returns {string}
  */
-function buildCanvasPrompt(items) {
+function buildCanvasPrompt(items, companyContext = COMPANY_CONTEXT) {
   return `Tu es un consultant en stratégie travaillant pour l'entreprise suivante :
-${COMPANY_CONTEXT}
+${companyContext}
 
 À partir de ce contexte d'entreprise et des signaux de veille réels ci-dessous, rédige un
 Business Model Canvas synthétique pour cette entreprise. Réponds UNIQUEMENT avec un objet JSON
@@ -538,9 +538,9 @@ function parseCanvasResponse(raw) {
  * @param {Array<object>} items Lightweight signals from `pickSignalsForEnrichment`.
  * @returns {string}
  */
-function buildDiagnosticPrompt(items) {
+function buildDiagnosticPrompt(items, companyContext = COMPANY_CONTEXT) {
   return `Tu es un consultant en stratégie travaillant pour l'entreprise suivante :
-${COMPANY_CONTEXT}
+${companyContext}
 
 À partir de ce contexte et des signaux de veille réels ci-dessous, produis un diagnostic
 stratégique en trois volets. Réponds UNIQUEMENT avec un objet JSON valide (pas de markdown,
@@ -616,6 +616,72 @@ function parseDiagnosticResponse(raw) {
   return Object.keys(out).length > 0 ? out : null;
 }
 
+/* ------------------------------------------------------------------------------------------- *
+ * Rafraîchissement du CONTEXTE ENTREPRISE (dynamique — décision 2026-07 : « le contexte est
+ * aussi censé être dynamique »). Le contexte vit dans frameworks/companyContext (versionné,
+ * éditable par la Direction dans Cadres) ; l'enrichissement hebdo le met à jour à partir des
+ * signaux accumulés (programmes partenaires qui évoluent, nouveaux concurrents, nouvelles
+ * obligations…) SAUF si un humain l'a édité (garde writeFrameworkDoc). Le fichier statique
+ * companyContext.js reste le seed initial + le repli si le doc est absent.
+ * ------------------------------------------------------------------------------------------- */
+
+/** Marqueurs structurels que tout contexte régénéré DOIT conserver — garde-fous contre une
+ * réécriture IA qui perdrait les sections critiques (le parseur rejette sinon). */
+const CONTEXT_REQUIRED_MARKERS = ["BUSINESS UNITS", "CONCURRENTS", "HOMONYMIE", "OBJECTIF COMMERCIAL"];
+
+/**
+ * Builds the Gemini prompt that refreshes the company context from recent signals.
+ * @param {string} currentContext Texte actuel de frameworks/companyContext (ou le seed statique).
+ * @param {Array<object>} items Lightweight signals from `pickSignalsForEnrichment`.
+ * @returns {string}
+ */
+function buildContextRefreshPrompt(currentContext, items) {
+  return `Tu maintiens le CONTEXTE ENTREPRISE de référence utilisé par tous les agents d'analyse
+de Neurones Technologies. Voici sa version actuelle :
+
+"""
+${currentContext}
+"""
+
+À partir des signaux de veille récents ci-dessous, produis une version MISE À JOUR de ce contexte.
+Réponds UNIQUEMENT avec un objet JSON valide : { "context": string, "changes": string[] }.
+
+Règles impératives :
+- CONSERVE la structure et TOUTES les sections existantes (BUSINESS UNITS, MODÈLE ÉCONOMIQUE,
+  PARTENARIATS, CONTEXTE PARTENAIRE, CLIENTS, CONCURRENTS, LEVIERS RÉGLEMENTAIRES, GRILLE DE
+  LECTURE, OBJECTIF COMMERCIAL, ATTENTION HOMONYMIE).
+- Mets à jour UNIQUEMENT ce que les signaux justifient factuellement : dates de programmes
+  partenaires passées/nouvelles, nouveaux concurrents ou mouvements notables, nouvelles
+  obligations réglementaires, EOL/pénuries. N'invente RIEN ; ne supprime pas d'informations
+  encore valables ; en cas de doute, ne change pas.
+- "changes" : la liste courte (0-8) des modifications apportées, en français ("ajout du
+  concurrent X", "date Y passée — retirée"...). Si rien ne justifie de changement, renvoie le
+  contexte inchangé et "changes": [].
+
+Signaux de veille récents :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+/**
+ * parseContextRefreshResponse(raw, currentContext) -> {text, changes} | null
+ * Garde-fous : contexte non vide, longueur ≥ 60% de l'actuel (une réécriture qui raccourcit
+ * brutalement a probablement perdu des sections), tous les CONTEXT_REQUIRED_MARKERS présents.
+ * Retourne null (aucune écriture) si la réponse ne passe pas — le contexte courant reste en place.
+ */
+function parseContextRefreshResponse(raw, currentContext) {
+  if (!raw || typeof raw !== "object" || typeof raw.context !== "string") return null;
+  const text = raw.context.trim();
+  const current = typeof currentContext === "string" ? currentContext : "";
+  if (!text || (current && text.length < current.length * 0.6)) return null;
+  for (const marker of CONTEXT_REQUIRED_MARKERS) {
+    if (!text.includes(marker)) return null;
+  }
+  const changes = coerceStringArray(raw.changes);
+  return { text, changes };
+}
+
 module.exports = {
   buildSwotPestelPrompt,
   parseSwotPestelResponse,
@@ -629,6 +695,9 @@ module.exports = {
   parseCanvasResponse,
   buildDiagnosticPrompt,
   parseDiagnosticResponse,
+  buildContextRefreshPrompt,
+  parseContextRefreshResponse,
+  CONTEXT_REQUIRED_MARKERS,
   pickSignalsForEnrichment,
   slugId,
   SWOT_KEYS,

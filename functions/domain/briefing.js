@@ -32,7 +32,7 @@ const VALID_AXES = ["1. La demande est là", "2. Nous pouvons gagner", "3. Il fa
  * @returns {string}
  */
 function buildBriefingPrompt(input) {
-  const { veilleSummary, veilleExecSummary, topItems, period } = input || {};
+  const { veilleSummary, veilleExecSummary, topItems, period, companyContext = COMPANY_CONTEXT } = input || {};
   const items = Array.isArray(topItems) ? topItems : [];
 
   // Action 4.3 : `ent` (entité watchlist résolue) et `date` sont rendus quand ils sont présents,
@@ -51,7 +51,7 @@ function buildBriefingPrompt(input) {
 
   return `Tu es un consultant en stratégie qui prépare un briefing exécutif hebdomadaire pour le
 comité de direction de l'entreprise suivante :
-${COMPANY_CONTEXT}
+${companyContext}
 
 Format attendu : "Pyramide de Minto" (idée directrice, puis 3 arguments MECE qui la soutiennent).
 

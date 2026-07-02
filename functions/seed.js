@@ -188,6 +188,23 @@ async function seed() {
   }
   console.log(`Seeded intelSources (${SOURCES_SEED.length} entries, idempotent by name).`);
 
+  // Contexte entreprise DYNAMIQUE (frameworks/companyContext) — seedé depuis le fichier statique
+  // uniquement s'il n'existe pas encore. updatedBy "ai:seed" (préfixe "ai:") laisse
+  // l'enrichissement hebdo le rafraîchir ; dès qu'un humain l'édite (Cadres > Contexte), la garde
+  // writeFrameworkDoc le protège de toute réécriture IA.
+  const { COMPANY_CONTEXT } = require("./domain/companyContext");
+  const contextRef = db.doc("frameworks/companyContext");
+  if (!(await contextRef.get()).exists) {
+    await contextRef.set({
+      key: "companyContext",
+      content: { text: COMPANY_CONTEXT, changes: [] },
+      version: 1,
+      updatedBy: "ai:seed",
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    console.log("Seeded frameworks/companyContext (contexte entreprise dynamique).");
+  }
+
   // Bootstrap marker consumed by setUserRole (functions/index.js): stays `false` until the
   // first `direction` account is provisioned via setUserRole, at which point the function
   // flips it to `true` itself. We only ensure the doc exists here so it doesn't 404 on first read.
