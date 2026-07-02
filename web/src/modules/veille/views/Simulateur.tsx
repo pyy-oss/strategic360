@@ -28,8 +28,12 @@ import { useQuantiSummary } from "../lib/quanti";
  */
 function calibrateSimBase(quanti: ReturnType<typeof useQuantiSummary>["data"]): { base: SimBase; calibrated: boolean } {
   if (!quanti) return { base: SIM_BASE, calibrated: false };
-  const cas = quanti.casTotal ?? null;
-  const pipe = quanti.pipelinePondere ?? null;
+  // UNIT BOUNDARY (audit affichage montants, 2026-07-02): summaries/quanti carries RAW XOF
+  // (casTotal ~3.6e9, pipelinePondere ~6e10 — computed from nt360), while the SIM_BASE domain —
+  // simCompute's math, the ambition constant (15300), and every fmt(x * 1e6) display below — is
+  // in M FCFA. Convert here, at the calibration boundary, so both sides stay consistent.
+  const cas = quanti.casTotal != null ? Math.round(quanti.casTotal / 1e6) : null;
+  const pipe = quanti.pipelinePondere != null ? Math.round(quanti.pipelinePondere / 1e6) : null;
   const winBase = quanti.winRate != null ? Math.round(quanti.winRate * 100) : null;
   const calibrated = cas != null || pipe != null || winBase != null;
   return {

@@ -6,11 +6,15 @@ import { useQuantiSummary } from "../lib/quanti";
 /**
  * "Création de valeur" (value bridge · value-at-stake · driver tree).
  *
- * Value-at-stake reads `summaries/quanti.valueAtStake` (open opportunities from the LIVE import,
- * `ev = probabilité-étape × montant`) — an explicit empty state is shown until the first LIVE
- * import lands. The "pont de valeur" waterfall needs a lever-level decomposition (current CAS →
- * ambition) that no internal source provides yet, so it too is an empty state — no illustrative
- * numbers are rendered.
+ * Value-at-stake reads `summaries/quanti.valueAtStake` (open opportunities from the internal
+ * pipeline — nt360 since 2026-07-02, or a LIVE Excel import — `ev = probabilité-étape × montant`)
+ * — an explicit empty state is shown until the first sync lands. The "pont de valeur" waterfall
+ * needs a lever-level decomposition (current CAS → ambition) that no internal source provides
+ * yet, so it too is an empty state — no illustrative numbers are rendered.
+ *
+ * UNITS (audit affichage montants, 2026-07-02): `valueAtStake[].impact` is RAW XOF (opportunity
+ * `montant` passed through by computeValueAtStake) — so `ev` is raw XOF too and is formatted with
+ * `fmt(ev)` directly. The maquette's `* 1e6` convention only applies to M-FCFA domains (SIM_BASE).
  */
 export function Valeur() {
   const { data: quanti } = useQuantiSummary();
@@ -22,13 +26,13 @@ export function Valeur() {
     <div>
       <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 14 }}>
         <Card>
-          <Kpi label="Valeur attendue — opportunités" value={liveVas ? fmt(evOpp * 1e6) : "—"} accent={T.emerald} sub="Σ (proba × impact)" />
+          <Kpi label="Valeur attendue — opportunités" value={liveVas ? fmt(evOpp) : "—"} accent={T.emerald} sub="Σ (proba × impact)" />
         </Card>
         <Card>
-          <Kpi label="Valeur à risque — menaces" value={liveVas ? fmt(evThreat * 1e6) : "—"} accent={T.clay} sub="Σ (proba × impact)" />
+          <Kpi label="Valeur à risque — menaces" value={liveVas ? fmt(evThreat) : "—"} accent={T.clay} sub="Σ (proba × impact)" />
         </Card>
         <Card>
-          <Kpi label="Valeur nette en jeu" value={liveVas ? fmt((evOpp + evThreat) * 1e6) : "—"} accent={T.gold} sub="net at stake" />
+          <Kpi label="Valeur nette en jeu" value={liveVas ? fmt(evOpp + evThreat) : "—"} accent={T.gold} sub="net at stake" />
         </Card>
       </div>
       <Card style={{ marginBottom: 14 }}>
@@ -39,10 +43,10 @@ export function Valeur() {
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <Eyebrow color={T.emerald}>Value-at-stake (proba × impact)</Eyebrow>
-            {liveVas && <Badge c={T.emerald}>Temps réel (imports LIVE)</Badge>}
+            {liveVas && <Badge c={T.emerald}>Temps réel (pipeline interne nt360)</Badge>}
           </div>
           {!liveVas && (
-            <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente des imports internes (LIVE).</div>
+            <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente de la première synchronisation interne (nt360).</div>
           )}
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
             {vas.map((v, i) => (
@@ -53,11 +57,11 @@ export function Valeur() {
                   </span>
                   <span style={{ color: v.ev >= 0 ? T.emerald : T.clay, fontVariantNumeric: "tabular-nums" }}>
                     {v.ev >= 0 ? "+" : ""}
-                    {fmt(v.ev * 1e6)}
+                    {fmt(v.ev)}
                   </span>
                 </div>
                 <div style={{ height: 6, background: T.panel2, borderRadius: 4 }}>
-                  <div style={{ width: `${Math.min((Math.abs(v.ev) / 2000) * 100, 100)}%`, height: "100%", background: v.ev >= 0 ? T.emerald : T.clay, borderRadius: 4 }} />
+                  <div style={{ width: `${Math.min((Math.abs(v.ev) / Math.max(...vas.map((x) => Math.abs(x.ev)), 1)) * 100, 100)}%`, height: "100%", background: v.ev >= 0 ? T.emerald : T.clay, borderRadius: 4 }} />
                 </div>
               </div>
             ))}
