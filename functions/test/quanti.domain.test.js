@@ -13,6 +13,7 @@ import { describe, it, expect } from "vitest";
 import {
   computePorterForces,
   computeBcg,
+  computeCasSummary,
   computePipeline,
   computeKris,
   computeValueAtStake,
@@ -200,5 +201,32 @@ describe("computeValueAtStake", () => {
   it("returns [] for empty/missing opportunities", () => {
     expect(computeValueAtStake({})).toEqual([]);
     expect(computeValueAtStake({ opportunities: [] })).toEqual([]);
+  });
+});
+
+describe("computeCasSummary", () => {
+  it("sums cas/casN1 across all orders, ignoring BU/fournisseur grouping", () => {
+    // Same fixture spirit as the BCG per-BU test, but computeCasSummary is portfolio-wide.
+    const orders = [
+      { bu: "Cyber", fournisseur: "F1", cas: 500, casN1: 200, mb: 100 },
+      { bu: "Cyber", fournisseur: "F2", cas: 300, casN1: 200, mb: 50 },
+      { bu: "ICT", fournisseur: "F3", cas: 1200, casN1: 1000, mb: 200 },
+    ];
+    expect(computeCasSummary({ orders })).toEqual({ casTotal: 2000, casN1Total: 1400 });
+  });
+
+  it("tolerates rows with missing/non-numeric cas or casN1 (contributes 0, doesn't zero the total)", () => {
+    const orders = [
+      { fournisseur: "A", cas: 500, casN1: 300 },
+      { fournisseur: "B", cas: "n/a", casN1: undefined },
+      { fournisseur: "C" }, // no cas/casN1 fields at all
+    ];
+    expect(computeCasSummary({ orders })).toEqual({ casTotal: 500, casN1Total: 300 });
+  });
+
+  it("returns null (not 0) for empty/missing orders — 'no data yet' is not '0 CAS'", () => {
+    expect(computeCasSummary({})).toEqual({ casTotal: null, casN1Total: null });
+    expect(computeCasSummary({ orders: [] })).toEqual({ casTotal: null, casN1Total: null });
+    expect(computeCasSummary(undefined)).toEqual({ casTotal: null, casN1Total: null });
   });
 });

@@ -2,10 +2,51 @@ import React, { useMemo, useState } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, ReferenceLine, Cell, LineChart, Line } from "recharts";
 import { T, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge, Slider, Gauge } from "../../../design/ui";
-import { SIM_BASE, SCEN_OPTS, LEVMETA, PRESETS, simCompute, SimParams } from "../data";
+import { SIM_BASE, SCEN_OPTS, LEVMETA, PRESETS, simCompute, SimParams, SimBase } from "../data";
+import { useQuantiSummary } from "../lib/quanti";
+
+/**
+ * Calibrates `SIM_BASE` from `summaries/quanti` (BUILD_KIT.md §8.2 "SIM_BASE ← calibrer sur
+ * données réelles" / §11 "Simulateur | summaries/quanti (calibrage) + état local").
+ *
+ * Only the fields that actually have a real-data source are overridden:
+ *  - `cas`      ← `summaries/quanti.casTotal` (portfolio-wide CAS from P&L `orders`, V5 addition
+ *                 — see `functions/domain/quanti.js#computeCasSummary`).
+ *  - `pipe`     ← `summaries/quanti.pipelinePondere` (LIVE, computed since V4).
+ *  - `winBase`  ← `summaries/quanti.winRate` (LIVE, computed since V4), expressed as 0-100 like
+ *                 the maquette's `winBase:62`.
+ * `recurrent`, `margePct`, `ambition` and `objMarge` are NOT calibrated: there is no internal
+ * source for a "récurrent vs projet" split yet (`summaries/quanti.recurrentShare` is always null
+ * — prerequisite tag missing, DELTA_01 §3bis.F, documented in `functions/domain/quanti.js`), no
+ * computed `marginAvg` (also always null in V4/V5 scope), and `ambition`/`objMarge` are genuine
+ * business targets with no internal-data source at all — they stay the maquette's hardcoded
+ * constants, which is correct (not everything is calibratable).
+ *
+ * Returns the maquette's exact hardcoded `SIM_BASE` (untouched) whenever `summaries/quanti` is
+ * null/loading/has none of the 3 calibratable fields — the Simulateur must never break or show
+ * an empty state just because no internal file has been ingested yet in this environment.
+ */
+function calibrateSimBase(quanti: ReturnType<typeof useQuantiSummary>["data"]): { base: SimBase; calibrated: boolean } {
+  if (!quanti) return { base: SIM_BASE, calibrated: false };
+  const cas = quanti.casTotal ?? null;
+  const pipe = quanti.pipelinePondere ?? null;
+  const winBase = quanti.winRate != null ? Math.round(quanti.winRate * 100) : null;
+  const calibrated = cas != null || pipe != null || winBase != null;
+  return {
+    base: {
+      ...SIM_BASE,
+      ...(cas != null ? { cas } : {}),
+      ...(pipe != null ? { pipe } : {}),
+      ...(winBase != null ? { winBase } : {}),
+    },
+    calibrated,
+  };
+}
 
 /** "Simulateur stratégique" — ported from `Simulateur` in the maquette. */
 export function Simulateur() {
+  const { data: quanti } = useQuantiSummary();
+  const { base: BASE, calibrated } = useMemo(() => calibrateSimBase(quanti), [quanti]);
   const D: SimParams = { managed: 40, cloud: 30, aoBad: 40, win: 62, newAcc: 30, mix: 35, tarif: 40, attrition: 30, invest: 40, horizon: 3, scenario: "central" };
   const [managed, setManaged] = useState(D.managed);
   const [cloud, setCloud] = useState(D.cloud);
@@ -33,13 +74,13 @@ export function Simulateur() {
   };
 
   const params: SimParams = { managed, cloud, aoBad, win, newAcc, mix, tarif, attrition, invest, horizon, scenario };
-  const deps = [managed, cloud, aoBad, win, newAcc, mix, tarif, attrition, invest, horizon, scenario];
-  const R = useMemo(() => simCompute(params), deps); // eslint-disable-line react-hooks/exhaustive-deps
+  const deps = [managed, cloud, aoBad, win, newAcc, mix, tarif, attrition, invest, horizon, scenario, BASE];
+  const R = useMemo(() => simCompute(params, BASE), deps); // eslint-disable-line react-hooks/exhaustive-deps
   const tor = useMemo(
     () =>
       LEVMETA.map((m) => {
-        const lo = simCompute({ ...params, [m.k]: m.min } as SimParams).score;
-        const hi = simCompute({ ...params, [m.k]: m.max } as SimParams).score;
+        const lo = simCompute({ ...params, [m.k]: m.min } as SimParams, BASE).score;
+        const hi = simCompute({ ...params, [m.k]: m.max } as SimParams, BASE).score;
         return { l: m.l, lo: Math.min(lo, hi), hi: Math.max(lo, hi), sw: Math.abs(hi - lo) };
       }).sort((a, b) => b.sw - a.sw),
     deps // eslint-disable-line react-hooks/exhaustive-deps
@@ -47,11 +88,11 @@ export function Simulateur() {
   const cmp = useMemo(() => {
     const r: Record<string, ReturnType<typeof simCompute>> = {};
     Object.keys(PRESETS).forEach((k) => {
-      r[k] = simCompute(PRESETS[k]);
+      r[k] = simCompute(PRESETS[k], BASE);
     });
     r["Ma simulation"] = R;
     return r;
-  }, [R]);
+  }, [R, BASE]);
 
   const tensLbl = R.tension >= 0.66 ? ["Élevée", T.clay] : R.tension >= 0.33 ? ["Modérée", T.gold] : ["Maîtrisée", T.emerald];
   const reco =
@@ -76,8 +117,24 @@ export function Simulateur() {
 
   return (
     <div>
-      <div style={{ fontSize: 12, color: T.plum, marginBottom: 14, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 12px" }}>
-        🎛️ Manipulez les leviers : le revenu projeté, la marge, la part de récurrent, la valeur en jeu et le score stratégique se recalculent en direct. Chiffres illustratifs — à brancher sur les données réelles en implémentation.
+      <div
+        style={{
+          fontSize: 12,
+          color: T.plum,
+          marginBottom: 14,
+          background: T.panel,
+          border: `1px solid ${T.line}`,
+          borderRadius: 8,
+          padding: "8px 12px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <span>🎛️ Manipulez les leviers : le revenu projeté, la marge, la part de récurrent, la valeur en jeu et le score stratégique se recalculent en direct.</span>
+        <Badge c={calibrated ? T.emerald : T.faint}>{calibrated ? "Calibré sur données réelles" : "Valeurs de référence (maquette)"}</Badge>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, alignItems: "start" }} className="g2">
         <Card>
@@ -122,7 +179,7 @@ export function Simulateur() {
               <Kpi label="Revenu projeté" value={fmt(R.revenu * 1e6)} accent={T.emerald} sub={(R.delta >= 0 ? "+" : "") + fmt(R.delta * 1e6) + " vs base"} />
             </Card>
             <Card>
-              <Kpi label="Marge brute" value={pct(R.margin)} accent={R.margin >= SIM_BASE.objMarge ? T.emerald : T.gold} sub={"objectif " + pct(SIM_BASE.objMarge)} />
+              <Kpi label="Marge brute" value={pct(R.margin)} accent={R.margin >= BASE.objMarge ? T.emerald : T.gold} sub={"objectif " + pct(BASE.objMarge)} />
             </Card>
             <Card>
               <Kpi label="Part de récurrent" value={pct(R.recShare)} accent={T.steel} sub="santé stratégique" />
@@ -178,13 +235,13 @@ export function Simulateur() {
                   <CartesianGrid stroke={T.line} vertical={false} />
                   <XAxis dataKey="y" tick={{ fill: T.dim, fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis tickFormatter={(v) => fmt(v * 1e6)} tick={{ fill: T.faint, fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <ReferenceLine y={SIM_BASE.ambition} stroke={T.gold} strokeDasharray="4 4" label={{ value: "Ambition", fill: T.gold, fontSize: 10, position: "insideTopRight" }} />
+                  <ReferenceLine y={BASE.ambition} stroke={T.gold} strokeDasharray="4 4" label={{ value: "Ambition", fill: T.gold, fontSize: 10, position: "insideTopRight" }} />
                   <Line type="monotone" dataKey="v" stroke={T.emerald} strokeWidth={2.5} dot={{ r: 3, fill: T.emerald }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
             <div style={{ marginTop: 6, fontSize: 11.5, color: T.faint }}>
-              Atterrissage à l'horizon : <b style={{ color: R.revenu >= SIM_BASE.ambition ? T.emerald : T.gold }}>{pct(R.revenu / SIM_BASE.ambition)}</b> de l'ambition ({fmt(SIM_BASE.ambition * 1e6)}).
+              Atterrissage à l'horizon : <b style={{ color: R.revenu >= BASE.ambition ? T.emerald : T.gold }}>{pct(R.revenu / BASE.ambition)}</b> de l'ambition ({fmt(BASE.ambition * 1e6)}).
             </div>
           </Card>
         </div>

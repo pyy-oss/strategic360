@@ -147,6 +147,34 @@ function computeBcg({ orders } = {}) {
 }
 
 /* ------------------------------------------------------------------------------------------- *
+ * CAS total — calibration source for the Simulateur's `SIM_BASE.cas` (BUILD_KIT.md §8.2
+ * "SIM_BASE ← calibrer sur données réelles" / §11 "Simulateur | summaries/quanti (calibrage)")
+ * ------------------------------------------------------------------------------------------- */
+
+/**
+ * computeCasSummary({orders}) -> { casTotal, casN1Total }
+ * Sums `cas` (current-year revenue) and `casN1` (prior-year revenue) across ALL `orders` rows
+ * (P&L, same source as computeBcg — see that function's header for the `orders` row shape),
+ * regardless of `bu`/`fournisseur` grouping — this is the portfolio-wide total, not a per-BU
+ * breakdown (computeBcg already covers the per-BU view).
+ * Returns { casTotal: null, casN1Total: null } (not 0) when `orders` is empty/missing — same
+ * graceful-null convention as topNConcentration/computePipeline: "no data yet" must not render
+ * as a real zero. Rows missing a numeric `cas`/`casN1` contribute 0 to that specific sum (a
+ * malformed row shouldn't zero out the whole total), matching computeBcg's `Number(...) || 0`
+ * tolerance.
+ */
+function computeCasSummary({ orders } = {}) {
+  if (!Array.isArray(orders) || orders.length === 0) return { casTotal: null, casN1Total: null };
+  let casTotal = 0;
+  let casN1Total = 0;
+  for (const r of orders) {
+    casTotal += Number(r && r.cas) || 0;
+    casN1Total += Number(r && r.casN1) || 0;
+  }
+  return { casTotal: Math.round(casTotal), casN1Total: Math.round(casN1Total) };
+}
+
+/* ------------------------------------------------------------------------------------------- *
  * Pipeline pondéré / win rate (BUILD_KIT.md §9 "LIVE → pipeline pondéré, win rate")
  * ------------------------------------------------------------------------------------------- */
 
@@ -318,6 +346,7 @@ function computeValueAtStake({ opportunities } = {}) {
 module.exports = {
   computePorterForces,
   computeBcg,
+  computeCasSummary,
   computePipeline,
   computeKris,
   computeValueAtStake,

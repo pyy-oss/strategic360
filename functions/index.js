@@ -22,7 +22,7 @@ const { parsePnl } = require("./parsers/pnl");
 const { parseLive } = require("./parsers/live");
 const { parseFacturationDf } = require("./parsers/facturationDf");
 const { parseFiche } = require("./parsers/fiche");
-const { computePorterForces, computeBcg, computePipeline, computeKris, computeValueAtStake } = require("./domain/quanti");
+const { computePorterForces, computeBcg, computeCasSummary, computePipeline, computeKris, computeValueAtStake } = require("./domain/quanti");
 
 initializeApp();
 
@@ -104,6 +104,7 @@ async function computeSummaryQuanti(db) {
 
   const porterForces = computePorterForces({ orders, opportunities });
   const bcg = computeBcg({ orders });
+  const { casTotal, casN1Total } = computeCasSummary({ orders });
   const { pipelinePondere, winRate } = computePipeline({ opportunities });
   const kris = computeKris({ orders, opportunities, invoices });
   const valueAtStake = computeValueAtStake({ opportunities });
@@ -112,6 +113,10 @@ async function computeSummaryQuanti(db) {
     porterForces,
     bcg,
     ge9: null, // not derivable from internal data alone — see comment above
+    // casTotal/casN1Total: portfolio-wide CAS (current/prior year), from P&L `orders` — feeds the
+    // Simulateur's SIM_BASE.cas calibration (BUILD_KIT.md §8.2/§11, web/.../views/Simulateur.tsx).
+    casTotal,
+    casN1Total,
     pipelinePondere,
     winRate,
     marginAvg: null, // not specified beyond BCG's per-BU marge — see comment above

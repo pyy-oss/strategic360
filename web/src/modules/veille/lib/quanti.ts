@@ -54,6 +54,8 @@ export interface QuantiSummary {
   porterForces: QuantiPorterForces;
   bcg: QuantiBcgEntry[];
   ge9: unknown[] | null; // not derivable from internal data alone — see Portefeuille.tsx
+  casTotal: number | null; // portfolio-wide CAS (current year), from P&L `orders` — Simulateur SIM_BASE.cas calibration
+  casN1Total: number | null; // portfolio-wide CAS (prior year), from P&L `orders`
   pipelinePondere: number | null;
   winRate: number | null;
   marginAvg: number | null; // not specified beyond BCG's per-BU marge — left null (see functions/index.js)
