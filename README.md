@@ -156,6 +156,24 @@ partagé avec une autre app), pour que son usage et son audit restent traçables
 6. **Déclencher** : onglet Actions > "Deploy (propulse-business-87f7a / strategic360)" > Run
    workflow > taper `deploy` dans le champ de confirmation.
 
+**État réel de cette configuration** : le secret `GCP_SA_KEY_STRATEGIC360` a été créé avec la clé
+du **compte de service par défaut du projet** (ex. `propulse-business-87f7a@appspot.gserviceaccount.com`,
+généralement doté du rôle primitif `Editor`) plutôt qu'avec un compte dédié `github-deploy-strategic360`
+comme recommandé ci-dessus. Compromis à connaître :
+- ✅ Fonctionne immédiatement, aucune configuration IAM supplémentaire nécessaire.
+- ⚠️ `Editor` est **beaucoup plus large** que les 4 rôles ciblés listés à l'étape 2 — la clé JSON
+  donne un accès quasi total au projet GCP entier, pas seulement à Hosting/Firestore/Storage/Functions
+  de cette app.
+- ⚠️ Étant le compte *par défaut*, il est probablement **déjà utilisé par d'autres services** du
+  projet partagé — moins traçable dans Cloud Audit Logs qu'un compte nommé explicitement pour ce
+  workflow.
+- **Dépannage** : si le déploiement des Functions échoue avec une erreur de type
+  `PERMISSION_DENIED` / `iam.serviceaccounts.actAs`, ajouter le rôle `roles/iam.serviceAccountUser`
+  à ce compte de service (le rôle `Editor` ne l'inclut pas toujours selon la config du projet).
+- Ce choix reste réversible à tout moment : re-générer le secret avec la clé d'un compte de
+  service dédié (étapes 1-4 ci-dessus) referme cette fenêtre d'exposition sans toucher au reste
+  de la configuration.
+
 ### Déployer plutôt dans un projet Firebase dédié (alternative)
 
 Si un projet Firebase séparé est préférable (isolation complète, y compris Auth), il suffit de :
