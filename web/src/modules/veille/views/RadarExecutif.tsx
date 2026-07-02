@@ -2,7 +2,7 @@ import React from "react";
 import { T } from "../../../design/tokens";
 import { AX, IMP, STANCE, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
-import { DECISIONS } from "../data";
+import { useDecisions } from "../lib/execution";
 import { useIntelItems, useWatchlist } from "../lib/intel";
 import { useVeilleExecSummary } from "../lib/summaries";
 
@@ -14,6 +14,7 @@ export interface RadarExecutifProps {
 /** "Radar exécutif" — ported from `Radar_` in the maquette (renamed to avoid clashing with Recharts' Radar). */
 export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   const { entries: watchlist, loading: watchLoading } = useWatchlist();
+  const { decisions, loading: decisionsLoading } = useDecisions();
   const { items } = useIntelItems();
   const { data: exec } = useVeilleExecSummary();
   const sorted = [...items].sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
@@ -109,12 +110,19 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
       <Card>
         <Eyebrow color={T.steel}>Décisions en attente / récentes</Eyebrow>
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-          {DECISIONS.map((d, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, padding: "7px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
+          {decisionsLoading && decisions.length === 0 && (
+            <div style={{ fontSize: 12, color: T.faint }}>Chargement des décisions…</div>
+          )}
+          {!decisionsLoading && decisions.length === 0 && (
+            <div style={{ fontSize: 12, color: T.faint }}>Aucune décision enregistrée pour l'instant.</div>
+          )}
+          {decisions.map((d, i) => (
+            <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, padding: "7px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
               <Badge c={d.statut === "Actée" ? T.emerald : d.statut === "En cours" ? T.gold : T.clay}>{d.statut}</Badge>
-              <span style={{ flex: 1, color: T.ink }}>{d.t}</span>
+              <span style={{ flex: 1, color: T.ink }}>{d.title}</span>
               <span style={{ color: T.faint }}>
-                {d.by} · {d.lien}
+                {d.decidedBy}
+                {d.linkedItems?.length ? ` · ${d.linkedItems.join(", ")}` : ""}
               </span>
             </div>
           ))}

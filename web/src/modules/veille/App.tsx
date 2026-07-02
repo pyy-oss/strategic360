@@ -102,7 +102,7 @@ export default function VeilleApp() {
       {view === "briefing" && <Briefing />}
 
       <footer style={{ marginTop: 22, paddingTop: 14, borderTop: `1px solid ${T.line}`, fontSize: 11.5, color: T.faint, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <span>Maquette · données d'exemple · cadres SWOT/PESTEL/Porter/BCG/Canvas + Tech Radar</span>
+        <span>Veille Stratégique · données réelles (Firestore) · IA Gemini avec revue humaine</span>
         <span>Focale : {LENS.find((l) => l[0] === lens)?.[1]}</span>
       </footer>
     </div>
