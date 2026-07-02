@@ -58,9 +58,30 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
-      - name: Deploy (hosting:strategic360, firestore, storage, functions:veille)
+      # Split from the storage rules deploy below: the Firebase Storage Management API's
+      # `defaultBucket.get` preflight check (triggered by ANY `--only storage` deploy, even when
+      # firebase.json targets a non-default bucket) has repeatedly 403'd for the service account
+      # in this shared project — see README.md § Créer le secret GitHub Actions for the exact IAM
+      # role that unblocks it (roles/firebasestorage.admin, narrower than roles/firebase.admin).
+      # Hosting/Firestore/Functions don't depend on that permission, so they shouldn't be held
+      # hostage by it.
+      - name: Deploy (hosting:strategic360, firestore, functions:veille)
         run: >
           firebase deploy
           --project propulse-business-87f7a
-          --only hosting:strategic360,firestore,storage,functions:veille
+          --only hosting:strategic360,firestore,functions:veille
           --non-interactive
+
+      - name: Deploy (storage rules)
+        id: deploy_storage
+        continue-on-error: true
+        run: >
+          firebase deploy
+          --project propulse-business-87f7a
+          --only storage
+          --non-interactive
+
+      - name: Warn if storage rules deploy failed
+        if: steps.deploy_storage.outcome == 'failure'
+        run: |
+          echo "::warning::Le déploiement de storage.rules a échoué (probablement roles/firebasestorage.admin manquant sur le compte de service — voir README.md). Hosting/Firestore/Functions ont été déployés avec succès malgré tout."

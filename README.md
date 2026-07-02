@@ -157,19 +157,25 @@ partagé avec une autre app), pour que son usage et son audit restent traçables
    workflow > taper `deploy` dans le champ de confirmation.
 
 **État réel de cette configuration** : le secret `GCP_SA_KEY_STRATEGIC360` a été créé avec la clé
-du **compte de service par défaut du projet** (ex. `propulse-business-87f7a@appspot.gserviceaccount.com`,
-généralement doté du rôle primitif `Editor`) plutôt qu'avec un compte dédié `github-deploy-strategic360`
-comme recommandé ci-dessus. Compromis à connaître :
-- ✅ Fonctionne immédiatement, aucune configuration IAM supplémentaire nécessaire.
-- ⚠️ `Editor` est **beaucoup plus large** que les 4 rôles ciblés listés à l'étape 2 — la clé JSON
-  donne un accès quasi total au projet GCP entier, pas seulement à Hosting/Firestore/Storage/Functions
-  de cette app.
-- ⚠️ Étant le compte *par défaut*, il est probablement **déjà utilisé par d'autres services** du
-  projet partagé — moins traçable dans Cloud Audit Logs qu'un compte nommé explicitement pour ce
-  workflow.
-- **Dépannage** : si le déploiement des Functions échoue avec une erreur de type
-  `PERMISSION_DENIED` / `iam.serviceaccounts.actAs`, ajouter le rôle `roles/iam.serviceAccountUser`
-  à ce compte de service (le rôle `Editor` ne l'inclut pas toujours selon la config du projet).
+du compte de service **Firebase Admin SDK par défaut**
+(`firebase-adminsdk-fbsvc@propulse-business-87f7a.iam.gserviceaccount.com`), plutôt qu'avec un
+compte dédié `github-deploy-strategic360` comme recommandé ci-dessus. Compromis à connaître :
+- ✅ Fonctionne immédiatement, aucune configuration IAM supplémentaire nécessaire pour l'Admin SDK
+  côté runtime (Firestore/Auth depuis les Cloud Functions).
+- ⚠️ Ce compte est utilisé par le SDK Admin de **potentiellement d'autres apps** du projet partagé
+  — moins traçable dans Cloud Audit Logs qu'un compte nommé explicitement pour ce workflow.
+- ⚠️ Ce compte **n'a pas, par défaut, les permissions de la Firebase Management API** utilisées par
+  le CLI `firebase deploy` (différentes des permissions runtime Admin SDK) — un rôle doit être
+  ajouté explicitement (voir Dépannage ci-dessous).
+- **Dépannage — déploiements observés** : le rôle `roles/firebase.admin` a été ajouté à ce compte
+  mais **n'a pas suffi** pour l'étape `storage` — `firebase deploy --only storage` échoue avec
+  `403 Permission 'firebasestorage.defaultBucket.get' denied`, même en ciblant un bucket non
+  défaut. Rôle à ajouter en plus : **`roles/firebasestorage.admin`** (Cloud Storage for Firebase
+  Admin — plus spécifique que `Firebase Admin`, couvre la Firebase Storage Management API).
+  `deploy.yml` a été adapté en attendant : le déploiement Storage est désormais une étape séparée
+  qui peut échouer sans bloquer hosting/firestore/functions (`continue-on-error: true`).
+  Si le déploiement Functions échoue séparément avec `PERMISSION_DENIED` / `iam.serviceaccounts.actAs`,
+  ajouter aussi `roles/iam.serviceAccountUser`.
 - Ce choix reste réversible à tout moment : re-générer le secret avec la clé d'un compte de
   service dédié (étapes 1-4 ci-dessus) referme cette fenêtre d'exposition sans toucher au reste
   de la configuration.
