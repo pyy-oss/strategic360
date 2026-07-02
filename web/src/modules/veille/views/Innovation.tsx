@@ -1,14 +1,31 @@
 import React from "react";
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { T, RING, QUAD_TECH, pct } from "../../../design/tokens";
-import { Eyebrow, Card, Tip } from "../../../design/ui";
-import { RADAR_TECH, INNOV } from "../data";
+import { Eyebrow, Card, Tip, Badge } from "../../../design/ui";
+import { RADAR_TECH as RADAR_TECH_STATIC, INNOV as INNOV_STATIC } from "../data";
+import { riceScore, useInnovationPortfolio, useTechRadar } from "../lib/innovation";
 
-/** "Tech Radar & Innovation" — ported from `Innovation` in the maquette. */
+/**
+ * "Tech Radar & Innovation" — ported from `Innovation` in the maquette; data source swapped to
+ * Firestore `techRadar` + `innovationPortfolio` (V6, BUILD_KIT.md §7: write restricted to
+ * `direction`/`innovation`). Read-only for V6 (no contribution form) — see the phase report for
+ * the read-only-vs-CRUD rationale; falls back to the static maquette sample (badged) per
+ * collection when it's still empty, same convention used across the other V6 views.
+ */
 export function Innovation() {
   const R = 150,
     CX = 170,
     CY = 170;
+
+  const { blips: liveBlips, loading: loadingRadar } = useTechRadar();
+  const { bets: liveBets, loading: loadingInnov } = useInnovationPortfolio();
+
+  const radarIsLive = !loadingRadar && liveBlips.length > 0;
+  const innovIsLive = !loadingInnov && liveBets.length > 0;
+
+  const RADAR_TECH = radarIsLive ? liveBlips.map((b) => ({ n: b.name, quad: b.quadrant, ring: b.ring, mom: b.momentum })) : RADAR_TECH_STATIC;
+  const INNOV = innovIsLive ? liveBets.map((b) => ({ n: b.title, reach: b.reach, impact: b.impact, conf: b.confidence, effort: b.effort })) : INNOV_STATIC;
+
   const quadCount: Record<number, number> = {};
   RADAR_TECH.forEach((b) => {
     quadCount[b.quad] = (quadCount[b.quad] || 0) + 1;
@@ -23,12 +40,15 @@ export function Innovation() {
     const rad = RING[b.ring].r * R;
     return { ...b, x: CX + rad * Math.cos(a), y: CY - rad * Math.sin(a) };
   });
-  const rice = INNOV.map((o) => ({ ...o, rice: Math.round((o.reach * o.impact * o.conf) / o.effort * 10) / 10 }));
+  const rice = INNOV.map((o) => ({ ...o, rice: riceScore({ reach: o.reach, impact: o.impact, confidence: o.conf, effort: o.effort }) }));
   return (
     <div>
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <Card>
-          <Eyebrow color={T.plum}>Tech Radar</Eyebrow>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Eyebrow color={T.plum}>Tech Radar</Eyebrow>
+            <Badge c={radarIsLive ? T.emerald : T.faint}>{radarIsLive ? "Temps réel" : "Exemple"}</Badge>
+          </div>
           <svg viewBox="0 0 340 360" style={{ width: "100%", height: 320, marginTop: 6 }}>
             {["suspendre", "evaluer", "essayer", "adopter"].map((r) => (
               <circle key={r} cx={CX} cy={CY} r={RING[r].r * R} fill="none" stroke={T.line} />
@@ -62,7 +82,10 @@ export function Innovation() {
           </div>
         </Card>
         <Card>
-          <Eyebrow color={T.emerald}>Portefeuille d'innovation (RICE)</Eyebrow>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Eyebrow color={T.emerald}>Portefeuille d'innovation (RICE)</Eyebrow>
+            <Badge c={innovIsLive ? T.emerald : T.faint}>{innovIsLive ? "Temps réel" : "Exemple"}</Badge>
+          </div>
           <div style={{ height: 250, marginTop: 10 }}>
             <ResponsiveContainer width="100%" height="100%">
               <ScatterChart margin={{ left: 6, right: 16, top: 10, bottom: 16 }}>

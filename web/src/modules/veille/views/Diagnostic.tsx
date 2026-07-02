@@ -1,12 +1,31 @@
 import React, { useState } from "react";
 import { ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from "recharts";
 import { T } from "../../../design/tokens";
-import { Eyebrow, Card } from "../../../design/ui";
-import { ISSUE, S7, MATURITE } from "../data";
+import { Eyebrow, Card, Badge } from "../../../design/ui";
+import { ISSUE as ISSUE_STATIC, S7 as S7_STATIC, MATURITE as MATURITE_STATIC } from "../data";
+import { useFramework } from "../lib/frameworks";
 
-/** "Diagnostic" (7S · arbre MECE · maturité) — ported from `Diagnostic`. */
+interface DiagnosticContent {
+  issue: typeof ISSUE_STATIC;
+  s7: typeof S7_STATIC;
+  maturite: typeof MATURITE_STATIC;
+}
+
+/**
+ * "Diagnostic" (7S · arbre MECE · maturité) — ported from `Diagnostic`; content source swapped to
+ * `frameworks/diagnostic` (V6, BUILD_KIT.md §11 "Diagnostic lit frameworks, saisie" — exec-write).
+ * Falls back to the static maquette sample (with a badge) when that document hasn't been written
+ * yet, same "example vs. live" convention as `Cadres.tsx`'s BCG tab (V4) and `Scenarios.tsx` (V6).
+ * Editing UI is out of scope for V6 (see the phase report) — this view is read-wired only;
+ * updates go through `updateFramework("diagnostic", …)` (Console/seed/future editor).
+ */
 export function Diagnostic() {
   const [c, setC] = useState("issue");
+  const { data: fw } = useFramework<DiagnosticContent>("diagnostic");
+  const isLive = !!fw?.content;
+  const ISSUE = fw?.content?.issue ?? ISSUE_STATIC;
+  const S7 = fw?.content?.s7 ?? S7_STATIC;
+  const MATURITE = fw?.content?.maturite ?? MATURITE_STATIC;
   const CN: [string, string][] = [
     ["issue", "Arbre du problème (MECE)"],
     ["s7", "McKinsey 7S"],
@@ -14,12 +33,13 @@ export function Diagnostic() {
   ];
   return (
     <div>
-      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
         {CN.map(([k, l]) => (
           <button key={k} className={`pill ${c === k ? "on" : ""}`} onClick={() => setC(k)}>
             {l}
           </button>
         ))}
+        <Badge c={isLive ? T.emerald : T.faint}>{isLive ? "Document vivant" : "Exemple — en attente de saisie"}</Badge>
       </div>
       {c === "issue" && (
         <Card>
