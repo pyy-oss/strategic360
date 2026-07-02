@@ -1,11 +1,31 @@
 import React from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { T, fmt, pct, AMBITION_LABEL } from "../../../design/tokens";
-import { Eyebrow, Card, Kpi, Tip } from "../../../design/ui";
+import { Eyebrow, Card, Kpi, Tip, Badge } from "../../../design/ui";
 import { BRIDGE, VAS } from "../data";
+import { useQuantiSummary } from "../lib/quanti";
 
-/** "Création de valeur" (value bridge · value-at-stake · driver tree) — ported from `Valeur`. */
+/**
+ * "Création de valeur" (value bridge · value-at-stake · driver tree) — ported from `Valeur`.
+ *
+ * V4 wiring (BUILD_KIT.md §11 "Création de valeur lit summaries/quanti.valueAtStake"):
+ *   - Value-at-stake list: swapped for `summaries/quanti.valueAtStake` (open opportunities from
+ *     LIVE, `ev = probabilité-étape × montant`) when non-empty; falls back to the static maquette
+ *     `VAS` sample (labeled) otherwise. NOTE: the live-derived list only ever contains `type:
+ *     "opp"` rows (see functions/domain/quanti.js) — LIVE alone has no "threat" rows (those live
+ *     in `intelItems` with `stance:'threat'`, a separate V2/V3 concern not merged here per the
+ *     task scope). The static sample's `threat` rows are therefore NOT reproduced when live data
+ *     is available; only the opportunity side becomes real.
+ *   - Pont de valeur (waterfall/`BRIDGE`): LEFT STATIC. A real bridge would need a genuine
+ *     start→end walk (current CAS → 3-year ambition, broken into named growth/attrition levers)
+ *     that isn't cleanly derivable from a flat value-at-stake list — `computeValueAtStake` has no
+ *     notion of "levers" (Managed/Cloud/AO/etc.), only a per-opportunity p×impact row. Forcing a
+ *     fake bridge out of that would fabricate structure that isn't in the data, so it stays on
+ *     the maquette's illustrative `BRIDGE` sample (this matches `SIM_BASE`/`simCompute`, the
+ *     simulator's own convention — same numbers, same "à calibrer" status, V5 scope).
+ */
 export function Valeur() {
+  const { data: quanti } = useQuantiSummary();
   let cum = 0;
   const wf = BRIDGE.map((b) => {
     if (b.kind === "start" || b.kind === "end") {
@@ -17,7 +37,10 @@ export function Valeur() {
     cum += d;
     return { name: b.name, base, pos: d >= 0 ? d : 0, neg: d < 0 ? -d : 0, total: cum, d };
   });
-  const vas = [...VAS].map((v) => ({ ...v, ev: Math.round(v.p * v.impact) })).sort((a, b) => Math.abs(b.ev) - Math.abs(a.ev));
+  const liveVas = quanti?.valueAtStake && quanti.valueAtStake.length > 0 ? quanti.valueAtStake : null;
+  const vasSource = liveVas ?? VAS;
+  const vasIsLive = liveVas != null;
+  const vas = [...vasSource].map((v) => ({ ...v, ev: Math.round(v.p * v.impact) })).sort((a, b) => Math.abs(b.ev) - Math.abs(a.ev));
   const evOpp = vas.filter((v) => v.type === "opp").reduce((s, v) => s + v.ev, 0);
   const evThreat = vas.filter((v) => v.type === "threat").reduce((s, v) => s + v.ev, 0);
   return (
@@ -34,7 +57,10 @@ export function Valeur() {
         </Card>
       </div>
       <Card style={{ marginBottom: 14 }}>
-        <Eyebrow color={T.gold}>Pont de création de valeur — {AMBITION_LABEL}</Eyebrow>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Eyebrow color={T.gold}>Pont de création de valeur — {AMBITION_LABEL}</Eyebrow>
+          <Badge c={T.faint}>Exemple (illustratif) — non dérivable d'une simple liste value-at-stake</Badge>
+        </div>
         <div style={{ height: 280, marginTop: 10 }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={wf} margin={{ left: 0, right: 10, top: 10, bottom: 30 }}>
@@ -60,7 +86,10 @@ export function Valeur() {
       </Card>
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <Card>
-          <Eyebrow color={T.emerald}>Value-at-stake (proba × impact)</Eyebrow>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Eyebrow color={T.emerald}>Value-at-stake (proba × impact)</Eyebrow>
+            <Badge c={vasIsLive ? T.emerald : T.faint}>{vasIsLive ? "Temps réel (imports LIVE)" : "Exemple — en attente d'un import LIVE"}</Badge>
+          </div>
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
             {vas.map((v, i) => (
               <div key={i}>

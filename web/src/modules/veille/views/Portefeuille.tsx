@@ -4,7 +4,22 @@ import { T, zColor, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Badge, Tip } from "../../../design/ui";
 import { GE9, HORIZONS, SEGMENTS, OFFRES, GRAN } from "../data";
 
-/** "Portefeuille & Croissance" (GE-McKinsey · Three Horizons · Granularité) — ported from `Portefeuille`. */
+/**
+ * "Portefeuille & Croissance" (GE-McKinsey · Three Horizons · Granularité) — ported from
+ * `Portefeuille` in the maquette.
+ *
+ * V4 status: LEFT ENTIRELY ON STATIC MAQUETTE DATA (BUILD_KIT.md §11 lists this view as reading
+ * `summaries/quanti.ge9/bcg`, but `summaries/quanti.bcg` is a DIFFERENT chart — see Cadres.tsx's
+ * BCG tab, which IS wired). The GE-McKinsey 9-box needs a "market attractiveness" axis (`attr`
+ * in the `GE9` sample below) that has no internal-data proxy: `orders`/`opportunities` give us
+ * OUR OWN CAS/marge (a competitive-position signal, roughly what `str` represents), but nothing
+ * about how attractive the underlying market segment is (growth potential, size, regulatory
+ * tailwinds, etc.) — that would require external market data or a strategic judgment call, not a
+ * spreadsheet formula. Per the task's explicit guidance ("if GE9 can't be computed from internal
+ * data, leave Portefeuille.tsx on static data and just document why, don't force a bad wiring"),
+ * this view stays static. Three Horizons / Granularité are pure strategic-judgment tables in the
+ * maquette (no formula behind them at all) and were never in scope for quanti wiring either.
+ */
 export function Portefeuille() {
   const [c, setC] = useState("ge9");
   const CN: [string, string][] = [
@@ -23,7 +38,10 @@ export function Portefeuille() {
       </div>
       {c === "ge9" && (
         <Card>
-          <Eyebrow color={T.emerald}>Matrice GE-McKinsey — attractivité du marché × position concurrentielle (taille = marge)</Eyebrow>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Eyebrow color={T.emerald}>Matrice GE-McKinsey — attractivité du marché × position concurrentielle (taille = marge)</Eyebrow>
+            <Badge c={T.faint}>Exemple — attractivité marché non dérivable des sources internes</Badge>
+          </div>
           <div style={{ height: 340, marginTop: 10 }}>
             <ResponsiveContainer width="100%" height="100%">
               <ScatterChart margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>

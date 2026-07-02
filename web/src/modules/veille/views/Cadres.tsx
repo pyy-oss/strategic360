@@ -17,12 +17,42 @@ import {
   Cell,
 } from "recharts";
 import { T, QCOL, pct } from "../../../design/tokens";
-import { Eyebrow, Card, Tip } from "../../../design/ui";
+import { Eyebrow, Card, Tip, Badge } from "../../../design/ui";
 import { SWOT, PESTEL, PORTER, BCG, CANVAS } from "../data";
+import { useQuantiSummary } from "../lib/quanti";
 
-/** "Cadres stratégiques" — ported from `Cadres` in the maquette. */
+/**
+ * "Cadres stratégiques" — ported from `Cadres` in the maquette.
+ *
+ * V4 wiring (BUILD_KIT.md §11 "Cadres lit frameworks/* + summaries/quanti Porter/BCG"):
+ *   - Porter tab: `pouvoirFournisseurs`/`pouvoirClients` come from `summaries/quanti.porterForces`
+ *     when available (Top-3 fournisseur / Top-5 client concentration — real numbers derived from
+ *     `orders`/`opportunities`). The other 3 forces (Rivalité, Substituts, Nouveaux entrants)
+ *     have NO internal-data proxy at all (BUILD_KIT.md never claims otherwise) — they stay on the
+ *     static maquette values. This is a deliberately MIXED-SOURCE radar chart, documented inline
+ *     and via a "temps réel" badge on the two wired forces.
+ *   - BCG tab: swapped for `summaries/quanti.bcg` (per-BU part/croissance/marge from `orders`)
+ *     when the array is non-empty; falls back to the static maquette `BCG` sample (with a badge)
+ *     when no P&L has been ingested yet — an empty chart would be a worse UX than a clearly
+ *     labeled example.
+ */
 export function Cadres() {
   const [c, setC] = useState("swot");
+  const { data: quanti } = useQuantiSummary();
+
+  const porterForces = quanti?.porterForces;
+  const porterData = PORTER.map((p) => {
+    if (p.force === "Pouvoir fournisseurs" && porterForces?.pouvoirFournisseurs != null) {
+      return { ...p, v: porterForces.pouvoirFournisseurs, live: true };
+    }
+    if (p.force === "Pouvoir clients" && porterForces?.pouvoirClients != null) {
+      return { ...p, v: porterForces.pouvoirClients, live: true };
+    }
+    return { ...p, live: false };
+  });
+
+  const bcgData = quanti?.bcg && quanti.bcg.length > 0 ? quanti.bcg : BCG;
+  const bcgIsLive = !!(quanti?.bcg && quanti.bcg.length > 0);
   const CN: [string, string][] = [
     ["swot", "SWOT"],
     ["pestel", "PESTEL"],
@@ -82,10 +112,13 @@ export function Cadres() {
       {c === "porter" && (
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           <Card>
-            <Eyebrow color={T.clay}>Porter — 5 forces (quantifiées)</Eyebrow>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Eyebrow color={T.clay}>Porter — 5 forces (quantifiées)</Eyebrow>
+              {porterForces && <Badge c={T.emerald}>Fournisseurs/clients : temps réel</Badge>}
+            </div>
             <div style={{ height: 280, marginTop: 10 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={[...PORTER]} outerRadius="72%">
+                <RadarChart data={porterData} outerRadius="72%">
                   <PolarGrid stroke={T.line} />
                   <PolarAngleAxis dataKey="force" tick={{ fill: T.dim, fontSize: 11 }} />
                   <PolarRadiusAxis domain={[0, 100]} tick={{ fill: T.faint, fontSize: 9 }} axisLine={false} />
@@ -98,19 +131,25 @@ export function Cadres() {
             <Eyebrow color={T.clay}>Lecture</Eyebrow>
             <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10, fontSize: 12.5, color: T.dim, lineHeight: 1.5 }}>
               <div>
-                <b style={{ color: T.ink }}>Pouvoir fournisseurs (80)</b> — élevé : concentration Top-3 distributeurs, marges & lignes de crédit dictées. <span style={{ color: T.steel }}>Alimenté par le module Crédit Fournisseurs.</span>
+                <b style={{ color: T.ink }}>
+                  Pouvoir fournisseurs ({porterData.find((p) => p.force === "Pouvoir fournisseurs")?.v ?? "—"})
+                </b>{" "}
+                — concentration Top-3 fournisseurs (CAS). <span style={{ color: T.steel }}>{porterForces?.pouvoirFournisseurs != null ? "Calculé depuis les imports P&L (orders)." : "Valeur d'exemple — en attente d'un import P&L."}</span>
               </div>
               <div>
-                <b style={{ color: T.ink }}>Pouvoir clients (70)</b> — grands comptes & AO, pression prix. <span style={{ color: T.steel }}>Alimenté par la concentration Top-5 clients.</span>
+                <b style={{ color: T.ink }}>
+                  Pouvoir clients ({porterData.find((p) => p.force === "Pouvoir clients")?.v ?? "—"})
+                </b>{" "}
+                — concentration Top-5 clients (montant pipeline). <span style={{ color: T.steel }}>{porterForces?.pouvoirClients != null ? "Calculé depuis les imports LIVE (opportunities)." : "Valeur d'exemple — en attente d'un import LIVE."}</span>
               </div>
               <div>
-                <b style={{ color: T.ink }}>Rivalité (75)</b> — intégrateurs + telcos B2B ; densité de signaux concurrents élevée.
+                <b style={{ color: T.ink }}>Rivalité (75)</b> — intégrateurs + telcos B2B ; densité de signaux concurrents élevée. <span style={{ color: T.faint }}>Valeur d'exemple (non dérivable des sources internes).</span>
               </div>
               <div>
-                <b style={{ color: T.ink }}>Substituts (55)</b> — cloud public direct, SaaS, régie interne.
+                <b style={{ color: T.ink }}>Substituts (55)</b> — cloud public direct, SaaS, régie interne. <span style={{ color: T.faint }}>Valeur d'exemple (non dérivable des sources internes).</span>
               </div>
               <div>
-                <b style={{ color: T.ink }}>Nouveaux entrants (50)</b> — barrières moyennes (certifs, références, capital fournisseur).
+                <b style={{ color: T.ink }}>Nouveaux entrants (50)</b> — barrières moyennes (certifs, références, capital fournisseur). <span style={{ color: T.faint }}>Valeur d'exemple (non dérivable des sources internes).</span>
               </div>
             </div>
           </Card>
@@ -119,7 +158,10 @@ export function Cadres() {
 
       {c === "bcg" && (
         <Card>
-          <Eyebrow color={T.emerald}>Matrice BCG — portefeuille d'activités (taille = marge)</Eyebrow>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Eyebrow color={T.emerald}>Matrice BCG — portefeuille d'activités (taille = marge)</Eyebrow>
+            <Badge c={bcgIsLive ? T.emerald : T.faint}>{bcgIsLive ? "Temps réel (imports P&L)" : "Exemple — en attente d'un import P&L"}</Badge>
+          </div>
           <div style={{ height: 320, marginTop: 10 }}>
             <ResponsiveContainer width="100%" height="100%">
               <ScatterChart margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
@@ -130,8 +172,8 @@ export function Cadres() {
                 <ReferenceLine x={0.5} stroke={T.faint} />
                 <ReferenceLine y={0.5} stroke={T.faint} />
                 <Tooltip content={<Tip />} cursor={{ stroke: T.faint }} />
-                <Scatter data={[...BCG]}>
-                  {BCG.map((b, i) => (
+                <Scatter data={[...bcgData]}>
+                  {bcgData.map((b, i) => (
                     <Cell key={i} fill={QCOL[b.q]} />
                   ))}
                 </Scatter>
@@ -139,7 +181,7 @@ export function Cadres() {
             </ResponsiveContainer>
           </div>
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, marginTop: 6 }}>
-            {BCG.map((b, i) => (
+            {bcgData.map((b, i) => (
               <span key={i} style={{ color: T.dim }}>
                 <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 9, background: QCOL[b.q], marginRight: 5 }} />
                 {b.n} <span style={{ color: T.faint }}>({b.q})</span>

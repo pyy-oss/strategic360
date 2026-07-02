@@ -15,8 +15,14 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
+const { getStorage } = require("firebase-admin/storage");
 const logger = require("firebase-functions/logger");
 const { computePriorityScore } = require("./domain/scoring");
+const { parsePnl } = require("./parsers/pnl");
+const { parseLive } = require("./parsers/live");
+const { parseFacturationDf } = require("./parsers/facturationDf");
+const { parseFiche } = require("./parsers/fiche");
+const { computePorterForces, computeBcg, computePipeline, computeKris, computeValueAtStake } = require("./domain/quanti");
 
 initializeApp();
 
@@ -49,15 +55,134 @@ const NOT_IMPLEMENTED = (fn, phase) => {
 };
 
 /**
- * ingestInternal — Storage onFinalize (imports/*.xlsx)
+ * Path convention (chosen here — not spelled out verbatim in BUILD_KIT.md/DELTA_01 beyond
+ * "Storage onFinalize (imports/*.xlsx)"): `imports/{kind}/{filename}.xlsx`, where `kind` is one
+ * of the 4 internal sources below. `kind` is inferred from the path segment right after
+ * `imports/`. Files uploaded to any other `imports/...` shape (or an unknown kind) are ignored
+ * with a warning log rather than throwing — Storage triggers can't reject the upload after the
+ * fact, so a no-op is the only sane response to a misplaced file.
+ */
+const INGEST_KINDS = {
+  pnl: { parse: parsePnl, resultKey: "orders", stateField: "orders" },
+  live: { parse: parseLive, resultKey: "opportunities", stateField: "opportunities" },
+  facturation: { parse: parseFacturationDf, resultKey: "invoices", stateField: "invoices" },
+  fiche: { parse: parseFiche, resultKey: "bcLines", stateField: "bcLines" },
+};
+
+/**
+ * Recomputes `summaries/quanti` (BUILD_KIT.md §6) from whatever `imports_state/{kind}` docs
+ * currently exist. The 4 internal sources are uploaded independently/asynchronously (DELTA_01
+ * §3bis.E: different frequencies — P&L/LIVE "à chaque import", Facturation "hebdo", etc.), so this
+ * recomputes from a PARTIAL combination on every ingest: whichever domain function's required
+ * source(s) are missing simply yields null/[] for that section (same graceful-null pattern as
+ * V3's aggregateVeilleExec/computeVeilleExecSummary) rather than blocking the whole summary on
+ * having all 4 files present at once.
+ *
+ * Not computed here (documented, out of V4 scope / not derivable from these 4 sources alone):
+ *   - `ge9`: GE-McKinsey 9-box needs a market-attractiveness axis with no internal-data proxy
+ *     (see web/src/modules/veille/views/Portefeuille.tsx comment) — left null.
+ *   - `marginAvg`: BUILD_KIT.md §6 lists this field but doesn't specify a formula distinct from
+ *     BCG's per-BU `marge`; left null here rather than inventing an aggregation. A future phase
+ *     can define it (e.g. Σ mb / Σ cas across all orders) once real P&L units are confirmed.
+ *   - `recurrentShare`: same prerequisite gap as the "Part de récurrent" KRI (DELTA_01 §3bis.F) —
+ *     left null.
+ */
+async function computeSummaryQuanti(db) {
+  const [pnlSnap, liveSnap, facturationSnap, ficheSnap] = await Promise.all([
+    db.doc("imports_state/pnl").get(),
+    db.doc("imports_state/live").get(),
+    db.doc("imports_state/facturation").get(),
+    db.doc("imports_state/fiche").get(),
+  ]);
+
+  const orders = pnlSnap.exists ? pnlSnap.data().orders : undefined;
+  const opportunities = liveSnap.exists ? liveSnap.data().opportunities : undefined;
+  const invoices = facturationSnap.exists ? facturationSnap.data().invoices : undefined;
+  // bcLines (ficheSnap) intentionally unused — see functions/parsers/fiche.js note: not consumed
+  // by any domain/quanti.js function in V4's scope.
+  void ficheSnap;
+
+  const porterForces = computePorterForces({ orders, opportunities });
+  const bcg = computeBcg({ orders });
+  const { pipelinePondere, winRate } = computePipeline({ opportunities });
+  const kris = computeKris({ orders, opportunities, invoices });
+  const valueAtStake = computeValueAtStake({ opportunities });
+
+  return {
+    porterForces,
+    bcg,
+    ge9: null, // not derivable from internal data alone — see comment above
+    pipelinePondere,
+    winRate,
+    marginAvg: null, // not specified beyond BCG's per-BU marge — see comment above
+    supplierSaturation: porterForces.pouvoirFournisseurs, // reuse Top-3 fournisseur concentration
+    recurrentShare: null, // prerequisite tag missing — DELTA_01 §3bis.F
+    kris,
+    valueAtStake,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+}
+
+/**
+ * ingestInternal — Storage onFinalize (imports/{kind}/*.xlsx)
  * SheetJS: parse P&L / LIVE / Facturation DF / fiche affaire → summaries/quanti
  * (Porter, BCG/GE, pipeline pondéré, win rate, marge, saturation, KRIs, value-at-stake).
+ *
+ * Persists each source's freshly-parsed rows into `imports_state/{kind}` (admin-only working
+ * docs, not part of the public schema in BUILD_KIT.md §6 — an internal staging area) so that
+ * `computeSummaryQuanti` can be recomputed from any combination of sources ingested so far
+ * (sources arrive independently, not all at once — see computeSummaryQuanti's doc comment).
+ * Also writes an `imports/{id}` audit doc per BUILD_KIT.md §6 shape `{uid, kind, filename,
+ * rowsIn, rowsOk, report, ts}` — `uid` is null because Storage triggers are system-triggered, not
+ * tied to a calling user (no `request.auth` exists in this trigger type). `firestore.rules`
+ * restricts `imports/{id}` reads to `exec()` and all writes to `false`; the Admin SDK used here
+ * bypasses Security Rules entirely, which is the intended/documented behavior (BUILD_KIT.md §7
+ * note: "Imports & agrégats écrits par l'Admin SDK (Functions) contournent les rules").
  * Roadmap: V4 Quanti interne.
  */
 exports.ingestInternal = onObjectFinalized({ region: "europe-west1" }, async (event) => {
   const filePath = event.data?.name;
   if (!filePath || !filePath.startsWith("imports/")) return;
-  NOT_IMPLEMENTED("ingestInternal", "V4 Quanti interne");
+
+  const segments = filePath.split("/");
+  const kind = segments[1];
+  const config = INGEST_KINDS[kind];
+  if (!config) {
+    logger.warn(`ingestInternal: unrecognized kind "${kind}" for ${filePath} — expected one of ${Object.keys(INGEST_KINDS).join(", ")}`);
+    return;
+  }
+
+  const filename = segments[segments.length - 1];
+  const db = getFirestore();
+  const bucket = getStorage().bucket(event.data.bucket);
+  const [buffer] = await bucket.file(filePath).download();
+
+  const parsed = config.parse(buffer);
+  const rows = parsed[config.resultKey] || [];
+  const { rowsIn, rowsOk, warnings } = parsed;
+
+  await db.doc(`imports_state/${kind}`).set({
+    [config.stateField]: rows,
+    filename,
+    rowsIn,
+    rowsOk,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  await db.collection("imports").add({
+    uid: null, // system-triggered (Storage onFinalize) — no calling user
+    kind,
+    filename,
+    rowsIn,
+    rowsOk,
+    report: { warnings },
+    ts: FieldValue.serverTimestamp(),
+  });
+
+  const summary = await computeSummaryQuanti(db);
+  await db.doc("summaries/quanti").set(summary);
+
+  logger.info(`ingestInternal: kind=${kind} file=${filePath} rowsIn=${rowsIn} rowsOk=${rowsOk} warnings=${warnings.length}`);
 });
 
 /**
