@@ -2,69 +2,69 @@
 
 /**
  * Thin wrapper around `@google/genai` (the unified Google Gen AI SDK — BUILD_KIT.md §10:
- * "classifyAI/generateBriefing — Vertex AI/Gemini"). This module is the ONLY place in the
- * codebase that constructs a Gen AI client / calls `generateContent` — everything else (prompt
- * construction, response parsing, Firestore writes) lives in pure, unit-testable functions in
- * `domain/classify.js` and `domain/briefing.js` that never import this file's network path
- * directly at test time (they receive an already-built JSON response as input).
+ * "classifyAI/generateBriefing — Vertex AI/Gemini") in VERTEX AI mode (service-account auth via
+ * ADC, consistent with the rest of this codebase — no API key to manage/rotate). This module is
+ * the ONLY place in the codebase that constructs a Gen AI client / calls `generateContent` —
+ * everything else (prompt construction, response parsing, Firestore writes) lives in pure,
+ * unit-testable functions in `domain/classify.js` and `domain/briefing.js` that never import this
+ * file's network path directly at test time (they receive an already-built JSON response as input).
  *
- * MIGRATION HISTORY (2026-07-02, from real production runs against propulse-business-87f7a):
- * 1. Started on `@google-cloud/vertexai` (old SDK) in Vertex AI mode — 404'd on every model name
- *    tried (3 names, 2 regions). That SDK's own deprecation notice ("removed June 24, 2026", a
- *    date already past) suggested a dead API path, so migrated to `@google/genai`.
- * 2. Still in Vertex AI mode (`{vertexai:true, project, location}`) — STILL 404'd on 4 model names
- *    across 2 regions, despite Vertex AI Studio in the Console successfully chatting with Gemini
- *    on this same project (ruling out billing/ToS/org-policy as the cause).
- * 3. Root cause: the code snippet Vertex AI Studio itself generates ("Code" tab) does NOT use
- *    Vertex AI mode at all — it authenticates with `{ apiKey: ... }`, i.e. the **Gemini Developer
- *    API** (Google AI Studio's backend), a DIFFERENT product from enterprise Vertex AI with its
- *    own model rollout schedule. `gemini-3.5-flash` is available there but wasn't resolving via
- *    the Vertex AI publisher-model path for this project. Switched this module to Developer-API
- *    mode (`apiKey`) accordingly — requires a `GEMINI_API_KEY` secret (Secret Manager via
- *    `firebase-functions/params#defineSecret`, wired in functions/index.js), NOT the service
- *    account JSON used everywhere else in this codebase.
+ * DIAGNOSIS HISTORY (2026-07-02, real production runs against propulse-business-87f7a) — read
+ * this before touching model/location again:
+ * 1. `@google-cloud/vertexai` (old SDK, its own notice says removed June 24 2026 — already past):
+ *    404 on every model tried. Migrated to `@google/genai`.
+ * 2. `@google/genai` in Vertex mode, REGIONAL endpoints (`us-central1`, `europe-west1`): still
+ *    404 on `gemini-2.0-flash`, `gemini-2.0-flash-001`, `gemini-1.5-flash-002`,
+ *    `gemini-3.5-flash` — "Publisher model ... was not found", with IAM (`aiplatform.user`) and
+ *    the Vertex AI API confirmed enabled (Studio chats fine on this same project).
+ * 3. Current hypothesis being tested: recent Gemini generations on Vertex AI are served via the
+ *    GLOBAL endpoint (`location: "global"`), not the classic regional endpoints — which would
+ *    explain every regional 404 above while Studio (which uses its own routing) worked.
+ *    `DEFAULT_LOCATION` is therefore `"global"`; override via `VERTEX_LOCATION` if needed.
+ * If `global` ALSO 404s: the fallback (already validated as the auth mode Studio's own code
+ * export uses for this project) is the Gemini Developer API with an API key — see git history
+ * (commit "Switch Vertex AI calls to Gemini Developer API") for the ready-made implementation.
  *
  * NOT unit-tested end-to-end here: there is no real GCP project/credentials in this sandbox (no
- * network egress to Gemini endpoints). This file is verified with `node --check` only (structural
- * correctness against the documented SDK surface) until re-verified against the real project.
+ * network egress to Vertex AI endpoints). This file is verified with `node --check` only
+ * (structural correctness against the documented SDK surface).
  */
 
 const { GoogleGenAI } = require("@google/genai");
 
 /**
- * `gemini-3.5-flash` — confirmed available via the Gemini Developer API (Vertex AI Studio's own
- * generated code sample) for propulse-business-87f7a as of 2026-07-02. If this 404s again in the
- * future (model lineup drift), check Vertex AI Studio's "Code" export tab for the CURRENT working
- * snippet rather than guessing model names/auth modes blindly — see MIGRATION HISTORY above.
+ * `gemini-3.5-flash` — the model Vertex AI Studio's own picker defaults to for this project as of
+ * 2026-07-02 (older generations tried before it are retired — see DIAGNOSIS HISTORY).
  */
+const DEFAULT_LOCATION = "global";
 const DEFAULT_MODEL = "gemini-3.5-flash";
 
 let cachedClient = null;
-let cachedApiKey = null;
+let cachedClientKey = null;
 
 /**
- * Lazily constructs (and memoizes) the Gen AI client in Gemini Developer API mode (API-key auth,
- * NOT the service-account/project/location Vertex AI mode used to fail — see MIGRATION HISTORY).
- * Lazy so that importing this module (e.g. transitively via functions/index.js) never throws in
- * environments without `GEMINI_API_KEY` set (local `node --check`, unit tests of
- * domain/classify.js and domain/briefing.js that never call `generateJson`).
+ * Lazily constructs (and memoizes) the Gen AI client in Vertex AI mode. Lazy so that importing
+ * this module (e.g. transitively via functions/index.js) never throws in environments without
+ * `GCLOUD_PROJECT` set (local `node --check`, unit tests of domain/classify.js and
+ * domain/briefing.js that never call `generateJson`).
  */
 function getClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
+  const project = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT;
+  if (!project) {
     throw new Error(
-      "vertex.js: GEMINI_API_KEY is not set — Gen AI client cannot be initialized. " +
-        "This is expected in local/test environments; only fails when generateJson() is actually invoked. " +
-        "In production this must be wired as a Secret Manager secret (see functions/index.js)."
+      "vertex.js: GCLOUD_PROJECT is not set — Gen AI client cannot be initialized. " +
+        "This is expected in local/test environments; only fails when generateJson() is actually invoked."
     );
   }
+  const location = process.env.VERTEX_LOCATION || DEFAULT_LOCATION;
+  const key = `${project}:${location}`;
 
-  if (cachedClient && cachedApiKey === apiKey) {
+  if (cachedClient && cachedClientKey === key) {
     return cachedClient;
   }
 
-  cachedClient = new GoogleGenAI({ apiKey });
-  cachedApiKey = apiKey;
+  cachedClient = new GoogleGenAI({ vertexai: true, project, location });
+  cachedClientKey = key;
   return cachedClient;
 }
 
@@ -114,4 +114,4 @@ async function generateJson(prompt, schema) {
   }
 }
 
-module.exports = { generateJson, getClient, DEFAULT_MODEL };
+module.exports = { generateJson, getClient, DEFAULT_LOCATION, DEFAULT_MODEL };
