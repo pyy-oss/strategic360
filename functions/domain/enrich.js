@@ -653,25 +653,34 @@ function buildGe9Prompt(items, granularite, companyContext = COMPANY_CONTEXT) {
   return `Tu es un consultant en stratégie travaillant pour l'entreprise suivante :
 ${companyContext}
 
-Construis une matrice GE-McKinsey (attractivité du marché × position concurrentielle) pour les
-segments d'activité de cette entreprise (BU internes, et si pertinent 2-4 segments d'offre plus
-fins : cybersécurité/SOC, cloud, réseaux/infra, managed services, formation…). Réponds UNIQUEMENT
-avec un objet JSON valide :
+Construis une matrice GE-McKinsey (attractivité du marché × position concurrentielle). Elle doit
+couvrir DEUX familles de segments :
+(A) les BU/offres ÉTABLIES (avec CAS interne) : réseaux/infra, cybersécurité/SOC, cloud & services
+    managés, formation… ;
+(B) les SEGMENTS D'OPPORTUNITÉ ÉMERGENTS (whitespace) — marchés à forte attractivité où l'entreprise
+    n'a encore PEU ou PAS de chiffre d'affaires mais que les signaux rendent capturables. Tu DOIS
+    en faire ressortir au moins 3, en priorité (mais sans t'y limiter) : « IA / GenAI appliquée »
+    (copilots, automatisation, IA souveraine, data), « Cloud souverain » (distinct des services
+    managés classiques), « SD-WAN / SASE / connectivité managée (WAN) ». N'AGRÈGE PAS une offre
+    émergente à fort potentiel dans « services managés » — donne-lui son propre segment.
+Réponds UNIQUEMENT avec un objet JSON valide :
 
 {
   "items": [
     {
-      "n": string,        // nom du segment
-      "attr": number,     // attractivité du marché, 0-100 (taille, croissance, intensité concurrentielle, leviers réglementaires — justifiable par les signaux/contexte)
-      "pos": number,      // position concurrentielle de l'entreprise sur ce segment, 0-100 (parts internes, références, certifications)
-      "size": number,     // poids relatif du segment pour l'entreprise, 0-100 (CAS réel si connu, sinon estimation)
-      "note": string      // justification courte (1-2 phrases) citant signaux/faits
+      "n": string,          // nom du segment
+      "attr": number,       // attractivité du marché, 0-100 (taille, croissance, intensité concurrentielle, leviers réglementaires — justifiable par les signaux/contexte)
+      "pos": number,        // position concurrentielle de l'entreprise sur ce segment, 0-100 (parts internes, références, certifications ; FAIBLE pour un segment émergent à construire)
+      "size": number,       // poids relatif du segment, 0-100 (CAS réel si connu ; pour un émergent : potentiel de marché estimé)
+      "emerging": boolean,  // true = segment d'opportunité émergent (famille B), false = BU établie (famille A)
+      "note": string        // justification courte (1-2 phrases) citant signaux/faits ; pour un émergent, dire le déclencheur et l'angle de capture
     }
   ]
 }
 
-Contraintes : 4 à 8 segments ; scores honnêtes et différenciés (pas tout à 70) ; ancre les notes
-dans les signaux et les données internes fournies.
+Contraintes : 6 à 9 segments AU TOTAL dont AU MOINS 3 émergents (emerging:true) ; scores honnêtes et
+différenciés (pas tout à 70) ; un segment émergent a typiquement attr élevé et pos faible ; ancre
+chaque note dans les signaux et les données internes fournies.
 
 Données internes réelles (CAS par BU) :
 ${granBlock}
@@ -692,6 +701,7 @@ function parseGe9Response(raw) {
       attr: clamp100(e.attr) ?? 50,
       pos: clamp100(e.pos) ?? 50,
       size: clamp100(e.size) ?? 30,
+      emerging: e.emerging === true,
       note: typeof e.note === "string" ? e.note.trim() : "",
     }));
   return items.length >= 3 ? { items } : null;

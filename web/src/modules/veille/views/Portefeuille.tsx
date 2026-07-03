@@ -6,7 +6,7 @@ import { useInitiatives } from "../lib/execution";
 import { useFramework } from "../lib/frameworks";
 import { useQuantiSummary } from "../lib/quanti";
 
-type Ge9Content = { items: { n: string; attr: number; pos: number; size: number; note?: string }[] };
+type Ge9Content = { items: { n: string; attr: number; pos: number; size: number; note?: string; emerging?: boolean }[] };
 type HorizonsContent = { items: { h: "H1" | "H2" | "H3"; title: string; d?: string }[] };
 
 /**
@@ -90,16 +90,30 @@ export function Portefeuille() {
                 }} />
                 <Scatter data={[...ge9]}>
                   {ge9.map((e, i) => (
-                    <Cell key={i} fill={e.attr >= 66 && e.pos >= 66 ? T.emerald : e.attr < 33 && e.pos < 33 ? T.clay : T.gold} />
+                    // Segment émergent (whitespace : IA, cloud souverain, WAN/SD-WAN…) : anneau
+                    // doré ajouré pour le distinguer des BU établies (pastilles pleines).
+                    <Cell
+                      key={i}
+                      fill={e.emerging ? T.gold : e.attr >= 66 && e.pos >= 66 ? T.emerald : e.attr < 33 && e.pos < 33 ? T.clay : T.gold}
+                      fillOpacity={e.emerging ? 0.18 : 1}
+                      stroke={e.emerging ? T.gold : "none"}
+                      strokeWidth={e.emerging ? 2 : 0}
+                    />
                   ))}
                 </Scatter>
               </ScatterChart>
             </ResponsiveContainer>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
-            {ge9.map((e, i) => (
+            {[...ge9].sort((a, b) => Number(b.emerging) - Number(a.emerging)).map((e, i) => (
               <div key={i} style={{ fontSize: 12, color: T.dim }}>
-                <b style={{ color: T.ink }}>{e.n}</b> <span style={{ color: T.faint }}>(attr. {e.attr} · pos. {e.pos})</span>
+                <b style={{ color: T.ink }}>{e.n}</b>
+                {e.emerging && (
+                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: T.gold, border: `1px solid ${T.gold}`, borderRadius: 4, padding: "1px 5px", verticalAlign: "middle" }}>
+                    OPPORTUNITÉ ÉMERGENTE
+                  </span>
+                )}{" "}
+                <span style={{ color: T.faint }}>(attr. {e.attr} · pos. {e.pos})</span>
                 {e.note ? <> — {e.note}</> : null}
               </div>
             ))}

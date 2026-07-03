@@ -465,13 +465,16 @@ describe("parseGe9Response / parseHorizonsResponse", () => {
         { n: "Cybersécurité", attr: 140, pos: 80, size: 55, note: "obligations RGSSI" },
         { n: "  ", attr: 50, pos: 50, size: 50 },
         { n: "Cloud", attr: 70, pos: -5, size: 30 },
+        { n: "IA / GenAI", attr: 90, pos: 20, size: 40, emerging: true, note: "whitespace" },
         { n: "Formation", attr: 60, pos: 65 },
       ],
     });
-    expect(parsed.items).toHaveLength(3);
-    expect(parsed.items[0]).toEqual({ n: "Cybersécurité", attr: 100, pos: 80, size: 55, note: "obligations RGSSI" });
+    expect(parsed.items).toHaveLength(4);
+    expect(parsed.items[0]).toEqual({ n: "Cybersécurité", attr: 100, pos: 80, size: 55, emerging: false, note: "obligations RGSSI" });
     expect(parsed.items[1].pos).toBe(0);
-    expect(parsed.items[2].size).toBe(30); // défaut
+    expect(parsed.items[1].emerging).toBe(false); // défaut
+    expect(parsed.items[2]).toMatchObject({ n: "IA / GenAI", emerging: true }); // famille B
+    expect(parsed.items[3].size).toBe(30); // défaut
     expect(parseGe9Response({ items: [{ n: "A", attr: 1, pos: 1, size: 1 }] })).toBeNull();
     expect(parseGe9Response(null)).toBeNull();
   });
