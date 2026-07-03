@@ -140,7 +140,7 @@ export function Simulateur() {
         <span>🎛️ Manipulez les leviers : le revenu projeté, la marge, la part de récurrent, la valeur en jeu et le score stratégique se recalculent en direct.</span>
         <Badge c={calibrated ? T.emerald : T.faint}>{calibrated ? "Calibré sur données réelles" : "Valeurs de référence — en attente de calibrage (imports internes)"}</Badge>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, alignItems: "start" }} className="g2">
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(300px,360px) 1fr", gap: 16, alignItems: "start" }} className="g2">
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <Eyebrow color={T.gold}>Leviers stratégiques</Eyebrow>
@@ -256,7 +256,7 @@ export function Simulateur() {
           <div style={{ marginTop: 12 }}>
             {tor.map((m, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
-                <div style={{ width: 150, fontSize: 11.5, color: T.dim, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.l}</div>
+                <div style={{ width: "min(150px,36%)", flexShrink: 0, fontSize: 11.5, color: T.dim, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.l}</div>
                 <div style={{ flex: 1, position: "relative", height: 16, background: T.panel2, borderRadius: 4 }}>
                   <div style={{ position: "absolute", left: m.lo + "%", width: Math.max(m.hi - m.lo, 1) + "%", top: 0, bottom: 0, background: T.gold + "99", borderRadius: 4 }} />
                   <div style={{ position: "absolute", left: R.score + "%", top: -2, bottom: -2, width: 2, background: T.ink }} />
@@ -271,7 +271,7 @@ export function Simulateur() {
         </Card>
         <Card>
           <Eyebrow color={T.steel}>Comparaison de scénarios</Eyebrow>
-          <div style={{ marginTop: 12, overflowX: "auto" }}>
+          <div className="tbl-scroll" style={{ marginTop: 12 }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ color: T.faint, fontSize: 10.5, textAlign: "right" }}>

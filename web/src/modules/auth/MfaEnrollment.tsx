@@ -143,7 +143,7 @@ function TotpEnrollmentForm({ user, onDone }: { user: User; onDone: () => void }
             src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
               secret.generateQrCodeUrl(user.email ?? undefined, "Veille Stratégique NT-CI")
             )}`}
-            style={{ width: 180, height: 180, borderRadius: 8, background: "#fff", padding: 8 }}
+            style={{ width: 180, maxWidth: "100%", height: 180, borderRadius: 8, background: "#fff", padding: 8 }}
           />
           <div style={{ fontSize: 11, color: T.faint, wordBreak: "break-all" }}>
             Clé secrète : {secret.secretKey}

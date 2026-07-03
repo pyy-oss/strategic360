@@ -173,7 +173,7 @@ function NewActionPanel({ onClose }: { onClose: () => void }) {
             Fermer
           </button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Titre *</label>
             <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} required />
@@ -316,7 +316,7 @@ export function PlanAction() {
           </Card>
           <Card>
             <Eyebrow color={T.steel}>Plan d'action priorisé</Eyebrow>
-            <div style={{ marginTop: 12, overflowX: "auto" }}>
+            <div className="tbl-scroll" style={{ marginTop: 12 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ color: T.faint, fontSize: 10.5, textAlign: "left" }}>

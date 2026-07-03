@@ -45,7 +45,7 @@ export function Detection() {
           </Card>
         ))}
       </div>
-      <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+      <div className="g2 g2-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <Eyebrow color={T.emerald}>Radar de détection</Eyebrow>

@@ -64,15 +64,15 @@ export function Diagnostic() {
             <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>Section non renseignée.</div>
           ) : (
             <>
-              <div style={{ display: "flex", gap: 14, marginTop: 14, alignItems: "stretch" }}>
-                <div style={{ minWidth: 180, display: "flex", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 14, marginTop: 14, alignItems: "stretch", flexWrap: "wrap" }}>
+                <div style={{ minWidth: "min(180px,100%)", display: "flex", alignItems: "center" }}>
                   <div style={{ padding: "12px 14px", background: `linear-gradient(135deg,${T.gold},#8E6F2A)`, color: "#0E1613", borderRadius: 10, fontWeight: 700, fontSize: 13.5 }}>{ISSUE.q}</div>
                 </div>
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ flex: "1 1 260px", minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
                   {ISSUE.branches.map((b, i) => (
-                    <div key={i} style={{ display: "flex", gap: 10, alignItems: "stretch" }}>
-                      <div style={{ minWidth: 230, padding: "9px 11px", background: T.panel2, borderRadius: 8, borderLeft: `3px solid ${T.steel}`, color: T.ink, fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center" }}>{b.t}</div>
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, justifyContent: "center" }}>
+                    <div key={i} style={{ display: "flex", gap: 10, alignItems: "stretch", flexWrap: "wrap" }}>
+                      <div style={{ minWidth: "min(230px,100%)", padding: "9px 11px", background: T.panel2, borderRadius: 8, borderLeft: `3px solid ${T.steel}`, color: T.ink, fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center" }}>{b.t}</div>
+                      <div style={{ flex: "1 1 220px", minWidth: 0, display: "flex", flexDirection: "column", gap: 6, justifyContent: "center" }}>
                         {b.h.map((h, j) => (
                           <div key={j} style={{ fontSize: 12, color: T.dim, padding: "5px 9px", background: T.panel2, borderRadius: 7 }}>
                             Hypothèse : {h}
