@@ -9,8 +9,11 @@ import {
   copiloteChat,
   syncCopiloteAccountsFromNt360,
   setCopiloteAccountOwners,
+  setCopiloteScope,
+  fetchCopiloteProfiles,
   slugifyClient,
   type CopiloteAccount,
+  type CopiloteProfile,
   type CopiloteAgent,
   type ProspectionResult,
   type CvpResult,
@@ -44,6 +47,7 @@ export function Copilote() {
   const [accountId, setAccountId] = useState<string>("");
   const [tab, setTab] = useState<string>("prospection");
   const [showNew, setShowNew] = useState(false);
+  const [showPerim, setShowPerim] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
@@ -113,11 +117,13 @@ export function Copilote() {
             <button className="pill" disabled={syncing} onClick={() => void syncFromNt360()}>
               {syncing ? "Synchro…" : "⟳ Empreinte nt360"}
             </button>
+            {isAdmin && <button className="pill" onClick={() => setShowPerim((v) => !v)}>Périmètres</button>}
             <button className="pill on" onClick={() => setShowNew((v) => !v)}>+ Nouveau compte</button>
           </div>
         )}
       </div>
 
+      {showPerim && isAdmin && <PerimetresPanel onClose={() => setShowPerim(false)} />}
       {showNew && canWrite && <NewAccountPanel onClose={() => setShowNew(false)} onCreated={(id) => { setAccountId(id); setShowNew(false); reload(); }} />}
 
       <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 14 }}>
@@ -569,6 +575,71 @@ function NewAccountPanel({ onClose, onCreated }: { onClose: () => void; onCreate
         <button className="pill on" disabled={busy || !f.nom.trim()} onClick={() => void submit()}>{busy ? "Création…" : "Créer le compte"}</button>
       </div>
       <ErrLine err={err} />
+    </Card>
+  );
+}
+
+/* -------- Admin des périmètres commerciaux (AM/BU par e-mail) — direction/commercial_dir -------- */
+function PerimetresPanel({ onClose }: { onClose: () => void }) {
+  const [profiles, setProfiles] = useState<CopiloteProfile[]>([]);
+  const [f, setF] = useState({ email: "", ams: "", bus: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
+  const load = () => { void fetchCopiloteProfiles().then(setProfiles).catch(() => {}); };
+  useEffect(() => { load(); }, []);
+  const lines = (s: string) => s.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+  const save = async () => {
+    const email = f.email.trim().toLowerCase();
+    if (!email) return;
+    setBusy(true); setErr(null); setMsg(null);
+    try {
+      await setCopiloteScope(email, lines(f.ams), lines(f.bus));
+      setMsg(`Périmètre enregistré pour ${email}.`);
+      setF({ email: "", ams: "", bus: "" });
+      load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Échec de l'enregistrement.");
+    } finally { setBusy(false); }
+  };
+  const edit = (p: CopiloteProfile) => setF({ email: p.email, ams: p.ams.join(", "), bus: p.bus.join(", ") });
+  return (
+    <Card style={{ marginBottom: 14, borderColor: T.plum }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: T.plum }}>Périmètres commerciaux (AM / BU par e-mail)</span>
+        <button className="pill" onClick={onClose}>Fermer</button>
+      </div>
+      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 10, lineHeight: 1.5 }}>
+        Un commercial voit un compte s'il en est <b>owner</b> (attribution), si l'un de ses <b>AM</b> ou de ses <b>BU</b>
+        correspond au compte, ou s'il l'a créé. Direction et directeurs commerciaux voient tout.
+      </div>
+      <div className="g4" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+        <div><label style={lbl}>E-mail du commercial *</label><input style={inp} value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="jean@nt.ci" /></div>
+        <div><label style={lbl}>Account managers (AM), séparés par des virgules</label><input style={inp} value={f.ams} onChange={(e) => set("ams", e.target.value)} placeholder="K. Diallo, M. Traoré" /></div>
+        <div><label style={lbl}>BU / équipes, séparées par des virgules</label><input style={inp} value={f.bus} onChange={(e) => set("bus", e.target.value)} placeholder="ICT, CYBER" /></div>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
+        <button className="pill on" disabled={busy || !f.email.trim()} onClick={() => void save()}>{busy ? "…" : "Enregistrer le périmètre"}</button>
+        {msg && <span style={{ fontSize: 11.5, color: T.faint }}>{msg}</span>}
+      </div>
+      <ErrLine err={err} />
+      {profiles.length > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.line}` }}>
+          <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 6 }}>Périmètres définis</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {profiles.map((p) => (
+              <button key={p.email} onClick={() => edit(p)}
+                style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", padding: "7px 10px", background: T.panel2, borderRadius: 8, border: `1px solid ${T.line}`, cursor: "pointer", textAlign: "left" }}>
+                <span style={{ fontSize: 12.5, color: T.ink }}>{p.email}</span>
+                <span style={{ fontSize: 11.5, color: T.faint }}>
+                  {p.ams.length ? `AM: ${p.ams.join(", ")}` : "AM: —"} · {p.bus.length ? `BU: ${p.bus.join(", ")}` : "BU: —"}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
