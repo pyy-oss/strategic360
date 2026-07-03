@@ -99,6 +99,10 @@ export interface IntelSource {
   axis?: IntelAxis;
   active: boolean;
   lastFetch?: Timestamp | FieldValue | null;
+  /** Santé de la source (mise à jour par syncSources) : "ok", "degraded: …" ou "error: …". */
+  lastStatus?: string;
+  consecutiveFailures?: number;
+  sourceRating?: string;
 }
 
 export type IntelSourceInput = Omit<IntelSource, "id" | "lastFetch">;

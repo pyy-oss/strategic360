@@ -50,10 +50,42 @@ const TENDER_SUBTYPE = "Appel d'offres";
  * mitigation for that class of failure; sites with stricter anti-bot measures (Cloudflare
  * challenges, JS-rendered content) will still fail and need a different ingestion approach later.
  */
+// Fiabilisation des sources (2026-07) : beaucoup de sites (portails gouv., presse) rejettent un
+// User-Agent identifié « bot ». On présente un UA de navigateur réaliste + en-têtes usuels — c'est
+// la parade la plus efficace au 403 anti-bot. Les sites à défi JS (Cloudflare, SPA) resteront
+// hors d'atteinte d'un simple fetch et s'auto-élaguent (santé des sources).
 const SOURCE_FETCH_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (compatible; VeilleStrategiqueBot/1.0; +https://strategic360.web.app)",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
   Accept: "text/html,application/xhtml+xml,application/xml,application/rss+xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
 };
+
+/**
+ * fetchSource(url) — récupère une source avec robustesse : UA navigateur, suivi des redirections,
+ * timeout dur (12 s) pour ne pas bloquer un lot, et 1 nouvelle tentative sur erreur réseau
+ * transitoire. Lève une erreur explicite sur statut HTTP non-2xx (comptée comme échec de santé).
+ */
+async function fetchSource(url) {
+  const attempt = async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const res = await fetch(url, { headers: SOURCE_FETCH_HEADERS, redirect: "follow", signal: controller.signal });
+      if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
+      return await res.text();
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  try {
+    return await attempt();
+  } catch (err) {
+    // Retente une fois uniquement sur erreur réseau/timeout (pas sur un 4xx déterministe).
+    if (/HTTP [45]\d\d/.test(String(err.message)) && !/HTTP 429|HTTP 5\d\d/.test(String(err.message))) throw err;
+    return await attempt();
+  }
+}
 
 /** Source health: auto-deactivate a source after this many consecutive fetch failures. */
 const MAX_CONSECUTIVE_FAILURES = 5;
@@ -545,9 +577,7 @@ async function runSyncSources(db) {
       let degraded = false;
 
       if (source.kind === "rss" || source.kind === "newsletter" || source.kind === "portal") {
-        const res = await fetch(source.url, { headers: SOURCE_FETCH_HEADERS });
-        if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
-        const xml = await res.text();
+        const xml = await fetchSource(source.url);
         // Rééquilibrage du fil : les flux tech/cyber MONDIAUX sont prolifiques et noyaient les
         // signaux locaux — plafond réduit à 2 items/run pour l'axe tech, 5 pour les axes locaux.
         const rssItems = extractRssItems(xml, source.axis === "tech" ? 2 : 5);
@@ -569,9 +599,7 @@ async function runSyncSources(db) {
         );
         created = settled.filter((s) => s.status === "fulfilled" && s.value).length;
       } else if (source.kind === "web") {
-        const res = await fetch(source.url, { headers: SOURCE_FETCH_HEADERS });
-        if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
-        const html = await res.text();
+        const html = await fetchSource(source.url);
         // C5 : extraction MULTI-ITEMS — chaque avis/actualité devient un intelItem à ID distinct
         // (lien de l'item, sinon titre+date), au lieu d'UN doc figé sur l'URL du portail.
         const webItems = extractWebItems(html, source.url, source.axis === "tech" ? 2 : 8);

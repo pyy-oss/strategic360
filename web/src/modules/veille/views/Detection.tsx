@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { T, ECAT, PROX, IMP, STANCE } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
-import { useIntelItems, withDetectionFields } from "../lib/intel";
+import { useIntelItems, useSources, withDetectionFields, type IntelSource } from "../lib/intel";
 
 /** "Radar de détection" — ported from `Detection` in the maquette; data source swapped to
  * Firestore `intelItems` (V2). Rendering (sonar SVG, quadrants, badges) is unchanged.
@@ -120,6 +120,7 @@ export function Detection() {
           </div>
         </Card>
       </div>
+      <SourceHealthPanel />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
         <span style={{ fontSize: 11.5, color: T.faint }}>Catégorie :</span>
         <button className={`pill ${cat === "all" ? "on" : ""}`} onClick={() => setCat("all")}>
@@ -170,5 +171,71 @@ export function Detection() {
         ))}
       </div>
     </div>
+  );
+}
+
+/** Statut de santé d'une source dérivé de lastStatus/active (fiabilisation 2026-07). */
+function sourceHealth(s: IntelSource): { key: "ok" | "degraded" | "error" | "inactive"; label: string; color: string } {
+  if (s.active === false) return { key: "inactive", label: "Désactivée", color: T.faint };
+  const st = (s.lastStatus || "").toLowerCase();
+  if (!st) return { key: "ok", label: "En attente", color: T.steel };
+  if (st.startsWith("ok")) return { key: "ok", label: "OK", color: T.emerald };
+  if (st.startsWith("degraded")) return { key: "degraded", label: "Dégradée", color: T.gold };
+  return { key: "error", label: "En échec", color: T.clay };
+}
+
+/**
+ * Santé des sources (M4 audit + fiabilisation) : rend visible quelles sources alimentent réellement
+ * la veille. Sans ça, l'auto-désactivation des feeds morts était totalement silencieuse. Compteurs
+ * en tête + liste repliable des sources en échec/dégradées (les plus urgentes à corriger).
+ */
+function SourceHealthPanel() {
+  const { sources, loading } = useSources();
+  const [open, setOpen] = useState(false);
+  if (loading || sources.length === 0) return null;
+  const counts = { ok: 0, degraded: 0, error: 0, inactive: 0 };
+  const problems: { s: IntelSource; h: ReturnType<typeof sourceHealth> }[] = [];
+  for (const s of sources) {
+    const h = sourceHealth(s);
+    counts[h.key] += 1;
+    if (h.key === "error" || h.key === "inactive" || h.key === "degraded") problems.push({ s, h });
+  }
+  const total = sources.length;
+  const okPct = Math.round((counts.ok / total) * 100);
+  return (
+    <Card style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <Eyebrow color={T.emerald}>Santé des sources — {counts.ok}/{total} actives ({okPct}%)</Eyebrow>
+        {problems.length > 0 && (
+          <button className="pill" onClick={() => setOpen((v) => !v)}>
+            {open ? "Masquer" : `Voir ${problems.length} à corriger`}
+          </button>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+        <Badge c={T.emerald}>OK : {counts.ok}</Badge>
+        <Badge c={T.gold}>Dégradées : {counts.degraded}</Badge>
+        <Badge c={T.clay}>En échec : {counts.error}</Badge>
+        <Badge c={T.faint}>Désactivées : {counts.inactive}</Badge>
+      </div>
+      {open && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6, maxHeight: 280, overflowY: "auto" }}>
+          {problems
+            .sort((a, b) => (b.s.consecutiveFailures ?? 0) - (a.s.consecutiveFailures ?? 0))
+            .map(({ s, h }) => (
+              <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", padding: "6px 10px", background: T.panel2, borderRadius: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
+                  <div style={{ fontSize: 11, color: T.faint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.url}</div>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+                  {s.consecutiveFailures ? <span style={{ fontSize: 11, color: T.faint }}>{s.consecutiveFailures}×</span> : null}
+                  <Badge c={h.color}>{h.label}</Badge>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+    </Card>
   );
 }
