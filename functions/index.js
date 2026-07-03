@@ -861,6 +861,10 @@ const {
   parseDiagnosticResponse,
   buildContextRefreshPrompt,
   parseContextRefreshResponse,
+  buildGe9Prompt,
+  parseGe9Response,
+  buildHorizonsPrompt,
+  parseHorizonsResponse,
   pickSignalsForEnrichment,
   slugId: enrichSlugId,
 } = require("./domain/enrich");
@@ -1033,6 +1037,38 @@ async function runEnrichment(db) {
   } catch (err) {
     summary.diagnostic = "failed";
     logger.error(`runEnrichment: diagnostic generation FAILED — ${err.message}`, { err });
+  }
+
+  // 7. GE-McKinsey (frameworks/ge9) — attractivité marché estimée par l'IA, position/taille
+  // ancrées sur les CAS réels par BU (summaries/quanti.granularite). « Portefeuille vide », 2026-07.
+  try {
+    const quantiSnap = await db.doc("summaries/quanti").get();
+    const granularite = quantiSnap.exists ? quantiSnap.data()?.granularite : null;
+    const parsed = parseGe9Response(await generateJson(buildGe9Prompt(signals, granularite, companyContext)));
+    if (!parsed) {
+      summary.ge9 = "parse-failed";
+      logger.error("runEnrichment: ge9 response unusable (parse returned null)");
+    } else {
+      summary.ge9 = await writeFrameworkDoc(db, "ge9", parsed);
+    }
+  } catch (err) {
+    summary.ge9 = "failed";
+    logger.error(`runEnrichment: ge9 generation FAILED — ${err.message}`, { err });
+  }
+
+  // 8. Three Horizons — suggestions d'initiatives (frameworks/horizons). L'humain adopte une
+  // suggestion en créant l'initiative réelle dans Exécution & Décisions.
+  try {
+    const parsed = parseHorizonsResponse(await generateJson(buildHorizonsPrompt(signals, companyContext)));
+    if (!parsed) {
+      summary.horizons = "parse-failed";
+      logger.error("runEnrichment: horizons response unusable (parse returned null)");
+    } else {
+      summary.horizons = await writeFrameworkDoc(db, "horizons", parsed);
+    }
+  } catch (err) {
+    summary.horizons = "failed";
+    logger.error(`runEnrichment: horizons generation FAILED — ${err.message}`, { err });
   }
 
   // 6. Opportunités business (bizOpportunities) — Action 6.1 de l'audit 2026-07 : transformer les

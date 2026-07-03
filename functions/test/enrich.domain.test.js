@@ -456,3 +456,38 @@ describe("contexte entreprise dynamique", () => {
     expect(parseContextRefreshResponse(null, COMPANY_CONTEXT)).toBeNull();
   });
 });
+
+describe("parseGe9Response / parseHorizonsResponse", () => {
+  it("ge9: clamp 0-100, drop sans nom, null si moins de 3 segments", async () => {
+    const { parseGe9Response } = await import("../domain/enrich.js");
+    const parsed = parseGe9Response({
+      items: [
+        { n: "Cybersécurité", attr: 140, pos: 80, size: 55, note: "obligations RGSSI" },
+        { n: "  ", attr: 50, pos: 50, size: 50 },
+        { n: "Cloud", attr: 70, pos: -5, size: 30 },
+        { n: "Formation", attr: 60, pos: 65 },
+      ],
+    });
+    expect(parsed.items).toHaveLength(3);
+    expect(parsed.items[0]).toEqual({ n: "Cybersécurité", attr: 100, pos: 80, size: 55, note: "obligations RGSSI" });
+    expect(parsed.items[1].pos).toBe(0);
+    expect(parsed.items[2].size).toBe(30); // défaut
+    expect(parseGe9Response({ items: [{ n: "A", attr: 1, pos: 1, size: 1 }] })).toBeNull();
+    expect(parseGe9Response(null)).toBeNull();
+  });
+
+  it("horizons: h coercé vers H2, drop sans titre, null si moins de 3", async () => {
+    const { parseHorizonsResponse } = await import("../domain/enrich.js");
+    const parsed = parseHorizonsResponse({
+      items: [
+        { h: "H1", title: "Refresh Catalyst 3650 chez les clients équipés", d: "EOL oct. 2026" },
+        { h: "H9", title: "SOC souverain managé", d: "" },
+        { h: "H3", title: "Offre conformité CERTINUM" },
+        { title: "  " },
+      ],
+    });
+    expect(parsed.items).toHaveLength(3);
+    expect(parsed.items[1].h).toBe("H2");
+    expect(parseHorizonsResponse({ items: [] })).toBeNull();
+  });
+});

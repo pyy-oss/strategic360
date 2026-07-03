@@ -617,6 +617,119 @@ function parseDiagnosticResponse(raw) {
 }
 
 /* ------------------------------------------------------------------------------------------- *
+ * Portefeuille & Croissance (« Portefeuille & Croissance vide », 2026-07) — deux artefacts IA :
+ * - frameworks/ge9 : matrice GE-McKinsey. La position concurrentielle vient des données internes
+ *   (part relative BCG), l'ATTRACTIVITÉ DU MARCHÉ — introuvable en interne — est ESTIMÉE par
+ *   l'IA depuis les signaux + le contexte (taille/croissance des marchés adressés en CI/UEMOA).
+ * - frameworks/horizons : suggestions d'initiatives H1/H2/H3 dérivées des signaux/opportunités —
+ *   l'humain les adopte en créant l'initiative réelle dans Exécution & Décisions.
+ * Même garde anti-écrasement humain (writeFrameworkDoc) que les autres frameworks.
+ * ------------------------------------------------------------------------------------------- */
+
+const VALID_H = ["H1", "H2", "H3"];
+
+/**
+ * @param {Array<object>} items Lightweight signals (pickSignalsForEnrichment).
+ * @param {Array<{seg:string, casN:number, casN1:number, delta:number}>} [granularite] CAS réels
+ *   par BU (summaries/quanti.granularite) — la position/taille de chaque segment part du réel.
+ * @param {string} [companyContext]
+ */
+function buildGe9Prompt(items, granularite, companyContext = COMPANY_CONTEXT) {
+  const granBlock = Array.isArray(granularite) && granularite.length
+    ? granularite.map((g) => `- ${g.seg}: CAS N=${g.casN} XOF, CAS N-1=${g.casN1} XOF, delta=${g.delta} XOF`).join("\n")
+    : "(données internes indisponibles)";
+  return `Tu es un consultant en stratégie travaillant pour l'entreprise suivante :
+${companyContext}
+
+Construis une matrice GE-McKinsey (attractivité du marché × position concurrentielle) pour les
+segments d'activité de cette entreprise (BU internes, et si pertinent 2-4 segments d'offre plus
+fins : cybersécurité/SOC, cloud, réseaux/infra, managed services, formation…). Réponds UNIQUEMENT
+avec un objet JSON valide :
+
+{
+  "items": [
+    {
+      "n": string,        // nom du segment
+      "attr": number,     // attractivité du marché, 0-100 (taille, croissance, intensité concurrentielle, leviers réglementaires — justifiable par les signaux/contexte)
+      "pos": number,      // position concurrentielle de l'entreprise sur ce segment, 0-100 (parts internes, références, certifications)
+      "size": number,     // poids relatif du segment pour l'entreprise, 0-100 (CAS réel si connu, sinon estimation)
+      "note": string      // justification courte (1-2 phrases) citant signaux/faits
+    }
+  ]
+}
+
+Contraintes : 4 à 8 segments ; scores honnêtes et différenciés (pas tout à 70) ; ancre les notes
+dans les signaux et les données internes fournies.
+
+Données internes réelles (CAS par BU) :
+${granBlock}
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+/** parseGe9Response(raw) -> {items:[{n, attr, pos, size, note}]} | null — clamp 0-100, drop sans nom, null si <3 segments. */
+function parseGe9Response(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.items)) return null;
+  const items = raw.items
+    .filter((e) => e && typeof e === "object" && typeof e.n === "string" && e.n.trim())
+    .map((e) => ({
+      n: e.n.trim(),
+      attr: clamp100(e.attr) ?? 50,
+      pos: clamp100(e.pos) ?? 50,
+      size: clamp100(e.size) ?? 30,
+      note: typeof e.note === "string" ? e.note.trim() : "",
+    }));
+  return items.length >= 3 ? { items } : null;
+}
+
+/**
+ * @param {Array<object>} items Lightweight signals.
+ * @param {string} [companyContext]
+ */
+function buildHorizonsPrompt(items, companyContext = COMPANY_CONTEXT) {
+  return `Tu es un consultant en stratégie travaillant pour l'entreprise suivante :
+${companyContext}
+
+Propose des INITIATIVES stratégiques réparties sur les Three Horizons de McKinsey, dérivées des
+signaux réels ci-dessous. Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "items": [
+    {
+      "h": "H1" | "H2" | "H3",  // H1 = défendre/optimiser le cœur, H2 = moteurs de croissance émergents, H3 = options de rupture
+      "title": string,           // intitulé court et actionnable de l'initiative
+      "d": string                // 1-2 phrases : pourquoi maintenant, ancré dans un signal/fait précis
+    }
+  ]
+}
+
+Contraintes : 5 à 9 initiatives au total, chaque horizon représenté ; chaque initiative doit
+citer un fait/signal concret (AO, obligation réglementaire, EOL, mouvement concurrent,
+financement) — pas de généralités.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+/** parseHorizonsResponse(raw) -> {items:[{h, title, d}]} | null — h coercé (défaut H2), drop sans titre, null si <3. */
+function parseHorizonsResponse(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.items)) return null;
+  const items = raw.items
+    .filter((e) => e && typeof e === "object" && typeof e.title === "string" && e.title.trim())
+    .map((e) => ({
+      h: VALID_H.includes(e.h) ? e.h : "H2",
+      title: e.title.trim(),
+      d: typeof e.d === "string" ? e.d.trim() : "",
+    }));
+  return items.length >= 3 ? { items } : null;
+}
+
+/* ------------------------------------------------------------------------------------------- *
  * Rafraîchissement du CONTEXTE ENTREPRISE (dynamique — décision 2026-07 : « le contexte est
  * aussi censé être dynamique »). Le contexte vit dans frameworks/companyContext (versionné,
  * éditable par la Direction dans Cadres) ; l'enrichissement hebdo le met à jour à partir des
@@ -697,6 +810,10 @@ module.exports = {
   parseDiagnosticResponse,
   buildContextRefreshPrompt,
   parseContextRefreshResponse,
+  buildGe9Prompt,
+  parseGe9Response,
+  buildHorizonsPrompt,
+  parseHorizonsResponse,
   CONTEXT_REQUIRED_MARKERS,
   pickSignalsForEnrichment,
   slugId,
