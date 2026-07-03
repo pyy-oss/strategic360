@@ -426,15 +426,23 @@ function ContexteTab() {
 
 /* ---- Porter / BCG (summaries/quanti) ---- */
 
+type PorterForce = { v: number; note: string };
+type PorterContent = { rivalite?: PorterForce; substituts?: PorterForce; nouveauxEntrants?: PorterForce };
+
 function PorterTab() {
   const { data: quanti } = useQuantiSummary();
+  // 3 forces qualitatives estimées par l'IA (M3 audit) — frameworks/porter.
+  const { data: porterFw } = useFramework<PorterContent>("porter");
+  const ai = porterFw?.content;
   const pf = quanti?.porterForces;
-  if (!quanti || (pf?.pouvoirFournisseurs == null && pf?.pouvoirClients == null)) {
+  const hasQuant = pf?.pouvoirFournisseurs != null || pf?.pouvoirClients != null;
+  const hasAi = !!(ai?.rivalite || ai?.substituts || ai?.nouveauxEntrants);
+  if (!hasQuant && !hasAi) {
     return (
       <Card>
         <Eyebrow color={T.clay}>Porter — 5 forces</Eyebrow>
         <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>
-          En attente des imports internes (P&L/LIVE) — voir README.
+          En attente des imports internes (P&L/LIVE) et de la première génération IA — voir README.
         </div>
       </Card>
     );
@@ -442,15 +450,15 @@ function PorterTab() {
   const forces: { force: string; v: number | null; note: string }[] = [
     { force: "Pouvoir fournisseurs", v: pf?.pouvoirFournisseurs ?? null, note: "Concentration Top-3 fournisseurs (CAS) — calculé depuis les imports P&L (orders)." },
     { force: "Pouvoir clients", v: pf?.pouvoirClients ?? null, note: "Concentration Top-5 clients (montant pipeline) — calculé depuis les imports LIVE (opportunities)." },
-    { force: "Rivalité", v: null, note: "En attente de saisie/imports." },
-    { force: "Substituts", v: null, note: "En attente de saisie/imports." },
-    { force: "Nouveaux entrants", v: null, note: "En attente de saisie/imports." },
+    { force: "Rivalité", v: ai?.rivalite?.v ?? null, note: ai?.rivalite?.note || "Estimée par l'IA depuis les signaux concurrents — en attente de génération." },
+    { force: "Substituts", v: ai?.substituts?.v ?? null, note: ai?.substituts?.note || "Menace de désintermédiation (éditeurs/hyperscalers) — estimée par l'IA." },
+    { force: "Nouveaux entrants", v: ai?.nouveauxEntrants?.v ?? null, note: ai?.nouveauxEntrants?.note || "Menace de nouveaux entrants — estimée par l'IA." },
   ];
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Eyebrow color={T.clay}>Porter — 5 forces (quantifiées)</Eyebrow>
-        <Badge c={T.emerald}>Fournisseurs/clients : temps réel</Badge>
+        <Eyebrow color={T.clay}>Porter — 5 forces</Eyebrow>
+        <Badge c={T.emerald}>2 quantifiées (interne) · 3 estimées (IA)</Badge>
       </div>
       <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
         {forces.map((f) => (

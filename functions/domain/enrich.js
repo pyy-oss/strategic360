@@ -752,6 +752,56 @@ function parseHorizonsResponse(raw) {
 }
 
 /* ------------------------------------------------------------------------------------------- *
+ * Porter — 3 forces qualitatives estimées par l'IA (M3 audit 2026-07). Les deux forces
+ * quantifiées (pouvoir fournisseurs/clients) restent calculées depuis les données internes ;
+ * l'IA complète rivalité, substituts et menace de nouveaux entrants depuis les signaux + contexte,
+ * sur une échelle 0-100 (intensité de la force). Écrit dans frameworks/porter (garde humaine).
+ * ------------------------------------------------------------------------------------------- */
+
+/**
+ * @param {Array<object>} items Lightweight signals.
+ * @param {string} [companyContext]
+ */
+function buildPorterPrompt(items, companyContext = COMPANY_CONTEXT) {
+  return `Tu es un consultant en stratégie (analyse concurrentielle de Porter) pour l'entreprise suivante :
+${companyContext}
+
+Estime l'INTENSITÉ (0-100) de TROIS des cinq forces de Porter — celles qui ne se déduisent pas des
+données financières internes (le pouvoir des fournisseurs et des clients est déjà calculé ailleurs).
+Fonde chaque estimation sur les signaux réels et le contexte (concurrents, désintermédiation
+éditeurs/hyperscalers, nouveaux entrants). Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "rivalite": { "v": number, "note": string },        // intensité de la rivalité entre ESN/intégrateurs de la zone
+  "substituts": { "v": number, "note": string },      // menace de substitution (vente directe éditeurs, hyperscalers, SaaS, offres télécoms)
+  "nouveauxEntrants": { "v": number, "note": string } // menace de nouveaux entrants (pure players, acteurs étrangers, filiales)
+}
+
+Contraintes : v entre 0 et 100 (100 = force très intense/menaçante) ; chaque note en 1-2 phrases
+cite un fait/signal précis (concurrent nommé, mouvement, tendance). Français. JSON uniquement.`;
+}
+
+/** parsePorterResponse(raw) -> {rivalite:{v,note}, substituts:{v,note}, nouveauxEntrants:{v,note}} | null */
+function parsePorterResponse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const one = (o) => {
+    if (!o || typeof o !== "object") return null;
+    const v = clamp100(o.v);
+    if (v == null) return null;
+    return { v, note: typeof o.note === "string" ? o.note.trim() : "" };
+  };
+  const rivalite = one(raw.rivalite);
+  const substituts = one(raw.substituts);
+  const nouveauxEntrants = one(raw.nouveauxEntrants);
+  if (!rivalite && !substituts && !nouveauxEntrants) return null;
+  const out = {};
+  if (rivalite) out.rivalite = rivalite;
+  if (substituts) out.substituts = substituts;
+  if (nouveauxEntrants) out.nouveauxEntrants = nouveauxEntrants;
+  return out;
+}
+
+/* ------------------------------------------------------------------------------------------- *
  * Rafraîchissement du CONTEXTE ENTREPRISE (dynamique — décision 2026-07 : « le contexte est
  * aussi censé être dynamique »). Le contexte vit dans frameworks/companyContext (versionné,
  * éditable par la Direction dans Cadres) ; l'enrichissement hebdo le met à jour à partir des
@@ -980,6 +1030,8 @@ module.exports = {
   parseFullBattlecardsResponse,
   buildHorizonsPrompt,
   parseHorizonsResponse,
+  buildPorterPrompt,
+  parsePorterResponse,
   CONTEXT_REQUIRED_MARKERS,
   pickSignalsForEnrichment,
   slugId,

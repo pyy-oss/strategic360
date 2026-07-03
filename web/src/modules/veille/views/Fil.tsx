@@ -2,7 +2,9 @@ import React, { useState } from "react";
 import { T, AX, IMP, STANCE, PROX } from "../../../design/tokens";
 import { Card, Badge } from "../../../design/ui";
 import { useCan } from "../../../lib/rbac";
-import { DETECTION_SUBTYPE_LABELS, createIntelItem, useIntelItems, type IntelAxis, type IntelImpact, type IntelStance } from "../lib/intel";
+import { DETECTION_SUBTYPE_LABELS, createIntelItem, updateIntelItem, useIntelItems, type IntelAxis, type IntelImpact, type IntelStance, type IntelItem, type IntelStatus } from "../lib/intel";
+import { createAction } from "../lib/execution";
+import { useIsExec } from "../../../lib/rbac";
 
 const AXIS_KEYS = Object.keys(AX) as IntelAxis[];
 
@@ -284,11 +286,85 @@ export function Fil() {
                 {s.summary && !s.soWhat && (
                   <div style={{ marginTop: 10, fontSize: 12.5, color: T.dim }}>{s.summary}</div>
                 )}
+                <SignalLifecycle s={s} />
               </div>
             </div>
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+const STATUS_META: Record<IntelStatus, { l: string; c: string }> = {
+  new: { l: "Nouveau", c: T.gold },
+  reviewed: { l: "Revu", c: T.steel },
+  actioned: { l: "Traité", c: T.emerald },
+  archived: { l: "Archivé", c: T.faint },
+};
+const STATUS_FLOW: IntelStatus[] = ["new", "reviewed", "actioned", "archived"];
+
+/**
+ * Cycle de vie d'un signal (M13 audit) : la veille n'était que contemplative — un signal restait
+ * « new » à vie et `menacesTraitees` restait donc à 0. Ici l'exécutif fait avancer le statut,
+ * affecte un porteur et crée une ACTION LIÉE (linkedItemId = id du signal) directement depuis le fil.
+ */
+function SignalLifecycle({ s }: { s: IntelItem }) {
+  const isExec = useIsExec();
+  const [busy, setBusy] = useState(false);
+  const [owner, setOwner] = useState(s.owner ?? "");
+  const [open, setOpen] = useState(false);
+  if (!isExec) {
+    return (
+      <div style={{ marginTop: 8 }}>
+        <Badge c={STATUS_META[s.status]?.c ?? T.faint}>{STATUS_META[s.status]?.l ?? s.status}</Badge>
+        {s.owner && <Badge c={T.emerald}>Porteur : {s.owner}</Badge>}
+      </div>
+    );
+  }
+  const setStatus = async (status: IntelStatus) => {
+    setBusy(true);
+    try { await updateIntelItem(s.id, { status }); } finally { setBusy(false); }
+  };
+  const createLinkedAction = async () => {
+    setBusy(true);
+    try {
+      await createAction({
+        title: s.recommendedAction?.trim() || s.title,
+        impact: s.impact === "high" ? 5 : s.impact === "medium" ? 4 : 3,
+        urgence: s.prox === "imminent" ? 5 : s.prox === "court" ? 4 : 3,
+        effort: 3,
+        ev: 0,
+        owner: owner.trim() || "—",
+        echeance: s.dueDate || "",
+        statut: "À planifier",
+        source: `Signal : ${s.title}`,
+        linkedItemId: s.id,
+      });
+      await updateIntelItem(s.id, { status: "actioned", owner: owner.trim() || s.owner });
+      setOpen(false);
+    } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${T.line}`, paddingTop: 8, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+      <span style={{ fontSize: 11, color: T.faint }}>Statut :</span>
+      {STATUS_FLOW.map((st) => (
+        <button key={st} className={`pill ${s.status === st ? "on" : ""}`} disabled={busy} onClick={() => setStatus(st)} style={{ fontSize: 11, padding: "3px 8px" }}>
+          {STATUS_META[st].l}
+        </button>
+      ))}
+      {s.owner && <Badge c={T.emerald}>Porteur : {s.owner}</Badge>}
+      <button className="pill" disabled={busy} onClick={() => setOpen((v) => !v)} style={{ fontSize: 11, padding: "3px 8px", marginLeft: 6 }}>
+        {open ? "Annuler" : "→ Créer une action"}
+      </button>
+      {open && (
+        <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+          <input className="inp" placeholder="Porteur" value={owner} onChange={(e) => setOwner(e.target.value)} style={{ fontSize: 11, padding: "4px 8px", width: 130 }} />
+          <button className="pill on" disabled={busy} onClick={createLinkedAction} style={{ fontSize: 11, padding: "3px 8px" }}>
+            Créer &amp; marquer traité
+          </button>
+        </span>
+      )}
     </div>
   );
 }

@@ -24,11 +24,38 @@ const OPP_STATUS_META: Record<BizOpportunityStatus, { l: string; c: string }> = 
 function BizOpportunitiesSection({ isExec }: { isExec: boolean }) {
   const { opportunities, loading } = useBizOpportunities();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [owners, setOwners] = useState<Record<string, string>>({});
 
   async function setStatus(id: string, status: BizOpportunityStatus) {
     setBusyId(id);
     try {
       await updateBizOpportunity(id, { status });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // M12 audit : « Convertir en action » transforme une opportunité en LEAD ACTIONNABLE — crée une
+  // action liée (linkedItemId = opp:<id>, traçabilité), affecte le porteur, passe l'opp en qualifiée
+  // et mémorise l'actionId. Fini le simple clic « qualifier » sans responsable ni suivi.
+  async function convertToAction(o: (typeof opportunities)[number]) {
+    const owner = (owners[o.id] || o.owner || "").trim();
+    if (!owner) return;
+    setBusyId(o.id);
+    try {
+      const actionId = await createAction({
+        title: `${o.name} — ${o.nextAction || "à traiter"}`,
+        impact: o.probability === "high" ? 5 : o.probability === "medium" ? 4 : 3,
+        urgence: o.horizon === "imminent" ? 5 : o.horizon === "court" ? 4 : 3,
+        effort: 3,
+        ev: 0,
+        owner,
+        echeance: o.deadline || o.nextActionDate || "",
+        statut: "À planifier",
+        source: `Opportunité : ${o.name}`,
+        linkedItemId: `opp:${o.id}`,
+      });
+      await updateBizOpportunity(o.id, { status: "qualified", owner, actionId });
     } finally {
       setBusyId(null);
     }
@@ -71,14 +98,38 @@ function BizOpportunitiesSection({ isExec }: { isExec: boolean }) {
                   <b style={{ color: T.clay }}>Concurrents probables :</b> {o.competitorsLikely.join(", ")}
                 </div>
               )}
+              {o.owner && (
+                <div style={{ marginTop: 4, fontSize: 12.5, color: T.emerald }}>
+                  <b>Porteur :</b> {o.owner}{o.actionId ? " · action créée ✓" : ""}
+                </div>
+              )}
             </div>
-            {isExec && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <button className={`pill ${o.status === "qualified" ? "on" : ""}`} disabled={busyId === o.id} onClick={() => setStatus(o.id, "qualified")}>
-                  Qualifier
+            {isExec && o.status !== "dropped" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 172 }}>
+                <input
+                  className="inp"
+                  placeholder="Porteur (commercial)"
+                  value={owners[o.id] ?? o.owner ?? ""}
+                  onChange={(e) => setOwners((m) => ({ ...m, [o.id]: e.target.value }))}
+                  style={{ fontSize: 12, padding: "5px 8px" }}
+                />
+                <button
+                  className="pill on"
+                  disabled={busyId === o.id || !(owners[o.id] ?? o.owner ?? "").trim()}
+                  onClick={() => convertToAction(o)}
+                  title="Crée une action liée et qualifie l'opportunité"
+                >
+                  {o.actionId ? "Ré-affecter" : "Convertir en action →"}
                 </button>
                 <button className="pill" disabled={busyId === o.id} onClick={() => setStatus(o.id, "dropped")}>
                   Écarter
+                </button>
+              </div>
+            )}
+            {isExec && o.status === "dropped" && (
+              <div>
+                <button className="pill" disabled={busyId === o.id} onClick={() => setStatus(o.id, "new")}>
+                  Réactiver
                 </button>
               </div>
             )}

@@ -1067,6 +1067,8 @@ const {
   parseFullBattlecardsResponse,
   buildHorizonsPrompt,
   parseHorizonsResponse,
+  buildPorterPrompt,
+  parsePorterResponse,
   pickSignalsForEnrichment,
   slugId: enrichSlugId,
 } = require("./domain/enrich");
@@ -1368,6 +1370,21 @@ async function runEnrichment(db) {
   } catch (err) {
     summary.ge9 = "failed";
     logger.error(`runEnrichment: ge9 generation FAILED — ${err.message}`, { err });
+  }
+
+  // 7b. Porter — 3 forces qualitatives estimées par l'IA (M3 audit : rivalité, substituts,
+  // nouveaux entrants ; les 2 autres forces restent quantifiées depuis les données internes).
+  try {
+    const parsed = parsePorterResponse(await generateJson(buildPorterPrompt(signals, companyContext)));
+    if (!parsed) {
+      summary.porter = "parse-failed";
+      logger.error("runEnrichment: porter response unusable (parse returned null)");
+    } else {
+      summary.porter = await writeFrameworkDoc(db, "porter", parsed);
+    }
+  } catch (err) {
+    summary.porter = "failed";
+    logger.error(`runEnrichment: porter generation FAILED — ${err.message}`, { err });
   }
 
   // 8. Three Horizons — suggestions d'initiatives (frameworks/horizons). L'humain adopte une

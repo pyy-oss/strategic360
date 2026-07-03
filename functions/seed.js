@@ -109,6 +109,10 @@ const WATCHLIST_SEED = [
   { name: "Sophos", type: "Éditeur", geo: "Afrique", priority: "Basse", active: true, note: "Endpoint/MDR — concurrence/complément Fortinet sur le mid-market cyber" },
   { name: "Trend Micro", type: "Éditeur", geo: "Afrique", priority: "Basse", active: true, note: "Sécurité cloud/endpoint — veille produit & programme partenaire" },
   { name: "IBM", type: "Éditeur", geo: "Afrique", priority: "Basse", active: true, note: "Infra/QRadar SIEM/services — grands comptes bancaires" },
+  // Hyperscalers — menace de désintermédiation (vente/cloud en direct), à surveiller (M11 audit)
+  { name: "AWS", type: "Concurrent", geo: "Afrique", priority: "Moyenne", active: true, note: "Hyperscaler — désintermédiation cloud directe ; opportunité de partenariat CSP/revente aussi" },
+  { name: "Microsoft Azure", type: "Concurrent", geo: "Afrique", priority: "Moyenne", active: true, note: "Cloud direct + réseau CSP (nous sommes partenaire Microsoft) — ambivalent partenaire/concurrent" },
+  { name: "Google Cloud", type: "Concurrent", geo: "Afrique", priority: "Basse", active: true, note: "Hyperscaler — implantations et offres directes en zone à surveiller" },
 ];
 
 // intelSources seed entries — first jet per BUILD_KIT.md §9.B (AO & financements, réglementaire,
@@ -192,6 +196,15 @@ const SOURCES_SEED = [
   { name: "Ingram Micro — Newsroom", kind: "web", url: "https://www.ingrammicro.com/en-us/newsroom", axis: "partenaires", active: true },
   { name: "TD SYNNEX — Newsroom", kind: "web", url: "https://www.tdsynnex.com/na/us/news-events/", axis: "partenaires", active: true },
   { name: "Nutanix — Blog (RSS)", kind: "rss", url: "https://www.nutanix.com/blog/rss.xml", axis: "partenaires", active: true },
+  // Couverture régionale réelle (M11 audit) : filiale Burkina, expansion Sénégal/UEMOA.
+  { name: "Direction Générale des Marchés Publics — Burkina Faso", kind: "web", url: "https://www.dgmp.gov.bf/", axis: "clients_prospects", active: true },
+  { name: "ARCEP Burkina Faso — actualités", kind: "web", url: "https://www.arcep.bf/actualites/", axis: "reglementaire", active: true },
+  { name: "DGMP Sénégal — marchés publics (marchespublics.sn)", kind: "web", url: "https://www.marchespublics.sn/", axis: "clients_prospects", active: true },
+  { name: "Sénégal — Sika Finance / actu UEMOA", kind: "rss", url: "https://www.sikafinance.com/rss/actualites_bourse_brvm", axis: "clients_prospects", active: true },
+  // Menace de désintermédiation par les hyperscalers (M11 audit) : implantations directes en zone.
+  { name: "AWS — What's New / Africa (RSS)", kind: "rss", url: "https://aws.amazon.com/about-aws/whats-new/recent/feed/", axis: "concurrents", active: true },
+  { name: "Google Cloud — Blog (RSS)", kind: "rss", url: "https://cloudblog.withgoogle.com/rss/", axis: "concurrents", active: true },
+  { name: "Microsoft Azure — Blog announcements (RSS)", kind: "rss", url: "https://azure.microsoft.com/en-us/blog/feed/", axis: "concurrents", active: true },
 ];
 
 /**
@@ -210,7 +223,7 @@ function ratingForSource(entry) {
   const url = (entry.url || "").toLowerCase();
   const official = ["artci", "bceao", "anssi", "amf-umoa", "amf umoa", "ministère", "ministere", "douanes", "dgi", "trésor", "tresor", "dgmp", "marchespublics", "sigomap", "arcop", "cepici", "banque mondiale", "world bank", "worldbank", "bad", "afdb", "uemoa", "boad", "autorité de protection", "autorite de protection"];
   if (official.some((k) => n.includes(k) || url.includes(k.replace(/\s/g, "")))) return "A2";
-  const vendors = ["cisco", "fortinet", "palo alto", "paloalto", "hpe", "wallix", "microsoft", "huawei", "broadcom", "vmware", "westcon", "exclusive", "nutanix", "veeam", "ingram"];
+  const vendors = ["cisco", "fortinet", "palo alto", "paloalto", "hpe", "wallix", "microsoft", "azure", "huawei", "broadcom", "vmware", "westcon", "exclusive", "nutanix", "veeam", "ingram", "tdsynnex", "td synnex", "aws", "amazon", "google cloud"];
   if (vendors.some((k) => n.includes(k) || url.includes(k.replace(/\s/g, "")))) return "B2";
   const globalCyber = ["hacker news", "hackernews", "bleepingcomputer", "bleeping", "check point", "checkpoint"];
   if (globalCyber.some((k) => n.includes(k) || url.includes(k.replace(/\s/g, "")))) return "B3";

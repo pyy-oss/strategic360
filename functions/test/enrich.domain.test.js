@@ -521,6 +521,22 @@ describe("consolidation radar + paris d'innovation (lisibilité 2026-07)", () =>
   });
 });
 
+describe("Porter 3 forces IA (M3 audit)", () => {
+  it("parsePorterResponse : clamp 0-100, note trim, null si aucune force exploitable", async () => {
+    const { parsePorterResponse } = await import("../domain/enrich.js");
+    const parsed = parsePorterResponse({
+      rivalite: { v: 120, note: "  Talentys frontal " },
+      substituts: { v: 55, note: "hyperscalers" },
+      nouveauxEntrants: { v: "abc" },
+    });
+    expect(parsed.rivalite).toEqual({ v: 100, note: "Talentys frontal" });
+    expect(parsed.substituts.v).toBe(55);
+    expect(parsed.nouveauxEntrants).toBeUndefined(); // v non numérique → écartée
+    expect(parsePorterResponse({})).toBeNull();
+    expect(parsePorterResponse(null)).toBeNull();
+  });
+});
+
 describe("battlecards complètes top 10 (« pas assez riche », 2026-07)", () => {
   it("buildFullBattlecardsPrompt liste chaque concurrent avec sa note", async () => {
     const { buildFullBattlecardsPrompt } = await import("../domain/enrich.js");
