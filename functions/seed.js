@@ -190,8 +190,17 @@ const SOURCES_SEED = [
   // Enjeux « critiques » du modèle économique jusqu'ici sans capteur (M10 audit 2026-07) :
   // change (FX USD/XOF), douanes à l'import, talents/salaires ingénieurs cyber/cloud.
   { name: "BCEAO — Taux & cours de change", kind: "web", url: "https://www.bceao.int/fr/cours-de-change", axis: "reglementaire", active: true },
+  // Douanes en détail (M10 audit) : actualités, tarifs à l'import, guichet unique du commerce extérieur.
   { name: "Direction Générale des Douanes CI — actualités & tarifs", kind: "web", url: "https://www.douanes.ci/", axis: "reglementaire", active: true },
-  { name: "Emploi.ci — offres IT/cyber/cloud (tension talents)", kind: "web", url: "https://www.emploi.ci/recherche-jobs-cote-ivoire/informatique-t%C3%A9l%C3%A9com", axis: "concurrents", active: true },
+  { name: "Douanes CI — communiqués & circulaires", kind: "web", url: "https://www.douanes.ci/actualites", axis: "reglementaire", active: true },
+  { name: "GUCE-CI — Guichet Unique du Commerce Extérieur (actualités import)", kind: "web", url: "https://www.guce.gouv.ci/", axis: "reglementaire", active: true },
+  { name: "Ministère du Commerce CI — réglementation import/export", kind: "web", url: "https://www.commerce.gouv.ci/", axis: "reglementaire", active: true },
+  // Jobboards / tension talents (M10 audit) : recrutements IT/cyber/cloud = chaleur du marché,
+  // expansion de concurrents, veille salaires ingénieurs rares.
+  { name: "Emploi.ci — offres IT/télécom (tension talents)", kind: "web", url: "https://www.emploi.ci/recherche-jobs-cote-ivoire/informatique-t%C3%A9l%C3%A9com", axis: "concurrents", active: true },
+  { name: "Educarriere.ci — offres d'emploi informatique", kind: "web", url: "https://emploi.educarriere.ci/", axis: "concurrents", active: true },
+  { name: "Novojob Côte d'Ivoire — IT/télécom", kind: "web", url: "https://www.novojob.com/cote-d-ivoire/offres-d-emploi", axis: "concurrents", active: true },
+  { name: "RMO Jobcenter CI — offres IT", kind: "web", url: "https://www.rmo-jobcenter.com/", axis: "concurrents", active: true },
   // Distributeurs pivots de la fusion HPE/Juniper Vantage & éditeur cible de migration VMware (M10).
   { name: "Ingram Micro — Newsroom", kind: "web", url: "https://www.ingrammicro.com/en-us/newsroom", axis: "partenaires", active: true },
   { name: "TD SYNNEX — Newsroom", kind: "web", url: "https://www.tdsynnex.com/na/us/news-events/", axis: "partenaires", active: true },
@@ -221,7 +230,7 @@ const SOURCES_SEED = [
 function ratingForSource(entry) {
   const n = (entry.name || "").toLowerCase();
   const url = (entry.url || "").toLowerCase();
-  const official = ["artci", "bceao", "anssi", "amf-umoa", "amf umoa", "ministère", "ministere", "douanes", "dgi", "trésor", "tresor", "dgmp", "marchespublics", "sigomap", "arcop", "cepici", "banque mondiale", "world bank", "worldbank", "bad", "afdb", "uemoa", "boad", "autorité de protection", "autorite de protection"];
+  const official = ["artci", "bceao", "anssi", "amf-umoa", "amf umoa", "ministère", "ministere", "douanes", "guce", "commerce.gouv", "dgi", "trésor", "tresor", "dgmp", "marchespublics", "sigomap", "arcop", "cepici", "banque mondiale", "world bank", "worldbank", "bad", "afdb", "uemoa", "boad", "autorité de protection", "autorite de protection"];
   if (official.some((k) => n.includes(k) || url.includes(k.replace(/\s/g, "")))) return "A2";
   const vendors = ["cisco", "fortinet", "palo alto", "paloalto", "hpe", "wallix", "microsoft", "azure", "huawei", "broadcom", "vmware", "westcon", "exclusive", "nutanix", "veeam", "ingram", "tdsynnex", "td synnex", "aws", "amazon", "google cloud"];
   if (vendors.some((k) => n.includes(k) || url.includes(k.replace(/\s/g, "")))) return "B2";
