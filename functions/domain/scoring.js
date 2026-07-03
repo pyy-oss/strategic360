@@ -105,6 +105,11 @@ const SUBTYPE_BUSINESS = {
   eol: 0.9,
   regulation: 0.85,
   budget: 0.85,
+  // Guet des mouvements d'acteurs (2026-07 : création/arrivée d'entreprises, expansion de
+  // groupes, nouveaux entrants) — fort potentiel business, juste sous les AO/financements.
+  implantation: 0.75,
+  market_entry: 0.7,
+  expansion: 0.65,
   pricing: 0.6,
   program_change: 0.6,
   ma: 0.55,
@@ -128,7 +133,8 @@ function businessFactor(item) {
  * Axe inconnu/absent → 0.6.
  */
 const AXIS_ALIGN = {
-  clients_prospects: 1.0,
+  clients_prospects: 0.9, // 0.9 (et non 1.0) pour que les bonus géo/watchlist restent discriminants avant clamp
+
   reglementaire: 0.75,
   partenaires: 0.7,
   concurrents: 0.6,
@@ -137,7 +143,11 @@ const AXIS_ALIGN = {
 
 function alignementFactor(item) {
   const base = AXIS_ALIGN[item?.axis] ?? 0.6;
-  return Math.min(1, base + (item?.ent ? 0.2 : 0)); // bonus entité watchlist résolue
+  // Bonus géographique (2026-07, rééquilibrage du fil) : un signal ancré CI/UEMOA/Afrique de
+  // l'Ouest pèse plus qu'une brève mondiale — complète la règle de pertinence du classifieur.
+  const geo = typeof item?.geo === "string" ? item.geo.toLowerCase() : "";
+  const geoBonus = geo === "ci" || geo.includes("ivoire") ? 0.15 : geo.includes("afrique") || geo.includes("uemoa") ? 0.08 : 0;
+  return Math.min(1, base + (item?.ent ? 0.2 : 0) + geoBonus);
 }
 
 /**
