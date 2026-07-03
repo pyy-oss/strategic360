@@ -209,7 +209,7 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
     const nom = String(client).trim();
     const slug = slugifyClient(nom);
     if (!byClient.has(slug)) {
-      byClient.set(slug, { slug, nom, wonBu: new Set(), openBu: new Set(), casTotal: 0, pipelinePondere: 0 });
+      byClient.set(slug, { slug, nom, wonBu: new Set(), openBu: new Set(), casTotal: 0, pipelinePondere: 0, wins: 0, opps: [] });
     }
     return byClient.get(slug);
   };
@@ -223,10 +223,19 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
     if (!o || !o.client) continue;
     const stage = Number(o.stage);
     const a = get(o.client);
-    if (stage === 6 && o.bu) a.wonBu.add(String(o.bu));
+    if (stage === 6) { a.wins += 1; if (o.bu) a.wonBu.add(String(o.bu)); }
     else if (stage >= 1 && stage <= 5) {
       if (o.bu) a.openBu.add(String(o.bu));
       a.pipelinePondere += Number.isFinite(Number(o.weighted)) ? num(o.weighted) : num(o.amount) * 0.5;
+      // Opportunité RÉELLE en cours (deal en pipeline) — détail chiffré pour l'effet « portefeuille vivant ».
+      a.opps.push({
+        nom: String(o.oppId || o.fp || o.bu || "Opportunité").trim(),
+        montant: num(o.amount),
+        etape: String(o.stageLabel || `Stade ${stage}`).trim(),
+        bu: o.bu ? String(o.bu) : "",
+        closingDate: typeof o.closingDate === "string" ? o.closingDate : "",
+        probability: Number.isFinite(Number(o.probability)) ? Number(o.probability) : null,
+      });
     }
   }
   return [...byClient.values()]
@@ -238,6 +247,9 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
       enCours: [...a.openBu],
       casTotal: Math.round(a.casTotal),
       pipelinePondere: Math.round(a.pipelinePondere),
+      wins: a.wins,
+      // Top opportunités en cours par montant (borné pour rester léger côté doc Firestore).
+      opportunites: a.opps.sort((x, y) => y.montant - x.montant).slice(0, 8).map((o) => ({ ...o, montant: Math.round(o.montant) })),
     }));
 }
 

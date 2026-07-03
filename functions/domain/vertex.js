@@ -127,11 +127,30 @@ async function generateJson(prompt, schema) {
     throw new Error(`generateJson: empty/failed response from Gemini after retries — ${lastErr ? lastErr.message : "unknown"}.`);
   }
 
+  // Robustesse (2026-07) : certains modèles enveloppent le JSON dans une clôture markdown
+  // (```json … ```) ou ajoutent du texte autour, ce qui faisait échouer JSON.parse et remonter
+  // une erreur « internal » côté client. On extrait le bloc JSON de façon défensive.
+  const cleaned = stripToJson(text);
   try {
-    return JSON.parse(text);
+    return JSON.parse(cleaned);
   } catch (err) {
     throw new Error(`generateJson: response is not valid JSON — ${err.message}. Raw text: ${text.slice(0, 500)}`);
   }
+}
+
+/** Retire une éventuelle clôture markdown ```json … ``` et isole le premier objet/array JSON. */
+function stripToJson(raw) {
+  let t = String(raw).trim();
+  // Enlève une clôture ```json … ``` ou ``` … ```.
+  const fence = t.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fence) t = fence[1].trim();
+  // Si du texte entoure le JSON, isole du premier { ou [ au dernier } ou ].
+  if (t && t[0] !== "{" && t[0] !== "[") {
+    const start = t.search(/[[{]/);
+    const end = Math.max(t.lastIndexOf("}"), t.lastIndexOf("]"));
+    if (start !== -1 && end > start) t = t.slice(start, end + 1);
+  }
+  return t;
 }
 
 module.exports = { generateJson, getClient, DEFAULT_LOCATION, DEFAULT_MODEL };

@@ -33,6 +33,14 @@ export interface CopiloteHistoriqueItem {
   offre: string;
   statut: string;
 }
+export interface CopiloteOpportunite {
+  nom: string;
+  montant: number;
+  etape: string;
+  bu?: string;
+  closingDate?: string;
+  probability?: number | null;
+}
 export interface CopiloteAccount {
   id: string;
   nom: string;
@@ -53,6 +61,8 @@ export interface CopiloteAccount {
     enCours?: string[];
     casTotal?: number;
     pipelinePondere?: number;
+    wins?: number;
+    opportunites?: CopiloteOpportunite[];
     updatedAt?: Timestamp | FieldValue;
   };
   updatedAt?: Timestamp | FieldValue;

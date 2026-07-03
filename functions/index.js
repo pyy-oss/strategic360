@@ -1638,12 +1638,17 @@ async function assembleCopiloteContext(db, accountId) {
   const pestel = (pestelSnap.exists ? pestelSnap.data()?.content?.factors || [] : [])
     .filter((x) => x && typeof x === "object" && x.d)
     .map((x) => ({ axe: x.f, texte: x.d }));
-  // Signaux = opportunités business détectées (leads), réutilisées comme accroches.
-  const signaux = bizSnap.docs
+  // Signaux : d'abord les VRAIES opportunités en cours du compte (pipeline nt360), puis les leads
+  // de veille. Donne aux agents (plan de compte, prospection) de la matière chiffrée et réelle.
+  const dealSignaux = (Array.isArray(nt.opportunites) ? nt.opportunites : []).map((o) => ({
+    titre: `${o.nom} — ${o.montant ? new Intl.NumberFormat("fr-FR").format(o.montant) + " XOF" : "montant n.c."} (${o.etape})`,
+  }));
+  const veilleSignaux = bizSnap.docs
     .map((d) => d.data())
     .filter((o) => o && o.name)
-    .slice(0, 12)
+    .slice(0, 8)
     .map((o) => ({ titre: o.name }));
+  const signaux = [...dealSignaux, ...veilleSignaux].slice(0, 14);
   return {
     compte: a.nom || "",
     secteur: a.secteur || "",
@@ -1676,8 +1681,14 @@ exports.copiloteGenerate = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   const db = firestoreDb();
   const base = await assembleCopiloteContext(db, accountId);
   const ctx = { ...base, ...(extra && typeof extra === "object" ? extra : {}) };
-  const parsed = spec.parse(await generateJson(spec.build(ctx)));
-  if (!parsed) throw new HttpsError("internal", "Réponse IA inexploitable. Réessayez ou précisez le contexte.");
+  let parsed;
+  try {
+    parsed = spec.parse(await generateJson(spec.build(ctx)));
+  } catch (err) {
+    logger.error(`copiloteGenerate: agent=${agent} FAILED — ${err.message}`, { err });
+    throw new HttpsError("internal", "L'IA n'a pas pu générer ce livrable (réessayez dans un instant).");
+  }
+  if (!parsed) throw new HttpsError("failed-precondition", "Réponse IA inexploitable. Réessayez ou précisez le contexte du compte.");
   return parsed;
 });
 
@@ -1694,8 +1705,14 @@ exports.copiloteChat = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   const db = firestoreDb();
   const base = await assembleCopiloteContext(db, accountId);
   const ctx = { ecran: ecran || "Copilote", compte: base.account.nom ? base.account : null };
-  const parsed = parseChatResponse(await generateJson(buildChatPrompt(ctx, messages)));
-  if (!parsed) throw new HttpsError("internal", "Réponse IA inexploitable.");
+  let parsed;
+  try {
+    parsed = parseChatResponse(await generateJson(buildChatPrompt(ctx, messages)));
+  } catch (err) {
+    logger.error(`copiloteChat: FAILED — ${err.message}`, { err });
+    throw new HttpsError("internal", "Le copilote n'a pas pu répondre (réessayez dans un instant).");
+  }
+  if (!parsed) throw new HttpsError("failed-precondition", "Réponse IA inexploitable.");
   return parsed;
 });
 
@@ -1835,6 +1852,8 @@ async function runSyncCopiloteAccounts(db) {
           enCours: acc.enCours,
           casTotal: acc.casTotal,
           pipelinePondere: acc.pipelinePondere,
+          wins: acc.wins,
+          opportunites: acc.opportunites,
           updatedAt: FieldValue.serverTimestamp(),
         },
       },
