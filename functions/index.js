@@ -1941,7 +1941,7 @@ const COPILOTE_UNSCOPED_ROLES = ["commercial_dir", ...EXEC_ROLES];
  *  - commercial : uniquement les comptes de son périmètre (owners e-mail, am, ou BU depuis son
  *    profil copiloteProfiles/{uid}).
  */
-exports.listCopiloteAccounts = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+exports.listCopiloteAccounts = onCall(CALLABLE_OPTS, async (request) => {
   requireCommercialCaller(request, "consulter les comptes du copilote");
   const db = firestoreDb();
   const role = request.auth?.token?.role;
@@ -1974,39 +1974,40 @@ const coerceStrList = (v) =>
   Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()))] : [];
 
 /**
- * setCopiloteScope — callable (direction / commercial_dir). Définit le périmètre d'un commercial :
- * data { uid, ams?: string[], bus?: string[] } → copiloteProfiles/{uid}. Écrit côté serveur
- * uniquement (le commercial ne peut pas élargir son propre périmètre).
+ * copiloteAdmin — callable UNIQUE (direction / commercial_dir) regroupant l'administration du
+ * cloisonnement (un seul déploiement Cloud Run au lieu de deux — le projet partagé est proche de
+ * son quota CPU/région). data.action :
+ *  - "setScope"  : { uid, ams?, bus? }        → copiloteProfiles/{uid} (périmètre d'un commercial) ;
+ *  - "setOwners" : { accountId, owners: [] }  → copiloteAccounts/{id}.owners (attribution manuelle).
+ * `owners`/`copiloteProfiles` sont des champs SERVEUR (interdits d'écriture client par les règles).
  */
-exports.setCopiloteScope = onCall(CALLABLE_OPTS, async (request) => {
-  requireCopiloteAdmin(request, "définir le périmètre d'un commercial");
-  const { uid, ams, bus } = request.data || {};
-  if (typeof uid !== "string" || !uid) throw new HttpsError("invalid-argument", "uid (string) requis.");
-  await firestoreDb().doc(`copiloteProfiles/${uid}`).set(
-    { ams: coerceStrList(ams), bus: coerceStrList(bus), updatedBy: request.auth.uid, updatedAt: FieldValue.serverTimestamp() },
-    { merge: true }
-  );
-  logger.info(`setCopiloteScope: uid=${uid} by=${request.auth.uid}`);
-  return { uid, ams: coerceStrList(ams), bus: coerceStrList(bus) };
-});
-
-/**
- * setCopiloteAccountOwners — callable (direction / commercial_dir). Attribue manuellement un compte
- * à des commerciaux : data { accountId, owners: string[] (e-mails) }. `owners` est un champ
- * SERVEUR (interdit d'écriture côté client par firestore.rules) → impossible de s'auto-attribuer.
- */
-exports.setCopiloteAccountOwners = onCall(CALLABLE_OPTS, async (request) => {
-  requireCopiloteAdmin(request, "attribuer un compte");
-  const { accountId, owners } = request.data || {};
-  assertAccountId(accountId);
-  if (!accountId) throw new HttpsError("invalid-argument", "accountId requis.");
-  const list = coerceStrList(owners).map((x) => x.toLowerCase());
-  await firestoreDb().doc(`copiloteAccounts/${accountId}`).set(
-    { owners: list, ownersUpdatedBy: request.auth.uid, ownersUpdatedAt: FieldValue.serverTimestamp() },
-    { merge: true }
-  );
-  logger.info(`setCopiloteAccountOwners: account=${accountId} owners=${list.length} by=${request.auth.uid}`);
-  return { accountId, owners: list };
+exports.copiloteAdmin = onCall(CALLABLE_OPTS, async (request) => {
+  requireCopiloteAdmin(request, "administrer le cloisonnement du copilote");
+  const { action } = request.data || {};
+  const db = firestoreDb();
+  if (action === "setScope") {
+    const { uid, ams, bus } = request.data || {};
+    if (typeof uid !== "string" || !uid) throw new HttpsError("invalid-argument", "uid (string) requis.");
+    await db.doc(`copiloteProfiles/${uid}`).set(
+      { ams: coerceStrList(ams), bus: coerceStrList(bus), updatedBy: request.auth.uid, updatedAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    logger.info(`copiloteAdmin setScope: uid=${uid} by=${request.auth.uid}`);
+    return { uid, ams: coerceStrList(ams), bus: coerceStrList(bus) };
+  }
+  if (action === "setOwners") {
+    const { accountId, owners } = request.data || {};
+    assertAccountId(accountId);
+    if (!accountId) throw new HttpsError("invalid-argument", "accountId requis.");
+    const list = coerceStrList(owners).map((x) => x.toLowerCase());
+    await db.doc(`copiloteAccounts/${accountId}`).set(
+      { owners: list, ownersUpdatedBy: request.auth.uid, ownersUpdatedAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    logger.info(`copiloteAdmin setOwners: account=${accountId} owners=${list.length} by=${request.auth.uid}`);
+    return { accountId, owners: list };
+  }
+  throw new HttpsError("invalid-argument", `action inconnue : ${action}`);
 });
 
 /**

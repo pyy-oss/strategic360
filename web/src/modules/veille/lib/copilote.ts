@@ -212,12 +212,12 @@ export async function syncCopiloteAccountsFromNt360(): Promise<{ accounts: numbe
 
 /** Attribue un compte à des commerciaux (e-mails). Réservé direction / commercial_dir (gate serveur). */
 export async function setCopiloteAccountOwners(accountId: string, owners: string[]): Promise<void> {
-  const call = httpsCallable<{ accountId: string; owners: string[] }, { accountId: string; owners: string[] }>(functions, "setCopiloteAccountOwners");
-  await call({ accountId, owners });
+  const call = httpsCallable<{ action: string; accountId: string; owners: string[] }, unknown>(functions, "copiloteAdmin");
+  await call({ action: "setOwners", accountId, owners });
 }
 
 /** Définit le périmètre (am / BU) d'un commercial. Réservé direction / commercial_dir (gate serveur). */
 export async function setCopiloteScope(uid: string, ams: string[], bus: string[]): Promise<void> {
-  const call = httpsCallable<{ uid: string; ams: string[]; bus: string[] }, unknown>(functions, "setCopiloteScope");
-  await call({ uid, ams, bus });
+  const call = httpsCallable<{ action: string; uid: string; ams: string[]; bus: string[] }, unknown>(functions, "copiloteAdmin");
+  await call({ action: "setScope", uid, ams, bus });
 }
