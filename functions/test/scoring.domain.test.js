@@ -111,9 +111,24 @@ describe("alignementFactor (Action 5.2 — per-axis AXIS_ALIGN + watchlist bonus
   });
 });
 
-describe("probabiliteFactor", () => {
-  it("is a constant placeholder (0.7) pending V7 IA-estimated likelihood", () => {
-    expect(probabiliteFactor()).toBe(0.7);
+describe("probabiliteFactor (M1 audit — dérive de confidence + signal faible)", () => {
+  it("mappe la confidence IA (high/medium/low) et décote un signal faible", () => {
+    expect(probabiliteFactor({ confidence: "high" })).toBe(0.9);
+    expect(probabiliteFactor({ confidence: "medium" })).toBe(0.7);
+    expect(probabiliteFactor({ confidence: "low" })).toBe(0.45);
+    expect(probabiliteFactor({})).toBe(0.7); // défaut si non renseigné
+    // signal faible (neuf) : ×0.8
+    expect(probabiliteFactor({ confidence: "high", neuf: true })).toBe(0.72);
+  });
+});
+
+describe("SUBTYPE_BUSINESS (M5 audit — sourcing & vulnérabilités montés)", () => {
+  it("supply et vulnerability ne tombent plus au défaut bas 0.4", () => {
+    expect(SUBTYPE_BUSINESS.supply).toBe(0.85);
+    expect(SUBTYPE_BUSINESS.vulnerability).toBe(0.8);
+    expect(SUBTYPE_BUSINESS.cve).toBe(0.8);
+    // une CVE reste sous un AO mais bien au-dessus du défaut 0.4
+    expect(SUBTYPE_BUSINESS.vulnerability).toBeGreaterThan(0.6);
   });
 });
 

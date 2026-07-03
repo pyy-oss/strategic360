@@ -109,22 +109,27 @@ export function Diagnostic() {
       )}
       {c === "mat" && (
         <Card>
-          <Eyebrow color={T.steel}>Maturité des capacités (0-5)</Eyebrow>
+          <Eyebrow color={T.steel}>Maturité des capacités (0-100)</Eyebrow>
           {MATURITE.length === 0 ? (
             <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>Section non renseignée.</div>
           ) : (
             <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 9 }}>
-              {MATURITE.map((m, i) => (
+              {MATURITE.map((m, i) => {
+                // Scores IA sur 0-100 (cf. enrich.js parseDiagnosticResponse). On borne à [0,100]
+                // par sécurité si une ancienne donnée /5 traînait.
+                const v = Math.max(0, Math.min(100, m.v));
+                return (
                 <div key={i}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}>
                     <span style={{ color: T.ink }}>{m.c}</span>
-                    <span style={{ color: T.dim }}>{m.v}/5</span>
+                    <span style={{ color: T.dim }}>{v}/100</span>
                   </div>
                   <div style={{ height: 8, background: T.panel2, borderRadius: 4 }}>
-                    <div style={{ width: `${(m.v / 5) * 100}%`, height: "100%", background: m.v >= 4 ? T.emerald : m.v >= 3 ? T.gold : T.clay, borderRadius: 4 }} />
+                    <div style={{ width: `${v}%`, height: "100%", background: v >= 75 ? T.emerald : v >= 50 ? T.gold : T.clay, borderRadius: 4 }} />
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Card>

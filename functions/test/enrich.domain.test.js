@@ -465,13 +465,16 @@ describe("parseGe9Response / parseHorizonsResponse", () => {
         { n: "Cybersécurité", attr: 140, pos: 80, size: 55, note: "obligations RGSSI" },
         { n: "  ", attr: 50, pos: 50, size: 50 },
         { n: "Cloud", attr: 70, pos: -5, size: 30 },
+        { n: "IA / GenAI", attr: 90, pos: 20, size: 40, emerging: true, note: "whitespace" },
         { n: "Formation", attr: 60, pos: 65 },
       ],
     });
-    expect(parsed.items).toHaveLength(3);
-    expect(parsed.items[0]).toEqual({ n: "Cybersécurité", attr: 100, pos: 80, size: 55, note: "obligations RGSSI" });
+    expect(parsed.items).toHaveLength(4);
+    expect(parsed.items[0]).toEqual({ n: "Cybersécurité", attr: 100, pos: 80, size: 55, emerging: false, note: "obligations RGSSI" });
     expect(parsed.items[1].pos).toBe(0);
-    expect(parsed.items[2].size).toBe(30); // défaut
+    expect(parsed.items[1].emerging).toBe(false); // défaut
+    expect(parsed.items[2]).toMatchObject({ n: "IA / GenAI", emerging: true }); // famille B
+    expect(parsed.items[3].size).toBe(30); // défaut
     expect(parseGe9Response({ items: [{ n: "A", attr: 1, pos: 1, size: 1 }] })).toBeNull();
     expect(parseGe9Response(null)).toBeNull();
   });
@@ -515,6 +518,77 @@ describe("consolidation radar + paris d'innovation (lisibilité 2026-07)", () =>
     expect(parsed.bets[0].rice).toBeCloseTo(8.4); // (8·9·0.7)/6
     expect(parsed.bets[1]).toMatchObject({ reach: 10, impact: 1, confidence: 1, effort: 1, stage: "idée" });
     expect(parseInnovationBetsResponse({ bets: [{ title: "Seul", reach: 5, impact: 5, confidence: 0.5, effort: 5 }] })).toBeNull();
+  });
+});
+
+describe("Scénarios IA avec signposts (M4 audit)", () => {
+  it("parseScenariosResponse : 4 mondes, proba clamp, signposts, null si <3", async () => {
+    const { parseScenariosResponse } = await import("../domain/enrich.js");
+    const p = parseScenariosResponse({
+      axisX: " PASSI ", axisY: "Hyperscalers",
+      worlds: [
+        { title: "Conformité rapide", probability: 1.4, narrative: "n", signposts: ["décret publié", 2], response: "pousser audits" },
+        { title: "Statu quo", probability: 0.3, signposts: [] },
+        { title: "Désintermédiation", probability: 0.2, narrative: "x" },
+        { title: "Rupture", probability: -1 },
+      ],
+    });
+    expect(p.axisX).toBe("PASSI");
+    expect(p.worlds).toHaveLength(4);
+    expect(p.worlds[0].probability).toBe(1); // clampé
+    expect(p.worlds[0].signposts).toEqual(["décret publié"]);
+    expect(p.worlds[3].probability).toBe(0); // clampé
+    expect(parseScenariosResponse({ worlds: [{ title: "seul" }, { title: "deux" }] })).toBeNull();
+  });
+});
+
+describe("Cadres additionnels IA (audit 2026-07 : Ansoff / VRIO / Chaîne de valeur)", () => {
+  it("parseAnsoffResponse : 4 cases coercées, null si trop vide", async () => {
+    const { parseAnsoffResponse } = await import("../domain/enrich.js");
+    const p = parseAnsoffResponse({ penetration: ["gagner BRVM"], devProduit: ["SOC managé", 3], devMarche: [], diversification: ["x"] });
+    expect(p.penetration).toEqual(["gagner BRVM"]);
+    expect(p.devProduit).toEqual(["SOC managé"]);
+    expect(p.devMarche).toEqual([]);
+    expect(parseAnsoffResponse({ penetration: ["seul"] })).toBeNull(); // <2 items total
+    expect(parseAnsoffResponse(null)).toBeNull();
+  });
+  it("parseVrioResponse : booléens + verdict coercé, null si <3", async () => {
+    const { parseVrioResponse } = await import("../domain/enrich.js");
+    const p = parseVrioResponse({ resources: [
+      { resource: "Agrément PASSI", valuable: true, rare: true, inimitable: true, organized: true, verdict: "avantage durable", note: "n" },
+      { resource: "WALLIX Premier", valuable: true, rare: true, inimitable: false, organized: true, verdict: "n'importe" },
+      { resource: "Academy", valuable: true },
+    ] });
+    expect(p.resources).toHaveLength(3);
+    expect(p.resources[1].verdict).toBe("parité concurrentielle"); // verdict invalide → défaut
+    expect(p.resources[2].rare).toBe(false); // absent → false
+    expect(parseVrioResponse({ resources: [{ resource: "a" }] })).toBeNull();
+  });
+  it("parseValueChainResponse : strength clamp, null si trop peu d'activités", async () => {
+    const { parseValueChainResponse } = await import("../domain/enrich.js");
+    const p = parseValueChainResponse({
+      primary: [{ activity: "Intégration", strength: 120, lever: "x" }, { activity: "Managed", strength: 40 }],
+      support: [{ activity: "Talents", strength: -5, lever: "recruter" }, { activity: "Achats", strength: 55 }],
+    });
+    expect(p.primary[0].strength).toBe(100);
+    expect(p.support[0].strength).toBe(0);
+    expect(parseValueChainResponse({ primary: [{ activity: "a", strength: 50 }] })).toBeNull();
+  });
+});
+
+describe("Porter 3 forces IA (M3 audit)", () => {
+  it("parsePorterResponse : clamp 0-100, note trim, null si aucune force exploitable", async () => {
+    const { parsePorterResponse } = await import("../domain/enrich.js");
+    const parsed = parsePorterResponse({
+      rivalite: { v: 120, note: "  Talentys frontal " },
+      substituts: { v: 55, note: "hyperscalers" },
+      nouveauxEntrants: { v: "abc" },
+    });
+    expect(parsed.rivalite).toEqual({ v: 100, note: "Talentys frontal" });
+    expect(parsed.substituts.v).toBe(55);
+    expect(parsed.nouveauxEntrants).toBeUndefined(); // v non numérique → écartée
+    expect(parsePorterResponse({})).toBeNull();
+    expect(parsePorterResponse(null)).toBeNull();
   });
 });
 

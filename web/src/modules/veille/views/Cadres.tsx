@@ -426,15 +426,23 @@ function ContexteTab() {
 
 /* ---- Porter / BCG (summaries/quanti) ---- */
 
+type PorterForce = { v: number; note: string };
+type PorterContent = { rivalite?: PorterForce; substituts?: PorterForce; nouveauxEntrants?: PorterForce };
+
 function PorterTab() {
   const { data: quanti } = useQuantiSummary();
+  // 3 forces qualitatives estimées par l'IA (M3 audit) — frameworks/porter.
+  const { data: porterFw } = useFramework<PorterContent>("porter");
+  const ai = porterFw?.content;
   const pf = quanti?.porterForces;
-  if (!quanti || (pf?.pouvoirFournisseurs == null && pf?.pouvoirClients == null)) {
+  const hasQuant = pf?.pouvoirFournisseurs != null || pf?.pouvoirClients != null;
+  const hasAi = !!(ai?.rivalite || ai?.substituts || ai?.nouveauxEntrants);
+  if (!hasQuant && !hasAi) {
     return (
       <Card>
         <Eyebrow color={T.clay}>Porter — 5 forces</Eyebrow>
         <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>
-          En attente des imports internes (P&L/LIVE) — voir README.
+          En attente des imports internes (P&L/LIVE) et de la première génération IA — voir README.
         </div>
       </Card>
     );
@@ -442,15 +450,15 @@ function PorterTab() {
   const forces: { force: string; v: number | null; note: string }[] = [
     { force: "Pouvoir fournisseurs", v: pf?.pouvoirFournisseurs ?? null, note: "Concentration Top-3 fournisseurs (CAS) — calculé depuis les imports P&L (orders)." },
     { force: "Pouvoir clients", v: pf?.pouvoirClients ?? null, note: "Concentration Top-5 clients (montant pipeline) — calculé depuis les imports LIVE (opportunities)." },
-    { force: "Rivalité", v: null, note: "En attente de saisie/imports." },
-    { force: "Substituts", v: null, note: "En attente de saisie/imports." },
-    { force: "Nouveaux entrants", v: null, note: "En attente de saisie/imports." },
+    { force: "Rivalité", v: ai?.rivalite?.v ?? null, note: ai?.rivalite?.note || "Estimée par l'IA depuis les signaux concurrents — en attente de génération." },
+    { force: "Substituts", v: ai?.substituts?.v ?? null, note: ai?.substituts?.note || "Menace de désintermédiation (éditeurs/hyperscalers) — estimée par l'IA." },
+    { force: "Nouveaux entrants", v: ai?.nouveauxEntrants?.v ?? null, note: ai?.nouveauxEntrants?.note || "Menace de nouveaux entrants — estimée par l'IA." },
   ];
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Eyebrow color={T.clay}>Porter — 5 forces (quantifiées)</Eyebrow>
-        <Badge c={T.emerald}>Fournisseurs/clients : temps réel</Badge>
+        <Eyebrow color={T.clay}>Porter — 5 forces</Eyebrow>
+        <Badge c={T.emerald}>2 quantifiées (interne) · 3 estimées (IA)</Badge>
       </div>
       <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
         {forces.map((f) => (
@@ -523,6 +531,9 @@ export function Cadres() {
     ["swot", "SWOT"],
     ["pestel", "PESTEL"],
     ["porter", "Porter"],
+    ["ansoff", "Ansoff"],
+    ["vrio", "VRIO"],
+    ["valueChain", "Chaîne de valeur"],
     ["bcg", "BCG"],
     ["canvas", "Canvas"],
     ["contexte", "Contexte entreprise"],
@@ -541,9 +552,128 @@ export function Cadres() {
       {c === "swot" && <SwotTab />}
       {c === "pestel" && <PestelTab />}
       {c === "porter" && <PorterTab />}
+      {c === "ansoff" && <AnsoffTab />}
+      {c === "vrio" && <VrioTab />}
+      {c === "valueChain" && <ValueChainTab />}
       {c === "bcg" && <BcgTab />}
       {c === "canvas" && <CanvasTab />}
       {c === "contexte" && <ContexteTab />}
     </div>
+  );
+}
+
+/* ---- Ansoff / VRIO / Chaîne de valeur (cadres IA additionnels — audit 2026-07) ---- */
+
+type AnsoffContent = { penetration?: string[]; devProduit?: string[]; devMarche?: string[]; diversification?: string[] };
+function AnsoffTab() {
+  const { data: fw } = useFramework<AnsoffContent>("ansoff");
+  const a = fw?.content;
+  const cells: { k: keyof AnsoffContent; l: string; c: string; sub: string }[] = [
+    { k: "penetration", l: "Pénétration de marché", c: T.emerald, sub: "marchés actuels × offres actuelles" },
+    { k: "devProduit", l: "Développement produit", c: T.gold, sub: "marchés actuels × nouvelles offres" },
+    { k: "devMarche", l: "Développement marché", c: T.steel, sub: "nouveaux marchés × offres actuelles" },
+    { k: "diversification", l: "Diversification", c: T.clay, sub: "nouveaux marchés × nouvelles offres" },
+  ];
+  if (!a) return <Card><Eyebrow color={T.gold}>Matrice d'Ansoff</Eyebrow><div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente de la première génération IA (enrichissement hebdomadaire).</div></Card>;
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Eyebrow color={T.gold}>Matrice d'Ansoff — leviers de croissance</Eyebrow>
+        <Badge c={T.emerald}>Suggéré par l'IA</Badge>
+      </div>
+      <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+        {cells.map((cell) => (
+          <div key={cell.k} style={{ background: T.panel2, borderRadius: 10, padding: "12px 14px", borderTop: `3px solid ${cell.c}` }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: cell.c }}>{cell.l}</div>
+            <div style={{ fontSize: 10.5, color: T.faint, marginBottom: 8 }}>{cell.sub}</div>
+            <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: T.dim, lineHeight: 1.6 }}>
+              {(a[cell.k] ?? []).map((it, i) => <li key={i}>{it}</li>)}
+              {(a[cell.k] ?? []).length === 0 && <li style={{ color: T.faint, listStyle: "none" }}>—</li>}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+type VrioResource = { resource: string; valuable: boolean; rare: boolean; inimitable: boolean; organized: boolean; verdict: string; note: string };
+function VrioTab() {
+  const { data: fw } = useFramework<{ resources?: VrioResource[] }>("vrio");
+  const rs = fw?.content?.resources ?? [];
+  const VERDICT_C: Record<string, string> = { "avantage durable": T.emerald, "avantage temporaire": T.gold, "parité concurrentielle": T.steel, "désavantage": T.clay };
+  const yn = (b: boolean) => <span style={{ color: b ? T.emerald : T.faint, fontWeight: 700 }}>{b ? "✓" : "—"}</span>;
+  if (rs.length === 0) return <Card><Eyebrow color={T.steel}>Analyse VRIO</Eyebrow><div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente de la première génération IA (enrichissement hebdomadaire).</div></Card>;
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Eyebrow color={T.steel}>VRIO — avantages ressources & capacités</Eyebrow>
+        <Badge c={T.emerald}>Suggéré par l'IA</Badge>
+      </div>
+      <div style={{ overflowX: "auto", marginTop: 12 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ color: T.faint, textAlign: "left" }}>
+              <th style={{ padding: "6px 8px" }}>Ressource</th>
+              <th style={{ padding: "6px 8px", textAlign: "center" }}>V</th>
+              <th style={{ padding: "6px 8px", textAlign: "center" }}>R</th>
+              <th style={{ padding: "6px 8px", textAlign: "center" }}>I</th>
+              <th style={{ padding: "6px 8px", textAlign: "center" }}>O</th>
+              <th style={{ padding: "6px 8px" }}>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rs.map((r, i) => (
+              <tr key={i} style={{ borderTop: `1px solid ${T.line}` }}>
+                <td style={{ padding: "8px", color: T.ink }}><div style={{ fontWeight: 600 }}>{r.resource}</div><div style={{ color: T.faint, fontSize: 11 }}>{r.note}</div></td>
+                <td style={{ padding: "8px", textAlign: "center" }}>{yn(r.valuable)}</td>
+                <td style={{ padding: "8px", textAlign: "center" }}>{yn(r.rare)}</td>
+                <td style={{ padding: "8px", textAlign: "center" }}>{yn(r.inimitable)}</td>
+                <td style={{ padding: "8px", textAlign: "center" }}>{yn(r.organized)}</td>
+                <td style={{ padding: "8px" }}><Badge c={VERDICT_C[r.verdict] ?? T.steel}>{r.verdict}</Badge></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+type VcActivity = { activity: string; strength: number; lever: string };
+function ValueChainTab() {
+  const { data: fw } = useFramework<{ primary?: VcActivity[]; support?: VcActivity[] }>("valueChain");
+  const vc = fw?.content;
+  const hasData = !!(vc && ((vc.primary?.length ?? 0) + (vc.support?.length ?? 0) > 0));
+  if (!hasData) return <Card><Eyebrow color={T.emerald}>Chaîne de valeur</Eyebrow><div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente de la première génération IA (enrichissement hebdomadaire).</div></Card>;
+  const row = (a: VcActivity, i: number) => (
+    <div key={i} style={{ marginBottom: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}>
+        <span style={{ color: T.ink, fontWeight: 600 }}>{a.activity}</span>
+        <span style={{ color: T.emerald, fontVariantNumeric: "tabular-nums" }}>{Math.round(a.strength)}/100</span>
+      </div>
+      <div style={{ height: 6, background: T.panel2, borderRadius: 4, marginBottom: 3 }}>
+        <div style={{ width: `${Math.min(Math.max(a.strength, 0), 100)}%`, height: "100%", background: a.strength >= 66 ? T.emerald : a.strength >= 40 ? T.gold : T.clay, borderRadius: 4 }} />
+      </div>
+      {a.lever && <div style={{ fontSize: 11, color: T.faint }}><b style={{ color: T.gold }}>Levier :</b> {a.lever}</div>}
+    </div>
+  );
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Eyebrow color={T.emerald}>Chaîne de valeur (Porter)</Eyebrow>
+        <Badge c={T.emerald}>Suggéré par l'IA</Badge>
+      </div>
+      <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 12 }}>
+        <div>
+          <div style={{ fontSize: 12, color: T.steel, fontWeight: 600, marginBottom: 8 }}>Activités principales</div>
+          {(vc!.primary ?? []).map(row)}
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: T.plum, fontWeight: 600, marginBottom: 8 }}>Activités de soutien</div>
+          {(vc!.support ?? []).map(row)}
+        </div>
+      </div>
+    </Card>
   );
 }

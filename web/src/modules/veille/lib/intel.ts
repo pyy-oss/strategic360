@@ -333,6 +333,11 @@ export interface BizOpportunity {
   competitorsLikely?: string[];
   status: BizOpportunityStatus;
   generatedBy?: string;
+  // Chaîne de captation (M12 audit) : une opportunité qualifiée devient un lead avec porteur et
+  // échéance de prochaine action, et peut être convertie en action liée (actionId).
+  owner?: string;
+  nextActionDate?: string;
+  actionId?: string; // id de l'action créée lors de la conversion (traçabilité opportunité→action)
 }
 
 const HORIZON_ORDER: Record<BizOpportunityHorizon, number> = { imminent: 0, court: 1, moyen: 2, horizon: 3 };

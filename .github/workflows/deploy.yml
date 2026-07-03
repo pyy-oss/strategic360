@@ -84,11 +84,16 @@ jobs:
       # Hosting/Firestore/Functions don't depend on that permission, so they shouldn't be held
       # hostage by it.
       - name: Deploy (hosting:strategic360, firestore, functions:veille)
+        # --force : autorise la SUPPRESSION des fonctions retirées du code source (ex. fusion des
+        # 3 triggers onWrite en un seul, audit 2026-07). Sans ça, en CI non-interactif, les
+        # fonctions orphelines resteraient déployées et continueraient de se déclencher. Le scope
+        # `--only …functions:veille` limite l'effet au codebase de CETTE app (projet partagé).
         run: >
           firebase deploy
           --project propulse-business-87f7a
           --only hosting:strategic360,firestore,functions:veille
           --non-interactive
+          --force
 
       - name: Deploy (storage rules)
         id: deploy_storage

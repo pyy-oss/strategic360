@@ -134,10 +134,18 @@ function mapInvoices(nt360Invoices) {
  * These pseudo-rows must NOT be fed to computeBcg/computeCasSummary (they have no bu — computeBcg
  * skips them anyway — and their amounts are purchases, not revenue).
  */
+const XOF_CURRENCIES = new Set(["XOF", "FCFA", "CFA", "F CFA", ""]);
 function mapBcLinesToSupplierRows(nt360BcLines) {
   if (!Array.isArray(nt360BcLines)) return [];
   return nt360BcLines
     .filter((l) => l && typeof l === "object" && l.supplier)
+    // Garde devise (m5 audit 2026-07) : amountXof est censé être en XOF. Si une ligne porte une
+    // devise ÉTRANGÈRE sans montant XOF pré-converti, on l'écarte plutôt que de sommer des EUR/USD
+    // comme des francs CFA (fausserait la concentration fournisseurs de Porter).
+    .filter((l) => {
+      const cur = typeof l.currency === "string" ? l.currency.trim().toUpperCase() : "";
+      return XOF_CURRENCIES.has(cur) || Number.isFinite(l.amountXof);
+    })
     .map((l) => ({ fournisseur: l.supplier, cas: num(l.amountXof) }));
 }
 

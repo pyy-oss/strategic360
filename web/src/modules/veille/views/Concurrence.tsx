@@ -95,7 +95,7 @@ function NewBattlecardPanel({ onClose }: { onClose: () => void }) {
 
 /** "Enregistrer un win/loss" — exec-gated (server-side: exec()); alimente le taux de victoire. */
 function NewWinLossPanel({ onClose }: { onClose: () => void }) {
-  const [form, setForm] = useState({ competitor: "", result: "win" as WinLossResult, reason: "", date: new Date().toISOString().slice(0, 10) });
+  const [form, setForm] = useState({ competitor: "", result: "win" as WinLossResult, reason: "", amount: "", lesson: "", date: new Date().toISOString().slice(0, 10) });
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -109,10 +109,15 @@ function NewWinLossPanel({ onClose }: { onClose: () => void }) {
     setSubmitting(true);
     setErr(null);
     try {
+      // Montant chiffré (M FCFA) + leçon capitalisée (M14 audit) : sans eux, aucun CA gagné/perdu
+      // ni retour d'expérience — la boucle de feedback restait vide.
+      const amountNum = form.amount.trim() ? Number(form.amount.replace(",", ".")) : NaN;
       await createWinLossEntry({
         competitor: form.competitor.trim(),
         result: form.result,
         reason: form.reason.trim() || undefined,
+        amount: Number.isFinite(amountNum) ? amountNum : undefined,
+        lesson: form.lesson.trim() || undefined,
         date: form.date,
       });
       onClose();
@@ -153,6 +158,16 @@ function NewWinLossPanel({ onClose }: { onClose: () => void }) {
             <input type="date" style={inputStyle} value={form.date} onChange={(e) => set("date", e.target.value)} required />
           </div>
         </div>
+        <div className="g2" style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={labelStyle}>Montant (M FCFA)</label>
+            <input style={inputStyle} inputMode="decimal" placeholder="ex : 45" value={form.amount} onChange={(e) => set("amount", e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Leçon capitalisée</label>
+            <input style={inputStyle} placeholder="Pourquoi gagné/perdu — à réutiliser" value={form.lesson} onChange={(e) => set("lesson", e.target.value)} />
+          </div>
+        </div>
         {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
         <button type="submit" className="pill on" disabled={submitting}>
           {submitting ? "Enregistrement…" : "Enregistrer"}
@@ -183,10 +198,30 @@ export function Concurrence() {
     deals: stats[c.competitor]?.deals ?? 0,
   }));
 
+  // Boucle de preuve (M14 audit) : CA gagné/perdu et taux de victoire global depuis winLoss chiffré.
+  const wlSummary = entries.reduce(
+    (acc, e) => {
+      acc.total += 1;
+      if (e.result === "win") { acc.wins += 1; if (Number.isFinite(e.amount)) acc.won += Number(e.amount); }
+      else if (Number.isFinite(e.amount)) acc.lost += Number(e.amount);
+      return acc;
+    },
+    { total: 0, wins: 0, won: 0, lost: 0 }
+  );
+  const winRateGlobal = wlSummary.total ? Math.round((wlSummary.wins / wlSummary.total) * 100) : null;
+
   const loading = loadingCards || loadingWl;
 
   return (
     <div>
+      {wlSummary.total > 0 && (
+        <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
+          <Card><div style={{ fontSize: 11, color: T.faint }}>Taux de victoire</div><div style={{ fontSize: 22, fontWeight: 700, color: T.gold }}>{winRateGlobal}%</div></Card>
+          <Card><div style={{ fontSize: 11, color: T.faint }}>Deals suivis</div><div style={{ fontSize: 22, fontWeight: 700, color: T.steel }}>{wlSummary.total}</div></Card>
+          <Card><div style={{ fontSize: 11, color: T.faint }}>CA gagné (M FCFA)</div><div style={{ fontSize: 22, fontWeight: 700, color: T.emerald }}>{Math.round(wlSummary.won)}</div></Card>
+          <Card><div style={{ fontSize: 11, color: T.faint }}>CA perdu (M FCFA)</div><div style={{ fontSize: 22, fontWeight: 700, color: T.clay }}>{Math.round(wlSummary.lost)}</div></Card>
+        </div>
+      )}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
         {canWrite && (
           <button className="pill on" onClick={() => setShowCardForm((v) => !v)}>
@@ -234,22 +269,40 @@ export function Concurrence() {
           <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
             {rows.map((c) => (
               <Card key={c.id} style={{ borderTop: `3px solid ${T.clay}` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
                   <Eyebrow color={T.clay}>{c.competitor}</Eyebrow>
                   <Badge c={c.win >= 0.5 ? T.emerald : T.clay}>
                     {c.deals > 0 ? `${pct(c.win)} · ${c.deals} deals` : "pas de win/loss"}
                   </Badge>
                 </div>
+                {c.generatedBy === "ai" && (
+                  <div style={{ marginTop: 4 }}>
+                    <Badge c={T.gold}>Suggéré par l'IA · à valider</Badge>
+                  </div>
+                )}
                 <div style={{ marginTop: 10, fontSize: 12.5, color: T.dim, lineHeight: 1.6 }}>
+                  {c.positioning && (
+                    <div style={{ marginBottom: 6, color: T.ink }}>{c.positioning}</div>
+                  )}
                   <div>
-                    <b style={{ color: T.gold }}>Force :</b> {(c.strengths ?? []).join("; ") || "—"}
+                    <b style={{ color: T.gold }}>Forces :</b> {(c.strengths ?? []).join("; ") || "—"}
                   </div>
                   <div>
-                    <b style={{ color: T.steel }}>Faiblesse :</b> {(c.weaknesses ?? []).join("; ") || "—"}
+                    <b style={{ color: T.steel }}>Faiblesses :</b> {(c.weaknesses ?? []).join("; ") || "—"}
                   </div>
                   <div style={{ marginTop: 6, padding: "8px 10px", background: T.panel2, borderRadius: 8 }}>
                     <b style={{ color: T.emerald }}>Comment gagner :</b> {(c.ourWinThemes ?? []).join("; ") || "—"}
                   </div>
+                  {(c.theirLikelyMoves ?? []).length > 0 && (
+                    <div style={{ marginTop: 6 }}>
+                      <b style={{ color: T.clay }}>Ses coups probables :</b> {(c.theirLikelyMoves ?? []).join("; ")}
+                    </div>
+                  )}
+                  {(c.objectionHandling ?? []).length > 0 && (
+                    <div style={{ marginTop: 6 }}>
+                      <b style={{ color: T.plum }}>Objections / réponses :</b> {(c.objectionHandling ?? []).join("; ")}
+                    </div>
+                  )}
                   {c.recentMoves?.length > 0 && (
                     <div style={{ marginTop: 6, fontSize: 11.5, color: T.faint }}>
                       <b style={{ color: T.faint }}>Mouvements récents :</b> {c.recentMoves.join("; ")}

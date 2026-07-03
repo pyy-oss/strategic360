@@ -46,6 +46,37 @@ const VALID_AXES = ["partenaires", "concurrents", "clients_prospects", "tech", "
 const VALID_IMPACTS = ["high", "medium", "low"];
 const VALID_STANCES = ["opportunity", "threat", "neutral"];
 const VALID_PROX = ["imminent", "court", "moyen", "horizon"];
+// Vocabulaire canonique des subtypes (m2 audit 2026-07) — aligné sur SUBTYPE_BUSINESS du scoring.
+// Le subtype reste libre (on ne jette pas une valeur inconnue), mais il est normalisé (minuscule,
+// tirets) et les synonymes fréquents sont ramenés à la forme canonique pour fiabiliser les filtres.
+const VALID_SUBTYPES = new Set([
+  "tender", "funding", "eol", "supply", "vulnerability", "cve", "regulation", "budget",
+  "implantation", "market_entry", "expansion", "pricing", "program_change", "ma", "win",
+  "product_launch", "hire", "leadership", "trend", "macro",
+]);
+const SUBTYPE_SYNONYMS = {
+  appel_offre: "tender", appel_doffres: "tender", ao: "tender", rfp: "tender", tenders: "tender",
+  financement: "funding", grant: "funding", fund: "funding",
+  fin_de_vie: "eol", end_of_life: "eol", eos: "eol",
+  approvisionnement: "supply", sourcing: "supply", shortage: "supply", penurie: "supply",
+  faille: "vulnerability", vuln: "vulnerability", cves: "cve",
+  reglementation: "regulation", compliance: "regulation", conformite: "regulation",
+  nouvel_entrant: "market_entry", new_entrant: "market_entry",
+  fusion: "ma", acquisition: "ma", merger: "ma",
+  recrutement: "hire", hiring: "hire", nomination: "leadership",
+  tendance: "trend", macroeconomie: "macro",
+};
+function normalizeSubtype(value) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const k = value.trim().toLowerCase().replace(/[\s'/]+/g, "_").replace(/[^a-z0-9_]/g, "");
+  if (VALID_SUBTYPES.has(k)) return k;
+  if (SUBTYPE_SYNONYMS[k]) return SUBTYPE_SYNONYMS[k];
+  return k || undefined; // inconnu : conservé sous forme normalisée (pas de perte d'information)
+}
+function normalizeGeo(value) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  return value.trim().toLowerCase().replace(/[\s']+/g, "_");
+}
 // businessAngle.bu — quelle Business Unit est concernée par le signal (Action 4.2 de l'audit).
 const VALID_BUS = ["ICT", "FORMATION", "les_deux"];
 
@@ -89,10 +120,11 @@ exactement ce schéma :
   "title": string,               // titre court et factuel du signal
   "summary": string,              // résumé en 2-3 phrases
   "axis": "partenaires" | "concurrents" | "clients_prospects" | "tech" | "reglementaire",
-  "subtype": string,               // ex: product_launch, eol, supply, program_change, pricing, ma,
-                                    // tender, funding, leadership, win, hire, regulation, trend, macro,
-                                    // market_entry (nouvel entrant), implantation (nouvelle implantation),
-                                    // expansion (expansion d'un groupe)
+  "subtype": string,               // ex: product_launch, eol, supply (pénurie/appro/crédit distributeur),
+                                    // vulnerability (faille/CVE sur techno d'un éditeur → campagne patch),
+                                    // program_change, pricing, ma, tender, funding, budget, leadership,
+                                    // win, hire, regulation, trend, macro, market_entry (nouvel entrant),
+                                    // implantation (nouvelle implantation), expansion (expansion d'un groupe)
   "impact": "high" | "medium" | "low",
   "stance": "opportunity" | "threat" | "neutral",
   "entity": string | null,         // nom de l'entité de la watchlist la plus proche, sinon null
@@ -123,8 +155,11 @@ AXES DE GUET PRIORITAIRES (à détecter activement dans le texte) :
   potentiel, menace si concurrent/désintermédiation.
 - ACTUALITÉ TECHNOLOGIQUE : ne retenir que l'angle BUSINESS pour une ESN en CI/UEMOA —
   vulnérabilité majeure sur les technologies de nos éditeurs (Cisco, Fortinet, Palo Alto, HPE,
-  Microsoft, Wallix) = opportunité de campagne de patch/upgrade/audit chez les clients équipés ;
-  nouvelle techno monétisable en zone = opportunité d'offre.
+  Microsoft, Wallix) → subtype "vulnerability", OPPORTUNITÉ de campagne de patch/upgrade/audit chez
+  les clients équipés ; nouvelle techno monétisable en zone = opportunité d'offre.
+- SOURCING / APPROVISIONNEMENT : pénurie, rupture, allongement des délais, changement de conditions
+  de crédit d'un distributeur (Hiperdist, Westcon, Exclusive, Ingram, TD SYNNEX) → subtype "supply" ;
+  déterminant pour la marge et la trésorerie (cycle long, backlog à financer).
 
 RÈGLE DE PERTINENCE GÉOGRAPHIQUE : une actualité tech/cyber MONDIALE sans lien exploitable avec
 la Côte d'Ivoire/UEMOA, nos clients, nos concurrents ou les technologies de nos éditeurs doit être
@@ -219,11 +254,11 @@ function parseClassificationResponse(rawJsonResponse, context) {
     summary: summary || title,
     axis,
     cat: AXIS_TO_DETECTION_CAT[axis],
-    subtype: coerceString(r.subtype, undefined),
+    subtype: normalizeSubtype(r.subtype),
     impact: coerceEnum(r.impact, VALID_IMPACTS, "low"),
     stance: coerceEnum(r.stance, VALID_STANCES, "neutral"),
     ent: coerceString(r.entity, undefined),
-    geo: coerceString(r.geo, undefined),
+    geo: normalizeGeo(r.geo),
     prox: coerceEnum(r.prox, VALID_PROX, "moyen"),
     neuf: r.weakSignal === true,
     soWhat: coerceString(r.soWhat, undefined),

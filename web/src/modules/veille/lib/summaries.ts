@@ -53,17 +53,31 @@ export interface VeilleExecBoardKpis {
   menacesTotal: number;
   menacesTraitees: number;
   opportunites: number;
+  winRateGlobal?: number | null; // taux de victoire global (winLoss) — null si aucun deal
   tti: number | null; // pending V6 (decisions collection)
+}
+
+export interface VeilleExecDecisionPending {
+  id: string;
+  title: string;
+  owner: string;
+}
+
+export interface VeilleExecWinRate {
+  win: number;
+  deals: number;
+  amountWon?: number;
+  amountLost?: number;
 }
 
 export interface VeilleExecSummary {
   boardKpis: VeilleExecBoardKpis;
-  decisionsPending: unknown[]; // pending V6
-  porter: unknown | null; // pending V4 (summaries/quanti)
-  winRateByCompetitor: Record<string, number>; // pending V6 (winLoss)
+  decisionsPending: VeilleExecDecisionPending[];
+  porter: unknown | null; // from summaries/quanti (nt360 sync)
+  winRateByCompetitor: Record<string, VeilleExecWinRate>; // taux de victoire par concurrent (winLoss)
   pipelineInfluenced: number | null; // XOF — value-at-stake des clients suivis/cités par la veille (null tant que summaries/quanti est absent)
   threatsExposure: number; // placeholder metric (count of high-impact, unactioned threats)
-  okrProgress: number | null; // pending V6 (initiatives)
+  okrProgress: number | null; // avancement moyen des initiatives (0-1)
   updatedAt?: Timestamp | FieldValue;
 }
 

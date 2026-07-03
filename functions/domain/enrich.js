@@ -653,25 +653,34 @@ function buildGe9Prompt(items, granularite, companyContext = COMPANY_CONTEXT) {
   return `Tu es un consultant en stratégie travaillant pour l'entreprise suivante :
 ${companyContext}
 
-Construis une matrice GE-McKinsey (attractivité du marché × position concurrentielle) pour les
-segments d'activité de cette entreprise (BU internes, et si pertinent 2-4 segments d'offre plus
-fins : cybersécurité/SOC, cloud, réseaux/infra, managed services, formation…). Réponds UNIQUEMENT
-avec un objet JSON valide :
+Construis une matrice GE-McKinsey (attractivité du marché × position concurrentielle). Elle doit
+couvrir DEUX familles de segments :
+(A) les BU/offres ÉTABLIES (avec CAS interne) : réseaux/infra, cybersécurité/SOC, cloud & services
+    managés, formation… ;
+(B) les SEGMENTS D'OPPORTUNITÉ ÉMERGENTS (whitespace) — marchés à forte attractivité où l'entreprise
+    n'a encore PEU ou PAS de chiffre d'affaires mais que les signaux rendent capturables. Tu DOIS
+    en faire ressortir au moins 3, en priorité (mais sans t'y limiter) : « IA / GenAI appliquée »
+    (copilots, automatisation, IA souveraine, data), « Cloud souverain » (distinct des services
+    managés classiques), « SD-WAN / SASE / connectivité managée (WAN) ». N'AGRÈGE PAS une offre
+    émergente à fort potentiel dans « services managés » — donne-lui son propre segment.
+Réponds UNIQUEMENT avec un objet JSON valide :
 
 {
   "items": [
     {
-      "n": string,        // nom du segment
-      "attr": number,     // attractivité du marché, 0-100 (taille, croissance, intensité concurrentielle, leviers réglementaires — justifiable par les signaux/contexte)
-      "pos": number,      // position concurrentielle de l'entreprise sur ce segment, 0-100 (parts internes, références, certifications)
-      "size": number,     // poids relatif du segment pour l'entreprise, 0-100 (CAS réel si connu, sinon estimation)
-      "note": string      // justification courte (1-2 phrases) citant signaux/faits
+      "n": string,          // nom du segment
+      "attr": number,       // attractivité du marché, 0-100 (taille, croissance, intensité concurrentielle, leviers réglementaires — justifiable par les signaux/contexte)
+      "pos": number,        // position concurrentielle de l'entreprise sur ce segment, 0-100 (parts internes, références, certifications ; FAIBLE pour un segment émergent à construire)
+      "size": number,       // poids relatif du segment, 0-100 (CAS réel si connu ; pour un émergent : potentiel de marché estimé)
+      "emerging": boolean,  // true = segment d'opportunité émergent (famille B), false = BU établie (famille A)
+      "note": string        // justification courte (1-2 phrases) citant signaux/faits ; pour un émergent, dire le déclencheur et l'angle de capture
     }
   ]
 }
 
-Contraintes : 4 à 8 segments ; scores honnêtes et différenciés (pas tout à 70) ; ancre les notes
-dans les signaux et les données internes fournies.
+Contraintes : 6 à 9 segments AU TOTAL dont AU MOINS 3 émergents (emerging:true) ; scores honnêtes et
+différenciés (pas tout à 70) ; un segment émergent a typiquement attr élevé et pos faible ; ancre
+chaque note dans les signaux et les données internes fournies.
 
 Données internes réelles (CAS par BU) :
 ${granBlock}
@@ -692,6 +701,7 @@ function parseGe9Response(raw) {
       attr: clamp100(e.attr) ?? 50,
       pos: clamp100(e.pos) ?? 50,
       size: clamp100(e.size) ?? 30,
+      emerging: e.emerging === true,
       note: typeof e.note === "string" ? e.note.trim() : "",
     }));
   return items.length >= 3 ? { items } : null;
@@ -739,6 +749,56 @@ function parseHorizonsResponse(raw) {
       d: typeof e.d === "string" ? e.d.trim() : "",
     }));
   return items.length >= 3 ? { items } : null;
+}
+
+/* ------------------------------------------------------------------------------------------- *
+ * Porter — 3 forces qualitatives estimées par l'IA (M3 audit 2026-07). Les deux forces
+ * quantifiées (pouvoir fournisseurs/clients) restent calculées depuis les données internes ;
+ * l'IA complète rivalité, substituts et menace de nouveaux entrants depuis les signaux + contexte,
+ * sur une échelle 0-100 (intensité de la force). Écrit dans frameworks/porter (garde humaine).
+ * ------------------------------------------------------------------------------------------- */
+
+/**
+ * @param {Array<object>} items Lightweight signals.
+ * @param {string} [companyContext]
+ */
+function buildPorterPrompt(items, companyContext = COMPANY_CONTEXT) {
+  return `Tu es un consultant en stratégie (analyse concurrentielle de Porter) pour l'entreprise suivante :
+${companyContext}
+
+Estime l'INTENSITÉ (0-100) de TROIS des cinq forces de Porter — celles qui ne se déduisent pas des
+données financières internes (le pouvoir des fournisseurs et des clients est déjà calculé ailleurs).
+Fonde chaque estimation sur les signaux réels et le contexte (concurrents, désintermédiation
+éditeurs/hyperscalers, nouveaux entrants). Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "rivalite": { "v": number, "note": string },        // intensité de la rivalité entre ESN/intégrateurs de la zone
+  "substituts": { "v": number, "note": string },      // menace de substitution (vente directe éditeurs, hyperscalers, SaaS, offres télécoms)
+  "nouveauxEntrants": { "v": number, "note": string } // menace de nouveaux entrants (pure players, acteurs étrangers, filiales)
+}
+
+Contraintes : v entre 0 et 100 (100 = force très intense/menaçante) ; chaque note en 1-2 phrases
+cite un fait/signal précis (concurrent nommé, mouvement, tendance). Français. JSON uniquement.`;
+}
+
+/** parsePorterResponse(raw) -> {rivalite:{v,note}, substituts:{v,note}, nouveauxEntrants:{v,note}} | null */
+function parsePorterResponse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const one = (o) => {
+    if (!o || typeof o !== "object") return null;
+    const v = clamp100(o.v);
+    if (v == null) return null;
+    return { v, note: typeof o.note === "string" ? o.note.trim() : "" };
+  };
+  const rivalite = one(raw.rivalite);
+  const substituts = one(raw.substituts);
+  const nouveauxEntrants = one(raw.nouveauxEntrants);
+  if (!rivalite && !substituts && !nouveauxEntrants) return null;
+  const out = {};
+  if (rivalite) out.rivalite = rivalite;
+  if (substituts) out.substituts = substituts;
+  if (nouveauxEntrants) out.nouveauxEntrants = nouveauxEntrants;
+  return out;
 }
 
 /* ------------------------------------------------------------------------------------------- *
@@ -906,11 +966,13 @@ Réponds UNIQUEMENT avec un objet JSON valide :
 {
   "cards": [
     {
-      "competitor": string,      // le nom EXACT tel que fourni dans la liste
-      "positioning": string,     // 1-2 phrases : positionnement marché, segments, points d'appui
-      "strengths": [string],     // 2 à 4 forces concrètes (références, partenariats, capacités)
-      "weaknesses": [string],    // 2 à 4 faiblesses exploitables
-      "ourWinThemes": [string]   // 2 à 4 axes concrets pour gagner contre lui
+      "competitor": string,       // le nom EXACT tel que fourni dans la liste
+      "positioning": string,      // 1-2 phrases : positionnement marché, segments, points d'appui
+      "strengths": [string],      // 2 à 4 forces concrètes (références, partenariats, capacités)
+      "weaknesses": [string],     // 2 à 4 faiblesses exploitables
+      "ourWinThemes": [string],   // 2 à 4 axes concrets pour gagner contre lui
+      "theirLikelyMoves": [string],   // 2 à 3 coups probables du concurrent (ce qu'il va tenter)
+      "objectionHandling": [string]   // 2 à 3 objections clients typiques face à nous + la réponse à donner
     }
   ]
 }
@@ -931,7 +993,7 @@ ${signalsBlock(items)}
 Réponds avec le JSON uniquement.`;
 }
 
-/** parseFullBattlecardsResponse(raw) -> {cards:[{competitor, positioning, strengths, weaknesses, ourWinThemes}]} | null */
+/** parseFullBattlecardsResponse(raw) -> {cards:[{competitor, positioning, strengths, weaknesses, ourWinThemes, theirLikelyMoves, objectionHandling}]} | null */
 function parseFullBattlecardsResponse(raw) {
   if (!raw || typeof raw !== "object" || !Array.isArray(raw.cards)) return null;
   const cards = raw.cards
@@ -942,14 +1004,210 @@ function parseFullBattlecardsResponse(raw) {
       strengths: coerceStringArray(c.strengths),
       weaknesses: coerceStringArray(c.weaknesses),
       ourWinThemes: coerceStringArray(c.ourWinThemes),
+      theirLikelyMoves: coerceStringArray(c.theirLikelyMoves),
+      objectionHandling: coerceStringArray(c.objectionHandling),
     }))
     .filter((c) => c.strengths.length || c.weaknesses.length || c.ourWinThemes.length);
   return cards.length ? { cards } : null;
 }
 
+/* ------------------------------------------------------------------------------------------- *
+ * Cadres stratégiques additionnels (audit 2026-07 — cadres attendus d'un cabinet mais absents) :
+ * Ansoff (produit × marché), VRIO (avantages ressources), Chaîne de valeur (Porter). Générés par
+ * l'IA depuis les signaux + contexte, écrits dans frameworks/{ansoff,vrio,valueChain} (garde humaine).
+ * ------------------------------------------------------------------------------------------- */
+
+function buildAnsoffPrompt(items, companyContext = COMPANY_CONTEXT) {
+  return `Tu es consultant en stratégie (matrice d'Ansoff) pour l'entreprise suivante :
+${companyContext}
+
+Propose des initiatives de croissance réparties dans les 4 cases de la matrice d'Ansoff, dérivées
+des signaux réels. Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "penetration": [string],     // marchés actuels × offres actuelles (gagner des parts)
+  "devProduit": [string],      // marchés actuels × nouvelles offres (ex: SOC managé, cloud souverain)
+  "devMarche": [string],       // nouveaux marchés/géos × offres actuelles (ex: Burkina, Sénégal)
+  "diversification": [string]  // nouveaux marchés × nouvelles offres (pari plus risqué)
+}
+
+Contraintes : 2 à 3 initiatives concrètes par case, chacune ancrée dans un signal/fait (AO, EOL,
+obligation, tendance, mouvement concurrent). Français. JSON uniquement.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+function parseAnsoffResponse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const keys = ["penetration", "devProduit", "devMarche", "diversification"];
+  const out = {};
+  let total = 0;
+  for (const k of keys) {
+    out[k] = coerceStringArray(raw[k]);
+    total += out[k].length;
+  }
+  return total >= 2 ? out : null;
+}
+
+function buildVrioPrompt(items, companyContext = COMPANY_CONTEXT) {
+  return `Tu es consultant en stratégie (analyse VRIO des ressources et capacités) pour l'entreprise suivante :
+${companyContext}
+
+Évalue les ressources/capacités DISTINCTIVES de l'entreprise (ex : agrément PASSI, statut WALLIX
+Premier, Neurones Academy, références bancaires, proximité régulateurs). Pour chacune, indique si
+elle est Valorisable, Rare, Inimitable et si l'entreprise est Organisée pour l'exploiter, puis un
+verdict d'avantage. Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "resources": [
+    {
+      "resource": string,        // nom de la ressource/capacité
+      "valuable": boolean,
+      "rare": boolean,
+      "inimitable": boolean,
+      "organized": boolean,
+      "verdict": "avantage durable" | "avantage temporaire" | "parité concurrentielle" | "désavantage",
+      "note": string             // 1 phrase justifiant, ancrée dans un fait
+    }
+  ]
+}
+
+Contraintes : 4 à 6 ressources, honnêtes (toutes ne sont pas des avantages durables). Français. JSON uniquement.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+const VRIO_VERDICTS = ["avantage durable", "avantage temporaire", "parité concurrentielle", "désavantage"];
+function parseVrioResponse(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.resources)) return null;
+  const resources = raw.resources
+    .filter((r) => r && typeof r === "object" && typeof r.resource === "string" && r.resource.trim())
+    .map((r) => ({
+      resource: r.resource.trim(),
+      valuable: r.valuable === true,
+      rare: r.rare === true,
+      inimitable: r.inimitable === true,
+      organized: r.organized === true,
+      verdict: VRIO_VERDICTS.includes(r.verdict) ? r.verdict : "parité concurrentielle",
+      note: typeof r.note === "string" ? r.note.trim() : "",
+    }));
+  return resources.length >= 3 ? { resources } : null;
+}
+
+function buildValueChainPrompt(items, companyContext = COMPANY_CONTEXT) {
+  return `Tu es consultant en stratégie (chaîne de valeur de Porter) pour l'entreprise suivante :
+${companyContext}
+
+Évalue la chaîne de valeur d'un intégrateur IT (avant-vente/conseil → approvisionnement →
+intégration/déploiement → services managés → support & formation) et les activités de soutien
+(RH/talents, achats/distributeurs, technologie/certifications, infrastructure). Pour chaque
+activité, donne une force 0-100 et un levier d'amélioration. Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "primary": [ { "activity": string, "strength": number, "lever": string } ],   // 4 à 6 activités principales
+  "support": [ { "activity": string, "strength": number, "lever": string } ]    // 3 à 4 activités de soutien
+}
+
+Contraintes : strength 0-100 honnête et différenciée ; lever = 1 action concrète ancrée dans le
+contexte/les signaux. Français. JSON uniquement.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+function parseValueChainResponse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const mapActs = (arr) =>
+    (Array.isArray(arr) ? arr : [])
+      .filter((a) => a && typeof a === "object" && typeof a.activity === "string" && a.activity.trim())
+      .map((a) => ({
+        activity: a.activity.trim(),
+        strength: clamp100(a.strength) ?? 50,
+        lever: typeof a.lever === "string" ? a.lever.trim() : "",
+      }));
+  const primary = mapActs(raw.primary);
+  const support = mapActs(raw.support);
+  if (primary.length + support.length < 4) return null;
+  return { primary, support };
+}
+
+/* ------------------------------------------------------------------------------------------- *
+ * Scénarios prospectifs (M4 audit 2026-07 : les scénarios étaient inertes — pas de signaux
+ * précurseurs). L'IA propose 2 axes d'incertitude, 4 mondes probabilisés, et pour chacun des
+ * SIGNPOSTS (signaux précurseurs à guetter) + une réponse préparée. Écrit dans frameworks/scenarios
+ * (advisory, comme horizons — l'humain adopte en créant un scénario réel dans la vue Scénarios).
+ * ------------------------------------------------------------------------------------------- */
+
+function buildScenariosPrompt(items, companyContext = COMPANY_CONTEXT) {
+  return `Tu es consultant en planification par scénarios (méthode GBN/Shell) pour l'entreprise suivante :
+${companyContext}
+
+Construis un exercice de scénarios à partir des incertitudes clés révélées par les signaux.
+Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "axisX": string,   // 1re incertitude structurante (ex: "Rythme d'application des obligations PASSI")
+  "axisY": string,   // 2e incertitude structurante et INDÉPENDANTE (ex: "Arrivée directe des hyperscalers")
+  "worlds": [
+    {
+      "title": string,        // nom évocateur du monde
+      "probability": number,  // 0-1
+      "narrative": string,    // 1-2 phrases décrivant ce monde
+      "signposts": [string],  // 2-3 signaux précurseurs concrets à guetter dans la veille (early-warning)
+      "response": string      // la réponse stratégique préparée si ce monde advient
+    }
+  ]
+}
+
+Contraintes : EXACTEMENT 4 mondes (les 4 combinaisons des 2 axes), probabilités sommant ~1,
+signposts ancrés dans des faits observables. Français. JSON uniquement.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+function parseScenariosResponse(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.worlds)) return null;
+  const axisX = typeof raw.axisX === "string" ? raw.axisX.trim() : "";
+  const axisY = typeof raw.axisY === "string" ? raw.axisY.trim() : "";
+  const worlds = raw.worlds
+    .filter((w) => w && typeof w === "object" && typeof w.title === "string" && w.title.trim())
+    .map((w) => {
+      let p = Number(w.probability);
+      p = Number.isFinite(p) ? Math.min(1, Math.max(0, p)) : 0.25;
+      return {
+        title: w.title.trim(),
+        probability: Math.round(p * 100) / 100,
+        narrative: typeof w.narrative === "string" ? w.narrative.trim() : "",
+        signposts: coerceStringArray(w.signposts),
+        response: typeof w.response === "string" ? w.response.trim() : "",
+      };
+    });
+  if (worlds.length < 3) return null;
+  return { axisX, axisY, worlds };
+}
+
 module.exports = {
   buildSwotPestelPrompt,
   parseSwotPestelResponse,
+  buildScenariosPrompt,
+  parseScenariosResponse,
+  buildAnsoffPrompt,
+  parseAnsoffResponse,
+  buildVrioPrompt,
+  parseVrioResponse,
+  buildValueChainPrompt,
+  parseValueChainResponse,
   buildTechRadarPrompt,
   parseTechRadarResponse,
   buildBattlecardMovesPrompt,
@@ -970,6 +1228,8 @@ module.exports = {
   parseFullBattlecardsResponse,
   buildHorizonsPrompt,
   parseHorizonsResponse,
+  buildPorterPrompt,
+  parsePorterResponse,
   CONTEXT_REQUIRED_MARKERS,
   pickSignalsForEnrichment,
   slugId,
