@@ -56,14 +56,19 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
           />
         </Card>
         <Card>
-          <Kpi label="Taux de victoire" value="—" accent={T.gold} sub="vs concurrents (win/loss) — à venir V6" />
+          <Kpi
+            label="Taux de victoire"
+            value={exec && exec.boardKpis?.winRateGlobal != null ? pct(exec.boardKpis.winRateGlobal) : "—"}
+            accent={T.gold}
+            sub="vs concurrents (win/loss)"
+          />
         </Card>
         <Card>
           <Kpi
             label="Avancement OKR"
             value={exec && exec.okrProgress != null ? pct(exec.okrProgress) : "—"}
             accent={T.steel}
-            sub="initiatives stratégiques — à venir V6"
+            sub="initiatives stratégiques"
           />
         </Card>
       </div>

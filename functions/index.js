@@ -105,6 +105,28 @@ const ENFORCE_APP_CHECK = process.env.APPCHECK_ENFORCE === "true";
  * is switched on project-wide. */
 const CALLABLE_OPTS = { region: "europe-west1", enforceAppCheck: ENFORCE_APP_CHECK };
 
+/** Options « lourdes » pour les traitements qui enchaînent de nombreux appels IA (Vertex) ou lisent
+ * de gros lots Firestore (sync sources, enrichissement, briefing, sync interne). Le timeout v2 par
+ * défaut (60 s) était largement dépassé → les dernières sources n'étaient jamais synchronisées
+ * (audit 2026-07, C4). 540 s = plafond des fonctions event/scheduled ; 512 MiB pour tenir les lots. */
+const HEAVY_OPTS = { region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" };
+const HEAVY_CALLABLE_OPTS = { ...CALLABLE_OPTS, timeoutSeconds: 540, memory: "512MiB" };
+/** Concurrence max des appels IA en parallèle (lots) — borne la charge Vertex tout en évitant la
+ * boucle strictement séquentielle qui faisait exploser la durée. */
+const AI_CONCURRENCY = 5;
+
+/** Exécute `worker` sur chaque élément de `items` par lots de `size`, en tolérant les échecs
+ * (allSettled). Remplace les boucles `for … await` séquentielles sur les sources/artefacts. */
+async function runInBatches(items, size, worker) {
+  const results = [];
+  for (let i = 0; i < items.length; i += size) {
+    const batch = items.slice(i, i + size);
+    const settled = await Promise.allSettled(batch.map((it, j) => worker(it, i + j)));
+    results.push(...settled);
+  }
+  return results;
+}
+
 /**
  * Shared-project isolation (this Firebase project — e.g. "propulse-business-87f7a" — hosts
  * OTHER apps too). To never read/write/overwrite their data:
@@ -352,7 +374,15 @@ function extractRssItems(xml, maxItems = 5) {
         .replace(/<[^>]+>/g, "")
         .trim();
     };
-    items.push({ title: grab("title"), description: grab("description"), link: grab("link") });
+    // pubDate (ou dc:date) normalisé en YYYY-MM-DD → date d'événement (m3 audit) : évite qu'un
+    // article RSS sans lien change d'ID chaque jour (ID = titre|date d'ingestion).
+    let pubDate = "";
+    const rawDate = grab("pubDate") || grab("dc:date") || grab("published") || grab("updated");
+    if (rawDate) {
+      const d = new Date(rawDate);
+      if (!Number.isNaN(d.getTime())) pubDate = d.toISOString().slice(0, 10);
+    }
+    items.push({ title: grab("title"), description: grab("description"), link: grab("link"), pubDate });
   }
   return items;
 }
@@ -370,6 +400,66 @@ function extractWebText(html, maxChars = 4000) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxChars);
+}
+
+/**
+ * Résout une URL relative (`/avis/123`) en absolue à partir de l'URL de base de la source.
+ * Renvoie null si le href n'est pas exploitable (ancre interne, javascript:, mailto:).
+ */
+function absolutizeUrl(href, base) {
+  if (!href || typeof href !== "string") return null;
+  const h = href.trim();
+  if (!h || h.startsWith("#") || /^(javascript:|mailto:|tel:)/i.test(h)) return null;
+  try {
+    return new URL(h, base).toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extraction MULTI-ITEMS pour les portails `kind:"web"` (avis d'AO, actualités). Corrige C5
+ * (audit 2026-07) : sans ça, chaque page web s'effondrait en UN seul intelItem figé sur l'URL du
+ * portail. Heuristique regex (pas un vrai parseur DOM) : on récupère les liens et titres porteurs
+ * de texte substantiel, on déduplique par intitulé, et on renvoie jusqu'à `max` entrées
+ * {title, link, description}. Chaque entrée aura ainsi un ID déterministe distinct.
+ */
+function extractWebItems(html, base, max = 8) {
+  const seen = new Set();
+  const items = [];
+  const push = (rawTitle, href) => {
+    const title = String(rawTitle || "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (title.length < 25 || title.length > 220) return; // trop court = menu/nav ; trop long = paragraphe
+    const key = title.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ title, link: absolutizeUrl(href, base) || base, description: "" });
+  };
+  // 1) Ancres avec texte porteur (avis d'AO listés comme liens).
+  const aRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = aRe.exec(html)) !== null && items.length < max * 3) {
+    push(m[2], m[1]);
+  }
+  // 2) Titres h1-h3 (actualités structurées) si on manque d'items.
+  if (items.length < max) {
+    const hRe = /<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi;
+    while ((m = hRe.exec(html)) !== null && items.length < max * 3) {
+      push(m[1], null);
+    }
+  }
+  return items.slice(0, max);
+}
+
+/** Détecte une page « coquille » (SPA JS non rendue) : très peu de texte utile → source dégradée
+ * (M1 audit). Renvoie true si le contenu extrait est trop maigre pour être du renseignement. */
+function isDegradedWebPage(text) {
+  return !text || text.replace(/\s+/g, " ").trim().length < 200;
 }
 
 /**
@@ -434,70 +524,95 @@ async function runSyncSources(db) {
   let sourcesProcessed = 0;
   let itemsCreated = 0;
 
-  for (const sourceDoc of sourcesSnap.docs) {
+  // Traite UNE source : fetch + extraction + classification. Renvoie le nombre d'items créés.
+  // Isolé pour être exécuté en LOTS PARALLÈLES (runInBatches) — la boucle séquentielle précédente
+  // dépassait le timeout avant d'avoir traité toutes les sources (C4 audit 2026-07).
+  const processSource = async (sourceDoc) => {
     const source = { id: sourceDoc.id, ...sourceDoc.data() };
     try {
-      if (source.kind === "manual") {
-        logger.info(`syncSources: skip ${source.id} (kind=manual, no auto-fetch)`);
-        continue;
-      }
+      if (source.kind === "manual") return 0;
       if (!source.url) {
         logger.warn(`syncSources: skip ${source.id} — no url configured for kind=${source.kind}`);
-        continue;
+        return 0;
       }
 
       const context = { sourceName: source.name, defaultSourceRating: source.sourceRating };
+      let created = 0;
+      let degraded = false;
 
       if (source.kind === "rss" || source.kind === "newsletter" || source.kind === "portal") {
         const res = await fetch(source.url, { headers: SOURCE_FETCH_HEADERS });
         if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
         const xml = await res.text();
-        // Rééquilibrage du fil (2026-07) : les flux tech/cyber MONDIAUX (Hacker News,
-        // BleepingComputer...) sont très prolifiques et noyaient les signaux locaux — plafond
-        // réduit à 2 items/run pour l'axe tech, 5 pour les axes business/locaux.
+        // Rééquilibrage du fil : les flux tech/cyber MONDIAUX sont prolifiques et noyaient les
+        // signaux locaux — plafond réduit à 2 items/run pour l'axe tech, 5 pour les axes locaux.
         const rssItems = extractRssItems(xml, source.axis === "tech" ? 2 : 5);
-        for (const rssItem of rssItems) {
-          const rawText = `${rssItem.title}\n${rssItem.description}`.trim();
-          if (!rawText) continue;
-          const classified = await classifyRawText(rawText, watchlistEntities, {
-            ...context,
-            url: rssItem.link || source.url,
-          });
-          if (classified) {
+        // Classification des items d'une même source en parallèle (chaque appel Vertex est indep.).
+        const settled = await Promise.allSettled(
+          rssItems.map(async (rssItem) => {
+            const rawText = `${rssItem.title}\n${rssItem.description}`.trim();
+            if (!rawText) return false;
+            const classified = await classifyRawText(rawText, watchlistEntities, {
+              ...context,
+              url: rssItem.link || source.url,
+              // Date d'événement = pubDate du flux si dispo (m3 audit) → ID stable, pas de doublon quotidien.
+              defaultDate: rssItem.pubDate || undefined,
+            });
+            if (!classified) return false;
             const { written } = await upsertClassifiedItem(db, classified);
-            if (written) itemsCreated += 1;
-          }
-        }
+            return written;
+          })
+        );
+        created = settled.filter((s) => s.status === "fulfilled" && s.value).length;
       } else if (source.kind === "web") {
         const res = await fetch(source.url, { headers: SOURCE_FETCH_HEADERS });
         if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
         const html = await res.text();
-        const rawText = extractWebText(html);
-        if (rawText) {
-          const classified = await classifyRawText(rawText, watchlistEntities, { ...context, url: source.url });
-          if (classified) {
-            const { written } = await upsertClassifiedItem(db, classified);
-            if (written) itemsCreated += 1;
+        // C5 : extraction MULTI-ITEMS — chaque avis/actualité devient un intelItem à ID distinct
+        // (lien de l'item, sinon titre+date), au lieu d'UN doc figé sur l'URL du portail.
+        const webItems = extractWebItems(html, source.url, source.axis === "tech" ? 2 : 8);
+        if (webItems.length) {
+          const settled = await Promise.allSettled(
+            webItems.map(async (wi) => {
+              const perItemLink = wi.link && wi.link !== source.url ? wi.link : undefined;
+              const classified = await classifyRawText(wi.title, watchlistEntities, {
+                ...context,
+                // Pas de lien propre → on N'ANCRE PAS sur l'URL du portail (sinon collapse) : ID = titre+date.
+                url: perItemLink,
+              });
+              if (!classified) return false;
+              const { written } = await upsertClassifiedItem(db, classified);
+              return written;
+            })
+          );
+          created = settled.filter((s) => s.status === "fulfilled" && s.value).length;
+        } else {
+          // Repli : page sans items structurés → texte global, ancré sur titre+date (pas l'URL).
+          const rawText = extractWebText(html);
+          degraded = isDegradedWebPage(rawText); // M1 : page coquille (SPA) = source dégradée
+          if (rawText && !degraded) {
+            const classified = await classifyRawText(rawText, watchlistEntities, { ...context });
+            if (classified) {
+              const { written } = await upsertClassifiedItem(db, classified);
+              if (written) created = 1;
+            }
           }
         }
       } else {
         logger.warn(`syncSources: skip ${source.id} — unrecognized kind "${source.kind}"`);
-        continue;
+        return 0;
       }
 
       await sourceDoc.ref.update({
         lastFetch: FieldValue.serverTimestamp(),
-        lastStatus: "ok",
+        lastStatus: degraded ? "degraded: contenu insuffisant (page probablement JS)" : "ok",
         consecutiveFailures: 0,
       });
-      sourcesProcessed += 1;
+      return created;
     } catch (err) {
-      // Documented per task brief: one failing source must never abort the whole sync.
       logger.error(`syncSources: source ${source.id} (${source.kind}) failed — ${err.message}`);
-      // Source health tracking (self-curating pipeline — "100% automatique"): record the failure
-      // on the source doc; after MAX_CONSECUTIVE_FAILURES straight failures the source is
-      // auto-deactivated so dead feeds stop wasting fetch/AI cycles and surface visibly in the UI
-      // (active=false). A human can re-activate after fixing the URL.
+      // Santé des sources (pipeline auto-curatif) : après MAX_CONSECUTIVE_FAILURES échecs, la
+      // source est auto-désactivée pour ne plus gaspiller de cycles fetch/IA.
       try {
         const failures = (source.consecutiveFailures || 0) + 1;
         const deactivate = failures >= MAX_CONSECUTIVE_FAILURES;
@@ -513,6 +628,15 @@ async function runSyncSources(db) {
       } catch (updateErr) {
         logger.error(`syncSources: failed to record failure on source ${source.id} — ${updateErr.message}`);
       }
+      throw err; // propagé à allSettled → compté comme échec, sans abattre le run
+    }
+  };
+
+  const settled = await runInBatches(sourcesSnap.docs, AI_CONCURRENCY, processSource);
+  for (const s of settled) {
+    if (s.status === "fulfilled") {
+      sourcesProcessed += 1;
+      itemsCreated += s.value || 0;
     }
   }
 
@@ -524,7 +648,7 @@ async function runSyncSources(db) {
  * syncSources — Scheduler (quotidien 06:00 Africa/Abidjan). Thin wrapper around runSyncSources().
  * Roadmap: V7 IA & sync.
  */
-exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1" }, async () => {
+exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" }, async () => {
   await runSyncSources(firestoreDb());
 });
 
@@ -534,7 +658,7 @@ exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abid
  * Exec-gated, same pattern as classifyAI/generateBriefing/exportPdf.
  * Roadmap: V7 IA & sync (added post-deploy for real-data onboarding).
  */
-exports.syncSourcesNow = onCall(CALLABLE_OPTS, async (request) => {
+exports.syncSourcesNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "lancer une synchronisation de la veille");
   const result = await runSyncSources(firestoreDb());
   return result;
@@ -557,7 +681,7 @@ exports.syncSourcesNow = onCall(CALLABLE_OPTS, async (request) => {
  * exec-triggered request for new AI review, not a mass background overwrite.
  * Roadmap: V7 IA & sync.
  */
-exports.classifyAI = onCall(CALLABLE_OPTS, async (request) => {
+exports.classifyAI = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "reclassifier un signal");
 
   const { itemId } = request.data || {};
@@ -610,6 +734,39 @@ exports.scoreItems = onDocumentWritten({ document: "intelItems/{id}", region: "e
   await after.ref.update({ priorityScore: computed });
   logger.info(`scoreItems: ${after.ref.path} priorityScore=${computed}`);
 });
+
+/**
+ * rescoreDaily — Scheduler (quotidien 04:30, avant la sync de 06:00).
+ * CORRIGE C6 (audit 2026-07) : `priorityScore` n'était (re)calculé qu'à l'écriture d'un document,
+ * alors que la proximité dépend du temps réel (échéance d'un AO). Un appel d'offres à J-60 restait
+ * figé « non-urgent » et ne remontait jamais quand il approchait de J-3. Ce job relit les signaux
+ * NON archivés et réécrit le score quand il a bougé (la même garde no-op que scoreItems évite les
+ * écritures inutiles). Seuls les scores dont la valeur change déclenchent une réécriture.
+ */
+async function runRescoreActive(db) {
+  const snap = await db.collection("intelItems").get();
+  // Filtre en mémoire (collection de petite taille) : un `!=` Firestore exclurait les docs sans
+  // champ `status`. On re-score tout ce qui n'est pas archivé.
+  const active = snap.docs.filter((d) => (d.data().status || "new") !== "archived");
+  const updates = active.map(async (doc) => {
+    const item = doc.data();
+    const computed = computePriorityScore(item);
+    if (item.priorityScore === computed) return false;
+    await doc.ref.update({ priorityScore: computed });
+    return true;
+  });
+  const settled = await Promise.allSettled(updates);
+  const rescored = settled.filter((s) => s.status === "fulfilled" && s.value).length;
+  logger.info(`rescoreDaily: done — ${rescored}/${active.length} signaux re-scorés (échéances rafraîchies)`);
+  return { total: active.length, rescored };
+}
+
+exports.rescoreDaily = onSchedule(
+  { schedule: "30 4 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
+  async () => {
+    await runRescoreActive(firestoreDb());
+  }
+);
 
 /**
  * Recomputes summaries/veille (BUILD_KIT.md §6) from the full `intelItems` collection.
@@ -688,13 +845,50 @@ exports.aggregateVeille = onDocumentWritten({ document: "intelItems/{id}", regio
  * decisions/winLoss/initiatives/summaries.quanti are later roadmap phases (V4/V6).
  */
 async function computeVeilleExecSummary(db) {
-  const [snap, watchlistSnap, quantiSnap] = await Promise.all([
+  const [snap, watchlistSnap, quantiSnap, winLossSnap, initiativesSnap, decisionsSnap] = await Promise.all([
     db.collection("intelItems").get(),
     db.collection("intelWatchlist").get(),
     db.doc("summaries/quanti").get(),
+    db.collection("winLoss").get(),
+    db.collection("initiatives").get(),
+    db.collection("decisions").get(),
   ]);
   const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   const quanti = quantiSnap.exists ? quantiSnap.data() : null;
+
+  // Win rate par concurrent depuis winLoss (réel — C3 audit 2026-07). Même logique que
+  // web/lib/execution.ts winRateByCompetitor pour cohérence front/back.
+  const wlByComp = {};
+  for (const d of winLossSnap.docs) {
+    const e = d.data();
+    if (!e || typeof e.competitor !== "string" || !e.competitor.trim()) continue;
+    const b = (wlByComp[e.competitor] ??= { wins: 0, total: 0, amountWon: 0, amountLost: 0 });
+    b.total += 1;
+    if (e.result === "win") { b.wins += 1; if (Number.isFinite(e.amount)) b.amountWon += Number(e.amount); }
+    else if (e.result === "loss" && Number.isFinite(e.amount)) b.amountLost += Number(e.amount);
+  }
+  const winRateByCompetitor = {};
+  let winsTotal = 0;
+  let dealsTotal = 0;
+  for (const [c, b] of Object.entries(wlByComp)) {
+    winRateByCompetitor[c] = { win: b.total ? b.wins / b.total : 0, deals: b.total, amountWon: b.amountWon, amountLost: b.amountLost };
+    winsTotal += b.wins;
+    dealsTotal += b.total;
+  }
+  const winRateGlobal = dealsTotal ? winsTotal / dealsTotal : null;
+
+  // Avancement OKR depuis initiatives (réel — C3). Moyenne pondérée des progress, hors abandonnées.
+  const initiatives = initiativesSnap.docs.map((d) => d.data()).filter((i) => i && i.status !== "abandoned");
+  const okrProgress = initiatives.length
+    ? Math.round((initiatives.reduce((s, i) => s + (Number.isFinite(i.progress) ? Number(i.progress) : 0), 0) / initiatives.length) * 100) / 100
+    : null;
+
+  // Décisions en attente (réel — C3). Décisions sans résolution (statut proposé/à trancher).
+  const decisionsPending = decisionsSnap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((d) => d.status === "proposed" || d.status === "pending" || d.status === "open" || !d.status)
+    .slice(0, 8)
+    .map((d) => ({ id: d.id, title: d.title || d.decision || "—", owner: d.decidedBy || d.owner || "—" }));
 
   // Pipeline influencé par la veille (wired 2026-07-02, once the internal pipeline landed via
   // nt360): value-at-stake carried by clients the veille tracks (watchlist) or has produced
@@ -722,14 +916,15 @@ async function computeVeilleExecSummary(db) {
       menacesTotal,
       menacesTraitees,
       opportunites,
+      winRateGlobal, // taux de victoire global (winLoss) — null si aucun deal enregistré
       tti: null, // time-to-insight needs decision timestamps — V6 (decisions collection)
     },
-    decisionsPending: [], // decisions collection is V6
+    decisionsPending, // décisions non tranchées (collection decisions)
     porter: quanti ? quanti.porterForces ?? null : null, // from summaries/quanti (nt360 sync)
-    winRateByCompetitor: {}, // winLoss collection is V6
+    winRateByCompetitor, // taux de victoire par concurrent (winLoss)
     pipelineInfluenced, // veille-tracked clients' value-at-stake — see computation above
     threatsExposure,
-    okrProgress: null, // initiatives collection is V6
+    okrProgress, // avancement moyen des initiatives (0-1) — null si aucune initiative
     updatedAt: FieldValue.serverTimestamp(),
   };
 }
@@ -816,7 +1011,7 @@ async function runGenerateBriefing(db, generatedBy) {
   return { id: ref.id, status: briefing.status };
 }
 
-exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
+exports.generateBriefing = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "générer un briefing");
   const result = await runGenerateBriefing(firestoreDb(), `vertex-ai:${request.auth.uid}`);
   if (!result) {
@@ -832,7 +1027,7 @@ exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
  * revue humaine reste obligatoire avant toute diffusion (garde dans parseBriefingResponse).
  */
 exports.generateBriefingWeekly = onSchedule(
-  { schedule: "0 7 * * 5", timeZone: "Africa/Abidjan", region: "europe-west1" },
+  { schedule: "0 7 * * 5", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
     const result = await runGenerateBriefing(firestoreDb(), "vertex-ai:scheduled");
     if (!result) {
@@ -910,6 +1105,41 @@ async function writeFrameworkDoc(db, key, content) {
  * SWOT/PESTEL, tech radar, battlecard moves — each in its own try/catch so one failure never
  * kills the others. Returns a summary object (also logged).
  */
+/**
+ * Ancre la POSITION concurrentielle des segments GE-McKinsey ÉTABLIS sur les CAS internes réels
+ * (M2 audit 2026-07). Pour chaque segment dont le nom recoupe une BU de `granularite`, la position
+ * IA est fondue (50/50) avec un proxy interne dérivé de la part de CAS (présence établie) et de la
+ * croissance (momentum). Les segments émergents (sans CAS) gardent la position estimée par l'IA.
+ * Mutation en place ; ajoute `posSource: "interne+ia" | "ia"`.
+ * @param {Array<{n:string, pos:number, emerging?:boolean}>} items
+ * @param {Array<{seg:string, casN:number, casN1:number, delta:number}>|null} granularite
+ */
+function anchorGe9PositionsOnInternalCas(items, granularite) {
+  if (!Array.isArray(items) || !Array.isArray(granularite) || !granularite.length) return;
+  const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const tokens = (s) => new Set(norm(s).split(/[^a-z0-9]+/).filter((t) => t.length >= 3));
+  const maxCas = Math.max(...granularite.map((g) => (Number.isFinite(g.casN) ? g.casN : 0)), 1);
+  for (const it of items) {
+    if (it.emerging) { it.posSource = "ia"; continue; }
+    const itTok = tokens(it.n);
+    // Match par recouvrement de tokens (ex. "Cybersécurité & SOC" ↔ BU "Cybersécurité").
+    let best = null;
+    for (const g of granularite) {
+      const gt = tokens(g.seg);
+      const overlap = [...itTok].filter((t) => gt.has(t)).length;
+      if (overlap > 0 && (!best || overlap > best.overlap)) best = { g, overlap };
+    }
+    if (!best) { it.posSource = "ia"; continue; }
+    const g = best.g;
+    const share = maxCas > 0 ? Math.max(0, (Number(g.casN) || 0) / maxCas) : 0; // 0..1 vs plus grosse BU
+    const growthAdj = (Number(g.delta) || 0) > 0 ? 10 : (Number(g.delta) || 0) < 0 ? -10 : 0;
+    // Avoir un CAS réel = position déjà établie : plancher +15 ; part relative pondérée à 70.
+    const internalPos = Math.max(0, Math.min(100, Math.round(15 + share * 70 + growthAdj)));
+    it.pos = Math.max(0, Math.min(100, Math.round(0.5 * it.pos + 0.5 * internalPos)));
+    it.posSource = "interne+ia";
+  }
+}
+
 async function runEnrichment(db) {
   const itemsSnap = await db.collection("intelItems").get();
   const signals = pickSignalsForEnrichment(itemsSnap.docs.map((d) => d.data()));
@@ -1121,8 +1351,9 @@ async function runEnrichment(db) {
     logger.error(`runEnrichment: diagnostic generation FAILED — ${err.message}`, { err });
   }
 
-  // 7. GE-McKinsey (frameworks/ge9) — attractivité marché estimée par l'IA, position/taille
-  // ancrées sur les CAS réels par BU (summaries/quanti.granularite). « Portefeuille vide », 2026-07.
+  // 7. GE-McKinsey (frameworks/ge9) — attractivité marché estimée par l'IA. La POSITION des
+  // segments ÉTABLIS est désormais ANCRÉE sur les CAS internes réels (M2 audit 2026-07 : le libellé
+  // « position (données internes) » était mensonger, la position venait entièrement de l'IA).
   try {
     const quantiSnap = await db.doc("summaries/quanti").get();
     const granularite = quantiSnap.exists ? quantiSnap.data()?.granularite : null;
@@ -1131,6 +1362,7 @@ async function runEnrichment(db) {
       summary.ge9 = "parse-failed";
       logger.error("runEnrichment: ge9 response unusable (parse returned null)");
     } else {
+      anchorGe9PositionsOnInternalCas(parsed.items, granularite);
       summary.ge9 = await writeFrameworkDoc(db, "ge9", parsed);
     }
   } catch (err) {
@@ -1215,7 +1447,7 @@ async function runEnrichment(db) {
  * Regenerates the strategic artifacts from the week's accumulated signals via `runEnrichment`.
  */
 exports.enrichStrategicArtifacts = onSchedule(
-  { schedule: "0 5 * * 1", timeZone: "Africa/Abidjan", region: "europe-west1" },
+  { schedule: "0 5 * * 1", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
     await runEnrichment(firestoreDb());
   }
@@ -1225,7 +1457,7 @@ exports.enrichStrategicArtifacts = onSchedule(
  * enrichNow — callable, exec-gated (same pattern as syncSourcesNow/classifyAI): triggers the
  * enrichment pipeline on demand and returns its summary.
  */
-exports.enrichNow = onCall(CALLABLE_OPTS, async (request) => {
+exports.enrichNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "lancer l'enrichissement IA");
   const result = await runEnrichment(firestoreDb());
   logger.info(`enrichNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
@@ -1327,14 +1559,14 @@ async function runInternalQuantiSync(db) {
  * workflow GHA run-quanti-now.yml.
  */
 exports.syncInternalQuanti = onSchedule(
-  { schedule: "30 5 * * *", timeZone: "Africa/Abidjan", region: "europe-west1" },
+  { schedule: "30 5 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
     await runInternalQuantiSync(firestoreDb());
   }
 );
 
 /** syncInternalQuantiNow — callable exec-gated (même patron que syncSourcesNow/enrichNow). */
-exports.syncInternalQuantiNow = onCall(CALLABLE_OPTS, async (request) => {
+exports.syncInternalQuantiNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "synchroniser les données internes (nt360)");
   const result = await runInternalQuantiSync(firestoreDb());
   logger.info(`syncInternalQuantiNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
@@ -1353,7 +1585,7 @@ exports.syncInternalQuantiNow = onCall(CALLABLE_OPTS, async (request) => {
  * exportPdf.test.js; only the Storage upload/signed-URL plumbing below is unverified.
  * Roadmap: V7 IA & sync.
  */
-exports.exportPdf = onCall(CALLABLE_OPTS, async (request) => {
+exports.exportPdf = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "exporter un briefing en PDF");
 
   const db = firestoreDb();

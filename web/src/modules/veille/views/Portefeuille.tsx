@@ -6,7 +6,7 @@ import { useInitiatives } from "../lib/execution";
 import { useFramework } from "../lib/frameworks";
 import { useQuantiSummary } from "../lib/quanti";
 
-type Ge9Content = { items: { n: string; attr: number; pos: number; size: number; note?: string; emerging?: boolean }[] };
+type Ge9Content = { items: { n: string; attr: number; pos: number; size: number; note?: string; emerging?: boolean; posSource?: "interne+ia" | "ia" }[] };
 type HorizonsContent = { items: { h: "H1" | "H2" | "H3"; title: string; d?: string }[] };
 
 /**
@@ -57,14 +57,14 @@ export function Portefeuille() {
           <Eyebrow color={T.emerald}>Matrice GE-McKinsey — attractivité du marché × position concurrentielle</Eyebrow>
           <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>
             En attente de la première génération IA (enrichissement hebdomadaire) — l'attractivité des marchés est estimée
-            depuis les signaux de veille, la position depuis les données internes.
+            depuis les signaux de veille ; la position des segments établis est ancrée sur les CAS internes réels.
           </div>
         </Card>
       )}
       {c === "ge9" && ge9.length > 0 && (
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-            <Eyebrow color={T.emerald}>Matrice GE-McKinsey — attractivité (IA, signaux) × position (données internes)</Eyebrow>
+            <Eyebrow color={T.emerald}>Matrice GE-McKinsey — attractivité (IA, signaux) × position (CAS internes + IA)</Eyebrow>
             <Badge c={T.emerald}>Généré par l'IA — taille = poids du segment</Badge>
           </div>
           <div style={{ height: 340, marginTop: 10 }}>

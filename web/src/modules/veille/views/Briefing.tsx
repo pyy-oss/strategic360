@@ -93,6 +93,7 @@ export function Briefing() {
   const opportunities = briefing.content.topOpportunities ?? [];
   const threats = briefing.content.topThreats ?? [];
   const recommendations = briefing.content.recommendations ?? [];
+  const decisionsRequested = briefing.content.decisionsRequested ?? [];
 
   return (
     <div>
@@ -156,12 +157,32 @@ export function Briefing() {
           </div>
           {recommendations.length > 0 && (
             <div style={{ marginTop: 14, padding: "12px 14px", background: T.panel2, borderRadius: 10, borderLeft: `3px solid ${T.gold}` }}>
-              <div style={{ fontSize: 12, color: T.gold, fontWeight: 600, marginBottom: 6 }}>Recommandations au comité</div>
-              <ol style={{ margin: 0, paddingLeft: 16, lineHeight: 1.8, color: T.ink, fontSize: 12.5 }}>
+              <div style={{ fontSize: 12, color: T.gold, fontWeight: 600, marginBottom: 8 }}>Recommandations au comité</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
                 {recommendations.map((r, i) => (
-                  <li key={i}>{r}</li>
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 10, alignItems: "start" }}>
+                    <span style={{ fontFamily: "monospace", fontSize: 12, color: T.gold, fontWeight: 700, paddingTop: 1 }}>{i + 1}.</span>
+                    <div>
+                      <div style={{ fontSize: 13, color: T.ink, fontWeight: 600, lineHeight: 1.5 }}>{r.action}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", marginTop: 3, fontSize: 11.5, color: T.dim }}>
+                        <span>👤 {r.owner}</span>
+                        <span>📅 {r.deadline}</span>
+                        {r.expectedValue && <span style={{ color: T.emerald }}>💰 {r.expectedValue}</span>}
+                      </div>
+                    </div>
+                  </div>
                 ))}
-              </ol>
+              </div>
+            </div>
+          )}
+          {decisionsRequested.length > 0 && (
+            <div style={{ marginTop: 12, padding: "12px 14px", background: T.panel2, borderRadius: 10, borderLeft: `3px solid ${T.clay}` }}>
+              <div style={{ fontSize: 12, color: T.clay, fontWeight: 600, marginBottom: 6 }}>Décisions demandées au comité</div>
+              <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.8, color: T.ink, fontSize: 12.5 }}>
+                {decisionsRequested.map((d, i) => (
+                  <li key={i}>{d}</li>
+                ))}
+              </ul>
             </div>
           )}
         </div>

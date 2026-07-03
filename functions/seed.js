@@ -100,6 +100,15 @@ const WATCHLIST_SEED = [
   { name: "ANSSI-CI", type: "Régulateur", geo: "Côte d'Ivoire", priority: "Haute", active: true, note: "Audits SI triennaux obligatoires (décret 2021-917), agréments PASSI, RGSSI, OIV — générateur n°1 d'obligations monétisables" },
   { name: "ARTCI", type: "Régulateur", geo: "Côte d'Ivoire", priority: "Haute", active: true, note: "Homologation équipements, données personnelles (loi 2013-450), agréments PSCE" },
   { name: "AMF-UMOA", type: "Régulateur", geo: "Afrique de l'Ouest", priority: "Moyenne", active: true, note: "Instructions mars 2024 sur les SI BRVM/DC-BR/SGI — levier d'upsell direct chez la BRVM cliente" },
+  // Éditeurs/distributeurs suivis dans le contexte mais absents de la watchlist (M10 audit 2026-07)
+  { name: "Nutanix", type: "Éditeur", geo: "Afrique", priority: "Haute", active: true, note: "Cible de MIGRATION suite aux hausses VMware/Broadcom — opportunité d'offre hyperconvergence ; à capter activement" },
+  { name: "Ingram Micro", type: "Distributeur", geo: "Afrique", priority: "Moyenne", active: true, note: "Distributeur pivot de la fusion HPE/Juniper Partner Ready Vantage (01/11/2026)" },
+  { name: "TD SYNNEX", type: "Distributeur", geo: "Afrique", priority: "Moyenne", active: true, note: "Distribution mondiale HPE/Juniper Vantage — conditions & lignes de crédit à surveiller" },
+  { name: "Dell Technologies", type: "Constructeur", geo: "Afrique", priority: "Moyenne", active: true, note: "Serveurs/stockage — alternative HPE, pipeline refresh datacenter" },
+  { name: "Veeam", type: "Éditeur", geo: "Afrique", priority: "Moyenne", active: true, note: "Sauvegarde/DRP — brique récurrente des offres managées et conformité" },
+  { name: "Sophos", type: "Éditeur", geo: "Afrique", priority: "Basse", active: true, note: "Endpoint/MDR — concurrence/complément Fortinet sur le mid-market cyber" },
+  { name: "Trend Micro", type: "Éditeur", geo: "Afrique", priority: "Basse", active: true, note: "Sécurité cloud/endpoint — veille produit & programme partenaire" },
+  { name: "IBM", type: "Éditeur", geo: "Afrique", priority: "Basse", active: true, note: "Infra/QRadar SIEM/services — grands comptes bancaires" },
 ];
 
 // intelSources seed entries — first jet per BUILD_KIT.md §9.B (AO & financements, réglementaire,
@@ -174,7 +183,43 @@ const SOURCES_SEED = [
   // Équilibrage des feeds mondiaux anglophones (audit 2026-07, Action 3.6)
   { name: "Check Point Blog (RSS)", kind: "rss", url: "https://blog.checkpoint.com/feed/", axis: "tech", active: true },
   { name: "We Are Tech Africa (RSS)", kind: "rss", url: "https://www.wearetech.africa/fr/?format=feed", axis: "tech", active: true },
+  // Enjeux « critiques » du modèle économique jusqu'ici sans capteur (M10 audit 2026-07) :
+  // change (FX USD/XOF), douanes à l'import, talents/salaires ingénieurs cyber/cloud.
+  { name: "BCEAO — Taux & cours de change", kind: "web", url: "https://www.bceao.int/fr/cours-de-change", axis: "reglementaire", active: true },
+  { name: "Direction Générale des Douanes CI — actualités & tarifs", kind: "web", url: "https://www.douanes.ci/", axis: "reglementaire", active: true },
+  { name: "Emploi.ci — offres IT/cyber/cloud (tension talents)", kind: "web", url: "https://www.emploi.ci/recherche-jobs-cote-ivoire/informatique-t%C3%A9l%C3%A9com", axis: "concurrents", active: true },
+  // Distributeurs pivots de la fusion HPE/Juniper Vantage & éditeur cible de migration VMware (M10).
+  { name: "Ingram Micro — Newsroom", kind: "web", url: "https://www.ingrammicro.com/en-us/newsroom", axis: "partenaires", active: true },
+  { name: "TD SYNNEX — Newsroom", kind: "web", url: "https://www.tdsynnex.com/na/us/news-events/", axis: "partenaires", active: true },
+  { name: "Nutanix — Blog (RSS)", kind: "rss", url: "https://www.nutanix.com/blog/rss.xml", axis: "partenaires", active: true },
 ];
+
+/**
+ * Note de crédibilité (code de l'amirauté "A1".."F5") par défaut d'une source (M7 audit 2026-07).
+ * Sans ça, toutes les sources tombaient à "C3" en dur → crédibilité aplatie dans le scoring
+ * (la BCEAO notée comme un blog obscur). Heuristique par nature de la source :
+ *   - Institutions/régulateurs officiels : A2 (fiable, généralement confirmé).
+ *   - Éditeurs/constructeurs/distributeurs officiels (newsroom/blog) : B2.
+ *   - Flux cyber mondiaux reconnus : B3 (fiable mais non local/business).
+ *   - Presse économique/tech régionale établie : C2.
+ *   - Sites corporate de concurrents (auto-promotionnels) : C3.
+ *   - Reste : C3 (neutre prudent).
+ */
+function ratingForSource(entry) {
+  const n = (entry.name || "").toLowerCase();
+  const url = (entry.url || "").toLowerCase();
+  const official = ["artci", "bceao", "anssi", "amf-umoa", "amf umoa", "ministère", "ministere", "douanes", "dgi", "trésor", "tresor", "dgmp", "marchespublics", "sigomap", "arcop", "cepici", "banque mondiale", "world bank", "worldbank", "bad", "afdb", "uemoa", "boad", "autorité de protection", "autorite de protection"];
+  if (official.some((k) => n.includes(k) || url.includes(k.replace(/\s/g, "")))) return "A2";
+  const vendors = ["cisco", "fortinet", "palo alto", "paloalto", "hpe", "wallix", "microsoft", "huawei", "broadcom", "vmware", "westcon", "exclusive", "nutanix", "veeam", "ingram"];
+  if (vendors.some((k) => n.includes(k) || url.includes(k.replace(/\s/g, "")))) return "B2";
+  const globalCyber = ["hacker news", "hackernews", "bleepingcomputer", "bleeping", "check point", "checkpoint"];
+  if (globalCyber.some((k) => n.includes(k) || url.includes(k.replace(/\s/g, "")))) return "B3";
+  const press = ["jeune afrique", "financial afrik", "agence ecofin", "ecofin", "cio mag", "cio-mag", "afrique it news", "afriqueitnews", "sika finance", "sikafinance", "fraternité", "fratmat", "we are tech", "wearetech", "apa news", "apanews", "abidjan.net", "cybersecurity"];
+  if (press.some((k) => n.includes(k) || url.includes(k.replace(/\s/g, "")))) return "C2";
+  const competitors = ["talentys", "sndi", "orange business", "cbi", "inovatec", "oc2s"];
+  if (competitors.some((k) => n.includes(k) || url.includes(k.replace(/\s/g, "")))) return "C3";
+  return "C3";
+}
 
 async function seed() {
   initializeApp();
@@ -199,11 +244,17 @@ async function seed() {
   const sourcesCol = db.collection("intelSources");
   for (const entry of SOURCES_SEED) {
     const existing = await sourcesCol.where("name", "==", entry.name).limit(1).get();
+    const sourceRating = entry.sourceRating || ratingForSource(entry);
     if (existing.empty) {
-      await sourcesCol.add({ ...entry, lastFetch: null });
+      await sourcesCol.add({ ...entry, sourceRating, lastFetch: null });
+    } else {
+      // Rétro-remplissage (M7 audit) : une source déjà seedée sans note de crédibilité en reçoit
+      // une, sans écraser une note posée à la main.
+      const doc = existing.docs[0];
+      if (!doc.data().sourceRating) await doc.ref.update({ sourceRating });
     }
   }
-  console.log(`Seeded intelSources (${SOURCES_SEED.length} entries, idempotent by name).`);
+  console.log(`Seeded intelSources (${SOURCES_SEED.length} entries, idempotent by name; sourceRating rétro-rempli).`);
 
   // Contexte entreprise DYNAMIQUE (frameworks/companyContext) — seedé depuis le fichier statique
   // uniquement s'il n'existe pas encore. updatedBy "ai:seed" (préfixe "ai:") laisse

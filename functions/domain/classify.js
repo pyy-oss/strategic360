@@ -89,10 +89,11 @@ exactement ce schéma :
   "title": string,               // titre court et factuel du signal
   "summary": string,              // résumé en 2-3 phrases
   "axis": "partenaires" | "concurrents" | "clients_prospects" | "tech" | "reglementaire",
-  "subtype": string,               // ex: product_launch, eol, supply, program_change, pricing, ma,
-                                    // tender, funding, leadership, win, hire, regulation, trend, macro,
-                                    // market_entry (nouvel entrant), implantation (nouvelle implantation),
-                                    // expansion (expansion d'un groupe)
+  "subtype": string,               // ex: product_launch, eol, supply (pénurie/appro/crédit distributeur),
+                                    // vulnerability (faille/CVE sur techno d'un éditeur → campagne patch),
+                                    // program_change, pricing, ma, tender, funding, budget, leadership,
+                                    // win, hire, regulation, trend, macro, market_entry (nouvel entrant),
+                                    // implantation (nouvelle implantation), expansion (expansion d'un groupe)
   "impact": "high" | "medium" | "low",
   "stance": "opportunity" | "threat" | "neutral",
   "entity": string | null,         // nom de l'entité de la watchlist la plus proche, sinon null
@@ -123,8 +124,11 @@ AXES DE GUET PRIORITAIRES (à détecter activement dans le texte) :
   potentiel, menace si concurrent/désintermédiation.
 - ACTUALITÉ TECHNOLOGIQUE : ne retenir que l'angle BUSINESS pour une ESN en CI/UEMOA —
   vulnérabilité majeure sur les technologies de nos éditeurs (Cisco, Fortinet, Palo Alto, HPE,
-  Microsoft, Wallix) = opportunité de campagne de patch/upgrade/audit chez les clients équipés ;
-  nouvelle techno monétisable en zone = opportunité d'offre.
+  Microsoft, Wallix) → subtype "vulnerability", OPPORTUNITÉ de campagne de patch/upgrade/audit chez
+  les clients équipés ; nouvelle techno monétisable en zone = opportunité d'offre.
+- SOURCING / APPROVISIONNEMENT : pénurie, rupture, allongement des délais, changement de conditions
+  de crédit d'un distributeur (Hiperdist, Westcon, Exclusive, Ingram, TD SYNNEX) → subtype "supply" ;
+  déterminant pour la marge et la trésorerie (cycle long, backlog à financer).
 
 RÈGLE DE PERTINENCE GÉOGRAPHIQUE : une actualité tech/cyber MONDIALE sans lien exploitable avec
 la Côte d'Ivoire/UEMOA, nos clients, nos concurrents ou les technologies de nos éditeurs doit être

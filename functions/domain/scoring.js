@@ -103,6 +103,13 @@ const SUBTYPE_BUSINESS = {
   tender: 1.0,
   funding: 0.9,
   eol: 0.9,
+  // Sourcing & vulnérabilités (M5 audit 2026-07) — les deux signaux les plus liés au modèle
+  // économique réel de Neurones : une alerte pénurie/crédit distributeur touche la marge, et une
+  // vulnérabilité majeure sur le parc éditeur (Cisco/Fortinet/Palo Alto…) = campagne de
+  // patch/upgrade/audit, l'offre cyber la plus récurrente. Ils tombaient au défaut bas (0.4).
+  supply: 0.85,
+  vulnerability: 0.8,
+  cve: 0.8,
   regulation: 0.85,
   budget: 0.85,
   // Guet des mouvements d'acteurs (2026-07 : création/arrivée d'entreprises, expansion de
@@ -115,6 +122,11 @@ const SUBTYPE_BUSINESS = {
   ma: 0.55,
   win: 0.5,
   product_launch: 0.45,
+  // Signaux d'intelligence à plus faible convertibilité directe.
+  hire: 0.5,
+  leadership: 0.45,
+  trend: 0.4,
+  macro: 0.35,
 };
 
 function businessFactor(item) {
@@ -151,11 +163,17 @@ function alignementFactor(item) {
 }
 
 /**
- * `probabilite` factor — PENDING V7 (no IA-estimated likelihood yet; `classifyAI` will derive
- * this from source language/confidence in V7 IA & sync). Constant placeholder meanwhile.
+ * `probabilite` factor (M1 audit 2026-07 — n'est plus une constante morte). Dérive la vraisemblance
+ * du signal de la `confidence` estimée par le classifieur IA (high/medium/low) et le décote si le
+ * signal est marqué « faible » (`neuf`/signal faible — encore spéculatif). Défaut 0.7 si inconnu,
+ * pour ne pas pénaliser un signal correctement typé mais sans confidence renseignée.
  */
-function probabiliteFactor() {
-  return 0.7;
+const CONFIDENCE_PROB = { high: 0.9, medium: 0.7, low: 0.45 };
+function probabiliteFactor(item) {
+  const conf = typeof item?.confidence === "string" ? item.confidence.toLowerCase() : "";
+  let p = CONFIDENCE_PROB[conf] ?? 0.7;
+  if (item?.neuf === true) p *= 0.8; // signal faible/émergent : moins établi
+  return Math.round(p * 100) / 100;
 }
 
 /**
@@ -216,7 +234,7 @@ function computePriorityScore(item, now = Date.now()) {
   const credibilite = credibiliteFactor(item && item.sourceRating);
   const potentielBusiness = businessFactor(item);
   const alignement = alignementFactor(item);
-  const probabilite = probabiliteFactor();
+  const probabilite = probabiliteFactor(item);
   const proximite = proximiteFactor(item, now);
 
   const raw =

@@ -26,11 +26,21 @@ export interface BriefingTopItem {
   score: number;
 }
 
+/** Recommandation orientée décision (miroir de coerceRecommendation, functions/domain/briefing.js). */
+export interface BriefingRecommendation {
+  action: string;
+  owner: string;
+  deadline: string;
+  expectedValue: string | null;
+}
+
 export interface BriefingContent {
   narrative: string;
   topOpportunities: BriefingTopItem[];
   topThreats: BriefingTopItem[];
-  recommendations: string[];
+  recommendations: BriefingRecommendation[];
+  /** 1 à 3 décisions explicites demandées au comité (go/no-go AO, budget certif, agrément PASSI). */
+  decisionsRequested?: string[];
 }
 
 export type BriefingStatus = "draft" | "reviewed" | "published" | string;
