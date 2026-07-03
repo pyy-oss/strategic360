@@ -148,8 +148,8 @@ describe("deriveCopiloteAccounts (empreinte comptes pour le Copilote)", () => {
       { client: "Coris Bank", bu: "FORMATION", cas: 30 },
     ];
     const opps = [
-      { client: "SGCI", bu: "FORMATION", stage: 6, amount: 200 },   // gagné → historique
-      { client: "SGCI", bu: "ICT", stage: 2, amount: 400, weighted: 160 }, // en cours
+      { client: "SGCI", bu: "FORMATION", stage: 6, amount: 200 },   // gagné → historique + win
+      { client: "SGCI", bu: "ICT", stage: 2, amount: 400, weighted: 160, oppId: "OPP-1", stageLabel: "2-Montage", closingDate: "2026-09-30", probability: 40 }, // en cours
       { client: "SGCI", bu: "ICT", stage: 7, amount: 999 },          // perdu → ignoré
     ];
     const accts = deriveCopiloteAccounts(orders, opps);
@@ -160,5 +160,24 @@ describe("deriveCopiloteAccounts (empreinte comptes pour le Copilote)", () => {
     expect(sgci.historique.map((h) => h.offre).sort()).toEqual(["FORMATION", "ICT"]); // ICT via order, FORMATION via opp gagnée
     expect(sgci.enCours).toEqual(["ICT"]);
     expect(accts.find((a) => a.slug === "coris-bank").casTotal).toBe(30);
+  });
+
+  it("expose les affaires gagnées (wins) et les opportunités réelles en cours (chiffrées, triées, bornées à 8)", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const opps = [
+      { client: "SGCI", bu: "FORMATION", stage: 6, amount: 200 }, // gagné
+      { client: "SGCI", bu: "CYBER", stage: 6, amount: 500 },     // gagné
+      { client: "SGCI", bu: "ICT", stage: 3, amount: 400, oppId: "OPP-1", stageLabel: "3-Négociation", closingDate: "2026-09-30", probability: 60 },
+      { client: "SGCI", bu: "WAN", stage: 2, amount: 900, oppId: "OPP-2", stageLabel: "2-Montage" },
+      { client: "SGCI", bu: "ICT", stage: 7, amount: 999 },       // perdu → ignoré
+    ];
+    const sgci = deriveCopiloteAccounts([], opps).find((a) => a.slug === "sgci");
+    expect(sgci.wins).toBe(2);
+    expect(sgci.opportunites).toHaveLength(2);
+    // Triées par montant décroissant.
+    expect(sgci.opportunites[0]).toMatchObject({ nom: "OPP-2", montant: 900, etape: "2-Montage", bu: "WAN" });
+    expect(sgci.opportunites[1]).toMatchObject({ nom: "OPP-1", montant: 400, etape: "3-Négociation", closingDate: "2026-09-30", probability: 60 });
+    // Jamais d'undefined : probability absente → null.
+    expect(sgci.opportunites[0].probability).toBeNull();
   });
 });

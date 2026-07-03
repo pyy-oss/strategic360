@@ -1842,24 +1842,35 @@ async function runSyncCopiloteAccounts(db) {
     ordersSnap.docs.map((d) => d.data()),
     oppsSnap.docs.map((d) => d.data())
   );
+  // Écriture par lots (audit Copilote 2026-07) : le portefeuille réel compte ~800 comptes. Un
+  // `await set()` par compte = ~800 allers-retours séquentiels (lent, et fragile à mesure que le
+  // portefeuille grossit). On commit par lots de 400 (< la limite Firestore de 500 ops/commit) :
+  // 2 allers-retours au lieu de 800. Merge additif inchangé (les champs qualitatifs restent intacts).
+  const CHUNK = 400;
   let written = 0;
-  for (const acc of derived) {
-    await db.doc(`copiloteAccounts/${acc.slug}`).set(
-      {
-        nom: acc.nom,
-        nt360: {
-          historique: acc.historique,
-          enCours: acc.enCours,
-          casTotal: acc.casTotal,
-          pipelinePondere: acc.pipelinePondere,
-          wins: acc.wins,
-          opportunites: acc.opportunites,
-          updatedAt: FieldValue.serverTimestamp(),
+  for (let i = 0; i < derived.length; i += CHUNK) {
+    const slice = derived.slice(i, i + CHUNK);
+    const batch = db.batch();
+    for (const acc of slice) {
+      batch.set(
+        db.doc(`copiloteAccounts/${acc.slug}`),
+        {
+          nom: acc.nom,
+          nt360: {
+            historique: acc.historique,
+            enCours: acc.enCours,
+            casTotal: acc.casTotal,
+            pipelinePondere: acc.pipelinePondere,
+            wins: acc.wins,
+            opportunites: acc.opportunites,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
         },
-      },
-      { merge: true }
-    );
-    written += 1;
+        { merge: true }
+      );
+    }
+    await batch.commit();
+    written += slice.length;
   }
   logger.info(`runSyncCopiloteAccounts: ${written} comptes copilote pré-remplis depuis nt360`);
   return { accounts: written };
