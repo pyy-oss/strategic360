@@ -273,9 +273,13 @@ export function Innovation() {
                 {blips.map((b, i) => (
                   <g key={i}>
                     <circle cx={b.x} cy={b.y} r="5" fill={RING[b.ring].c} />
-                    <text x={b.x + 7} y={b.y + 3} fill={T.dim} fontSize="8.5">
-                      {b.n}
-                    </text>
+                    {/* Au-delà de 12 blips les étiquettes se superposent et rendent le radar
+                        illisible — on les masque et la liste sous le graphique prend le relais. */}
+                    {blips.length <= 12 && (
+                      <text x={b.x + 7} y={b.y + 3} fill={T.dim} fontSize="8.5">
+                        {b.n.length > 26 ? `${b.n.slice(0, 26)}…` : b.n}
+                      </text>
+                    )}
                   </g>
                 ))}
               </svg>
@@ -285,6 +289,15 @@ export function Innovation() {
                     <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 9, background: RING[r].c, marginRight: 4 }} />
                     {RING[r].l}
                   </span>
+                ))}
+              </div>
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
+                {liveBlips.map((b, i) => (
+                  <div key={b.id ?? i} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12, borderTop: i > 0 ? `1px solid ${T.line}` : "none", paddingTop: i > 0 ? 4 : 0 }}>
+                    <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 8, background: RING[b.ring]?.c ?? T.faint, flexShrink: 0, position: "relative", top: 0 }} />
+                    <span style={{ color: T.ink, fontWeight: 600 }}>{b.name}</span>
+                    <span style={{ color: T.faint }}>{QUAD_TECH[b.quadrant] ?? ""} · {b.ring}{b.momentum ? ` · ${b.momentum}` : ""}</span>
+                  </div>
                 ))}
               </div>
             </>

@@ -491,3 +491,68 @@ describe("parseGe9Response / parseHorizonsResponse", () => {
     expect(parseHorizonsResponse({ items: [] })).toBeNull();
   });
 });
+
+describe("consolidation radar + paris d'innovation (lisibilité 2026-07)", () => {
+  it("buildTechRadarPrompt liste le radar actuel à consolider et interdit les actions", async () => {
+    const { buildTechRadarPrompt } = await import("../domain/enrich.js");
+    const prompt = buildTechRadarPrompt([], undefined, ["SASE", "Patching Cisco Unified CM"]);
+    expect(prompt).toContain("REMPLACE cette liste");
+    expect(prompt).toContain("- Patching Cisco Unified CM");
+    expect(prompt).toContain("JAMAIS une");
+    expect(prompt).toContain("5 à 10 blips");
+  });
+
+  it("parseInnovationBetsResponse : clamp RICE, stage coercé, null si <2 paris", async () => {
+    const { parseInnovationBetsResponse } = await import("../domain/enrich.js");
+    const parsed = parseInnovationBetsResponse({
+      bets: [
+        { title: "Offre SOC managé souverain", reach: 8, impact: 9, confidence: 0.7, effort: 6, stage: "exploration", horizon: "H2" },
+        { title: "Conformité CERTINUM as-a-service", reach: 15, impact: -2, confidence: 3, effort: 0.4, stage: "n'importe quoi" },
+        { title: "  " },
+      ],
+    });
+    expect(parsed.bets).toHaveLength(2);
+    expect(parsed.bets[0].rice).toBeCloseTo(8.4); // (8·9·0.7)/6
+    expect(parsed.bets[1]).toMatchObject({ reach: 10, impact: 1, confidence: 1, effort: 1, stage: "idée" });
+    expect(parseInnovationBetsResponse({ bets: [{ title: "Seul", reach: 5, impact: 5, confidence: 0.5, effort: 5 }] })).toBeNull();
+  });
+});
+
+describe("battlecards complètes top 10 (« pas assez riche », 2026-07)", () => {
+  it("buildFullBattlecardsPrompt liste chaque concurrent avec sa note", async () => {
+    const { buildFullBattlecardsPrompt } = await import("../domain/enrich.js");
+    const prompt = buildFullBattlecardsPrompt([], [
+      { name: "Talentys", note: "Le concurrent le plus frontal" },
+      { name: "CBI" },
+    ]);
+    expect(prompt).toContain("- Talentys — Le concurrent le plus frontal");
+    expect(prompt).toContain("- CBI");
+    expect(prompt).toContain("ourWinThemes");
+    expect(prompt).toContain("nom EXACT");
+  });
+
+  it("parseFullBattlecardsResponse : trim, tableaux coercés, cartes vides écartées, null si 0 carte", async () => {
+    const { parseFullBattlecardsResponse } = await import("../domain/enrich.js");
+    const parsed = parseFullBattlecardsResponse({
+      cards: [
+        {
+          competitor: "  Talentys ",
+          positioning: " Leader cyber régional. ",
+          strengths: ["Références NSIA", 42, "Filiales Sénégal/CI"],
+          weaknesses: ["Peu d'ancrage réseau/datacenter"],
+          ourWinThemes: ["Jouer WALLIX Premier + proximité BCEAO"],
+        },
+        { competitor: "Fantôme", positioning: "Rien", strengths: [], weaknesses: [], ourWinThemes: [] },
+        { competitor: "", strengths: ["orpheline"] },
+      ],
+    });
+    expect(parsed.cards).toHaveLength(1);
+    expect(parsed.cards[0]).toMatchObject({
+      competitor: "Talentys",
+      positioning: "Leader cyber régional.",
+      strengths: ["Références NSIA", "Filiales Sénégal/CI"],
+    });
+    expect(parseFullBattlecardsResponse({ cards: [] })).toBeNull();
+    expect(parseFullBattlecardsResponse(null)).toBeNull();
+  });
+});

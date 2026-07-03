@@ -267,6 +267,8 @@ export interface Battlecard {
   theirLikelyMoves: string[];
   objectionHandling: string[];
   recentMoves: string[];
+  /** "ai" = maintenue par l'enrichissement ; "human" = éditée à la main (l'IA ne l'écrase plus). */
+  generatedBy?: "ai" | "human";
 }
 
 export type BattlecardInput = Omit<Battlecard, "id">;
@@ -308,7 +310,9 @@ export function battlecardId(competitor: string): string {
 
 export async function upsertBattlecard(input: BattlecardInput): Promise<string> {
   const id = battlecardId(input.competitor);
-  await setDoc(doc(db, "battlecards", id), input, { merge: true });
+  // Marque la carte comme éditée par un humain : l'enrichissement IA ne l'écrasera plus
+  // (il ne régénère que les cartes absentes ou generatedBy === "ai").
+  await setDoc(doc(db, "battlecards", id), { ...input, generatedBy: "human" }, { merge: true });
   return id;
 }
 
