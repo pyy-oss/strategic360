@@ -1036,29 +1036,36 @@ async function runEnrichment(db) {
     logger.error(`runEnrichment: battlecard moves generation FAILED — ${err.message}`, { err });
   }
 
-  // 3b. Battlecards complètes — top 10 concurrents de la watchlist (« pas assez riche », 2026-07).
-  // Positionnement/forces/faiblesses/axes de victoire générés par l'IA ; une carte éditée par un
-  // humain (generatedBy absent ou ≠ "ai") n'est jamais écrasée. recentMoves reste géré par 3.
+  // 3b. Battlecards complètes — top 20 concurrents de la watchlist (« pas assez riche / top 20 »,
+  // 2026-07). Positionnement/forces/faiblesses/axes de victoire générés par l'IA ; une carte éditée
+  // par un humain (generatedBy absent ou ≠ "ai") n'est jamais écrasée. recentMoves reste géré par 3.
+  // GÉNÉRATION PAR LOTS de 8 : 20 cartes complètes dépasseraient le plafond de 8192 tokens de
+  // sortie (JSON tronqué → parse en échec) — on découpe pour fiabiliser.
   try {
     const watchSnap = await db.collection("intelWatchlist").where("type", "==", "Concurrent").get();
     const PRIO = { Haute: 0, Moyenne: 1, Basse: 2 };
-    const top10 = watchSnap.docs
+    const topCompetitors = watchSnap.docs
       .map((d) => d.data())
       .filter((w) => typeof w?.name === "string" && w.name.trim())
       .sort((a, b) => (PRIO[a.priority] ?? 3) - (PRIO[b.priority] ?? 3))
-      .slice(0, 10)
+      .slice(0, 20)
       .map((w) => ({ name: w.name.trim(), note: typeof w.note === "string" ? w.note : "" }));
-    if (!top10.length) {
+    if (!topCompetitors.length) {
       logger.info("runEnrichment: watchlist sans concurrents — battlecards complètes ignorées");
     } else {
-      const parsed = parseFullBattlecardsResponse(
-        await generateJson(buildFullBattlecardsPrompt(signals, top10, companyContext))
-      );
-      if (!parsed) {
-        summary.fullBattlecards = "parse-failed";
-        logger.error("runEnrichment: full battlecards response unusable (parse returned null)");
-      } else {
-        let written = 0;
+      const CHUNK = 8;
+      let written = 0;
+      let anyParsed = false;
+      for (let i = 0; i < topCompetitors.length; i += CHUNK) {
+        const batch = topCompetitors.slice(i, i + CHUNK);
+        const parsed = parseFullBattlecardsResponse(
+          await generateJson(buildFullBattlecardsPrompt(signals, batch, companyContext))
+        );
+        if (!parsed) {
+          logger.error(`runEnrichment: full battlecards lot ${i / CHUNK + 1} inutilisable (parse null)`);
+          continue;
+        }
+        anyParsed = true;
         for (const card of parsed.cards) {
           const ref = db.doc(`battlecards/${enrichSlugId(card.competitor)}`);
           const existing = await ref.get();
@@ -1078,8 +1085,8 @@ async function runEnrichment(db) {
           );
           written += 1;
         }
-        summary.fullBattlecards = written;
       }
+      summary.fullBattlecards = anyParsed ? written : "parse-failed";
     }
   } catch (err) {
     summary.fullBattlecards = "failed";

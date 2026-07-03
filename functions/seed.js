@@ -80,6 +80,16 @@ const WATCHLIST_SEED = [
   { name: "Sonatel CyberDefense", type: "Concurrent", geo: "Sénégal", priority: "Moyenne", active: true, note: "Acteur SOC dominant au Sénégal — barrière d'entrée si expansion Dakar (obligation SOC BCEAO 2025)" },
   { name: "GTN CI", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Basse", active: true, note: "Intégrateur sécurité réseau/identité/email Abidjan" },
   { name: "Cloudmania (Liquid C2)", type: "Concurrent", geo: "Afrique", priority: "Basse", active: true, note: "Microsoft Partner of the Year CI, 22 pays — concurrent sur le CSP/cloud Microsoft" },
+  // Extension top 20 concurrents (cartographie terrain 2026 — intégrateurs/ESN Abidjan)
+  { name: "CIS (Computer Information Systems)", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Moyenne", active: true, note: "Intégrateur historique Abidjan : infrastructures, réseaux, systèmes — recoupe la BU ICT sur le mid-market" },
+  { name: "COMPUTEC", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Moyenne", active: true, note: "Intégration et distribution IT — matériel, réseaux, solutions bureautiques/serveurs" },
+  { name: "OSTEC", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Moyenne", active: true, note: "Infrastructures et sécurité IT — concurrent sur les projets réseau/sécurité PME-grands comptes" },
+  { name: "COGITEC", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Basse", active: true, note: "Services et infogérance IT — support, maintenance, solutions de gestion" },
+  { name: "N'SOCITECH", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Basse", active: true, note: "Intégration réseaux/IT — concurrent sur les déploiements d'infrastructure" },
+  { name: "3R", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Basse", active: true, note: "Solutions IT/télécoms — intégration et équipements" },
+  { name: "INNOVATEC", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Moyenne", active: true, note: "Intégrateur / services numériques Abidjan (distinct d'Inovatec) — transformation digitale et solutions métier" },
+  { name: "DATA PROTECT", type: "Concurrent", geo: "UEMOA", priority: "Haute", active: true, note: "Cybersécurité & conformité (audits PCI DSS, ISO 27001, PASSI) — acteur régional très frontal sur l'axe conformité/audit, notre terrain réglementaire" },
+  { name: "TECHSO", type: "Concurrent", geo: "Côte d'Ivoire", priority: "Basse", active: true, note: "Services et solutions IT — intégration et support" },
   // Éditeurs / constructeurs complémentaires
   { name: "WALLIX", type: "Éditeur", geo: "Afrique", priority: "Haute", active: true, note: "Partenariat Premier confirmé (PAM) — annonces produit et programme partenaires" },
   { name: "Odoo", type: "Éditeur", geo: "Afrique de l'Ouest", priority: "Moyenne", active: true, note: "Partenaire Odoo CI — axe ERP/logiciel" },
@@ -201,7 +211,8 @@ async function seed() {
   // writeFrameworkDoc le protège de toute réécriture IA.
   const { COMPANY_CONTEXT } = require("./domain/companyContext");
   const contextRef = db.doc("frameworks/companyContext");
-  if (!(await contextRef.get()).exists) {
+  const contextSnap = await contextRef.get();
+  if (!contextSnap.exists) {
     await contextRef.set({
       key: "companyContext",
       content: { text: COMPANY_CONTEXT, changes: [] },
@@ -210,6 +221,28 @@ async function seed() {
       updatedAt: FieldValue.serverTimestamp(),
     });
     console.log("Seeded frameworks/companyContext (contexte entreprise dynamique).");
+  } else {
+    // Rebasage de la ligne de base IA : si le contexte live est encore maintenu par l'IA
+    // (updatedBy commence par "ai:") ET que la base statique est plus riche (plus longue), on
+    // pousse le nouveau socle enrichi (partenaires/clients/concurrents étendus). Un contexte
+    // édité par la Direction (updatedBy sans préfixe "ai:") n'est JAMAIS touché.
+    const data = contextSnap.data() || {};
+    const liveText = data?.content?.text || "";
+    const isAiMaintained = typeof data.updatedBy === "string" && data.updatedBy.startsWith("ai:");
+    if (isAiMaintained && COMPANY_CONTEXT.length > liveText.length) {
+      await contextRef.set(
+        {
+          content: { text: COMPANY_CONTEXT, changes: ["Socle enrichi : partenaires technologiques (30), clients/cibles (top 50), concurrents (top 20)."] },
+          version: (typeof data.version === "number" ? data.version : 1) + 1,
+          updatedBy: "ai:seed",
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      console.log("Rebased frameworks/companyContext sur le socle statique enrichi (AI-maintained, plus riche).");
+    } else {
+      console.log("frameworks/companyContext conservé (édité par un humain ou déjà à jour).");
+    }
   }
 
   // Bootstrap marker consumed by setUserRole (functions/index.js): stays `false` until the
