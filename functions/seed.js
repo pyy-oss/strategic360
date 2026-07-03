@@ -140,9 +140,9 @@ const SOURCES_SEED = [
   { name: "Ministère de la Transition Numérique — publications", kind: "web", url: "https://telecom.gouv.ci/new/publications/sous-categorie/1", axis: "reglementaire", active: true },
   { name: "Africa Cybersecurity Magazine", kind: "rss", url: "https://cybersecuritymag.africa/feed/", axis: "reglementaire", active: true },
   // AO & financements (audit 2026-07, Actions 3.1 + 3.4 — remplace SIGMAP/ARMP sénégalais/BAD racine)
-  { name: "SIGOMAP — portail officiel des marchés publics CI", kind: "web", url: "https://www.sigomap.gouv.ci", axis: "clients_prospects", active: true },
-  { name: "DGMP — marchespublics.ci (avis d'AO)", kind: "web", url: "https://www.marchespublics.ci/appel_offre", axis: "clients_prospects", active: true },
-  { name: "ARCOP — Autorité de Régulation de la Commande Publique (ex-ANRMP)", kind: "web", url: "https://arcop.ci/", axis: "clients_prospects", active: true },
+  { name: "SIGOMAP — portail officiel des marchés publics CI", kind: "web-js", url: "https://www.sigomap.gouv.ci", axis: "clients_prospects", active: true },
+  { name: "DGMP — marchespublics.ci (avis d'AO)", kind: "web-js", url: "https://www.marchespublics.ci/appel_offre", axis: "clients_prospects", active: true },
+  { name: "ARCOP — Autorité de Régulation de la Commande Publique (ex-ANRMP)", kind: "web-js", url: "https://arcop.ci/", axis: "clients_prospects", active: true },
   { name: "BAD — Corporate procurement (avis d'AO)", kind: "web", url: "https://www.afdb.org/fr/about/corporate-procurement", axis: "clients_prospects", active: true },
   { name: "BCEAO — Appels d'offres", kind: "web", url: "https://www.bceao.int/fr/appels_offres", axis: "clients_prospects", active: true },
   { name: "Banque mondiale — projets Côte d'Ivoire", kind: "web", url: "https://projects.worldbank.org/en/projects-operations/projects-list?countrycode_exact=CI", axis: "clients_prospects", active: true },
@@ -177,7 +177,7 @@ const SOURCES_SEED = [
   // Mouvements d'acteurs — créations d'entreprises, investissements, implantations, expansions
   // ("guetter les opportunités liées à la création/arrivée de nouvelles entreprises, l'expansion
   // de groupes régionaux ou internationaux", 2026-07). Candidates auto-élaguées si mortes.
-  { name: "CEPICI — investissements & création d'entreprises (CI)", kind: "web", url: "https://www.cepici.gouv.ci/", axis: "clients_prospects", active: true },
+  { name: "CEPICI — investissements & création d'entreprises (CI)", kind: "web-js", url: "https://www.cepici.gouv.ci/", axis: "clients_prospects", active: true },
   { name: "Fraternité Matin — Économie", kind: "web", url: "https://www.fratmat.info/", axis: "clients_prospects", active: true },
   { name: "Agence Ecofin — Entreprises (RSS)", kind: "rss", url: "https://www.agenceecofin.com/entreprises?format=feed", axis: "concurrents", active: true },
   { name: "Jeune Afrique — Économie & Entreprises", kind: "web", url: "https://www.jeuneafrique.com/economie-entreprises/", axis: "clients_prospects", active: true },
@@ -191,16 +191,16 @@ const SOURCES_SEED = [
   // change (FX USD/XOF), douanes à l'import, talents/salaires ingénieurs cyber/cloud.
   { name: "BCEAO — Taux & cours de change", kind: "web", url: "https://www.bceao.int/fr/cours-de-change", axis: "reglementaire", active: true },
   // Douanes en détail (M10 audit) : actualités, tarifs à l'import, guichet unique du commerce extérieur.
-  { name: "Direction Générale des Douanes CI — actualités & tarifs", kind: "web", url: "https://www.douanes.ci/", axis: "reglementaire", active: true },
-  { name: "Douanes CI — communiqués & circulaires", kind: "web", url: "https://www.douanes.ci/actualites", axis: "reglementaire", active: true },
-  { name: "GUCE-CI — Guichet Unique du Commerce Extérieur (actualités import)", kind: "web", url: "https://www.guce.gouv.ci/", axis: "reglementaire", active: true },
-  { name: "Ministère du Commerce CI — réglementation import/export", kind: "web", url: "https://www.commerce.gouv.ci/", axis: "reglementaire", active: true },
+  { name: "Direction Générale des Douanes CI — actualités & tarifs", kind: "web-js", url: "https://www.douanes.ci/", axis: "reglementaire", active: true },
+  { name: "Douanes CI — communiqués & circulaires", kind: "web-js", url: "https://www.douanes.ci/actualites", axis: "reglementaire", active: true },
+  { name: "GUCE-CI — Guichet Unique du Commerce Extérieur (actualités import)", kind: "web-js", url: "https://www.guce.gouv.ci/", axis: "reglementaire", active: true },
+  { name: "Ministère du Commerce CI — réglementation import/export", kind: "web-js", url: "https://www.commerce.gouv.ci/", axis: "reglementaire", active: true },
   // Jobboards / tension talents (M10 audit) : recrutements IT/cyber/cloud = chaleur du marché,
   // expansion de concurrents, veille salaires ingénieurs rares.
-  { name: "Emploi.ci — offres IT/télécom (tension talents)", kind: "web", url: "https://www.emploi.ci/recherche-jobs-cote-ivoire/informatique-t%C3%A9l%C3%A9com", axis: "concurrents", active: true },
-  { name: "Educarriere.ci — offres d'emploi informatique", kind: "web", url: "https://emploi.educarriere.ci/", axis: "concurrents", active: true },
-  { name: "Novojob Côte d'Ivoire — IT/télécom", kind: "web", url: "https://www.novojob.com/cote-d-ivoire/offres-d-emploi", axis: "concurrents", active: true },
-  { name: "RMO Jobcenter CI — offres IT", kind: "web", url: "https://www.rmo-jobcenter.com/", axis: "concurrents", active: true },
+  { name: "Emploi.ci — offres IT/télécom (tension talents)", kind: "web-js", url: "https://www.emploi.ci/recherche-jobs-cote-ivoire/informatique-t%C3%A9l%C3%A9com", axis: "concurrents", active: true },
+  { name: "Educarriere.ci — offres d'emploi informatique", kind: "web-js", url: "https://emploi.educarriere.ci/", axis: "concurrents", active: true },
+  { name: "Novojob Côte d'Ivoire — IT/télécom", kind: "web-js", url: "https://www.novojob.com/cote-d-ivoire/offres-d-emploi", axis: "concurrents", active: true },
+  { name: "RMO Jobcenter CI — offres IT", kind: "web-js", url: "https://www.rmo-jobcenter.com/", axis: "concurrents", active: true },
   // Distributeurs pivots de la fusion HPE/Juniper Vantage & éditeur cible de migration VMware (M10).
   { name: "Ingram Micro — Newsroom", kind: "web", url: "https://www.ingrammicro.com/en-us/newsroom", axis: "partenaires", active: true },
   { name: "TD SYNNEX — Newsroom", kind: "web", url: "https://www.tdsynnex.com/na/us/news-events/", axis: "partenaires", active: true },
@@ -264,19 +264,28 @@ async function seed() {
   console.log(`Seeded intelWatchlist (${WATCHLIST_SEED.length} entries, idempotent by name).`);
 
   const sourcesCol = db.collection("intelSources");
+  let kindMigrated = 0;
+  let reactivated = 0;
   for (const entry of SOURCES_SEED) {
     const existing = await sourcesCol.where("name", "==", entry.name).limit(1).get();
     const sourceRating = entry.sourceRating || ratingForSource(entry);
     if (existing.empty) {
       await sourcesCol.add({ ...entry, sourceRating, lastFetch: null });
     } else {
-      // Rétro-remplissage (M7 audit) : une source déjà seedée sans note de crédibilité en reçoit
-      // une, sans écraser une note posée à la main.
       const doc = existing.docs[0];
-      if (!doc.data().sourceRating) await doc.ref.update({ sourceRating });
+      const cur = doc.data();
+      const patch = {};
+      // Rétro-remplissage (M7 audit) : note de crédibilité si absente.
+      if (!cur.sourceRating) patch.sourceRating = sourceRating;
+      // Migration du `kind` défini au seed (ex. passage web → web-js pour les portails anti-bot/JS).
+      if (entry.kind && cur.kind !== entry.kind) { patch.kind = entry.kind; kindMigrated += 1; }
+      // Réactive une source que l'auto-curation a désactivée mais que le seed veut active : on lui
+      // redonne sa chance avec le nouveau moteur (fetch durci / rendu headless) et un compteur remis à 0.
+      if (entry.active && cur.active === false) { patch.active = true; patch.consecutiveFailures = 0; reactivated += 1; }
+      if (Object.keys(patch).length) await doc.ref.update(patch);
     }
   }
-  console.log(`Seeded intelSources (${SOURCES_SEED.length} entries, idempotent by name; sourceRating rétro-rempli).`);
+  console.log(`Seeded intelSources (${SOURCES_SEED.length} entries; ${kindMigrated} kind migré(s) web→web-js, ${reactivated} réactivée(s)).`);
 
   // Contexte entreprise DYNAMIQUE (frameworks/companyContext) — seedé depuis le fichier statique
   // uniquement s'il n'existe pas encore. updatedBy "ai:seed" (préfixe "ai:") laisse

@@ -61,6 +61,56 @@ const SOURCE_FETCH_HEADERS = {
   "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
 };
 
+/* ------------------------------------------------------------------------------------------- *
+ * Rendu HEADLESS (kind "web-js") — pour les portails à défi anti-bot / rendus JavaScript
+ * (SIGOMAP, ARCOP, douanes, GUCE…) qu'un simple fetch ne peut pas lire (403 / coquille SPA).
+ * Chromium (@sparticuz/chromium) + puppeteer-core, chargés PARESSEUSEMENT : si le binaire n'est
+ * pas disponible, la source échoue proprement (auto-curation) sans casser le reste du pipeline.
+ * Un SEUL navigateur est lancé par run et réutilisé pour toutes les sources web-js, puis fermé.
+ * ------------------------------------------------------------------------------------------- */
+let _browserPromise = null;
+let _browserLaunchFailed = false;
+async function getRenderBrowser() {
+  if (_browserLaunchFailed) throw new Error("headless chromium indisponible (échec de lancement précédent)");
+  // Mémoïse la PROMESSE de lancement pour dédupliquer les appels concurrents (lots parallèles).
+  if (!_browserPromise) {
+    _browserPromise = (async () => {
+      const chromium = require("@sparticuz/chromium");
+      const puppeteer = require("puppeteer-core");
+      return puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: { width: 1280, height: 900 },
+        executablePath: await chromium.executablePath(),
+        headless: true,
+      });
+    })().catch((err) => {
+      _browserLaunchFailed = true;
+      _browserPromise = null;
+      throw new Error(`headless chromium launch failed: ${err.message}`);
+    });
+  }
+  return _browserPromise;
+}
+async function closeRenderBrowser() {
+  if (_browserPromise) {
+    const p = _browserPromise;
+    _browserPromise = null;
+    try { const b = await p; await b.close(); } catch { /* ignore */ }
+  }
+}
+/** Rend une page JS et renvoie son HTML final (après exécution du script). Timeout dur 25 s. */
+async function fetchRendered(url) {
+  const browser = await getRenderBrowser();
+  const page = await browser.newPage();
+  try {
+    await page.setUserAgent(SOURCE_FETCH_HEADERS["User-Agent"]);
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 25000 });
+    return await page.content();
+  } finally {
+    try { await page.close(); } catch { /* ignore */ }
+  }
+}
+
 /**
  * fetchSource(url) — récupère une source avec robustesse : UA navigateur, suivi des redirections,
  * timeout dur (12 s) pour ne pas bloquer un lot, et 1 nouvelle tentative sur erreur réseau
@@ -598,8 +648,10 @@ async function runSyncSources(db) {
           })
         );
         created = settled.filter((s) => s.status === "fulfilled" && s.value).length;
-      } else if (source.kind === "web") {
-        const html = await fetchSource(source.url);
+      } else if (source.kind === "web" || source.kind === "web-js") {
+        // kind "web-js" : portail à défi anti-bot / rendu JavaScript → rendu headless (Chromium).
+        // kind "web" : fetch HTTP simple. Même extraction multi-items ensuite.
+        const html = source.kind === "web-js" ? await fetchRendered(source.url) : await fetchSource(source.url);
         // C5 : extraction MULTI-ITEMS — chaque avis/actualité devient un intelItem à ID distinct
         // (lien de l'item, sinon titre+date), au lieu d'UN doc figé sur l'URL du portail.
         const webItems = extractWebItems(html, source.url, source.axis === "tech" ? 2 : 8);
@@ -664,7 +716,13 @@ async function runSyncSources(db) {
     }
   };
 
-  const settled = await runInBatches(sourcesSnap.docs, AI_CONCURRENCY, processSource);
+  let settled;
+  try {
+    settled = await runInBatches(sourcesSnap.docs, AI_CONCURRENCY, processSource);
+  } finally {
+    // Toujours refermer le navigateur headless (s'il a été lancé) pour libérer la mémoire du run.
+    await closeRenderBrowser();
+  }
   for (const s of settled) {
     if (s.status === "fulfilled") {
       sourcesProcessed += 1;
@@ -680,7 +738,9 @@ async function runSyncSources(db) {
  * syncSources — Scheduler (quotidien 06:00 Africa/Abidjan). Thin wrapper around runSyncSources().
  * Roadmap: V7 IA & sync.
  */
-exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" }, async () => {
+// 2 GiB : le rendu headless (kind "web-js") lance Chromium, gourmand en mémoire. Les sources
+// web-js sont peu nombreuses (portails anti-bot) mais le navigateur doit tenir dans l'instance.
+exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "2GiB" }, async () => {
   await runSyncSources(firestoreDb());
 });
 
@@ -690,7 +750,7 @@ exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abid
  * Exec-gated, same pattern as classifyAI/generateBriefing/exportPdf.
  * Roadmap: V7 IA & sync (added post-deploy for real-data onboarding).
  */
-exports.syncSourcesNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+exports.syncSourcesNow = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "2GiB" }, async (request) => {
   requireExecCaller(request, "lancer une synchronisation de la veille");
   const result = await runSyncSources(firestoreDb());
   return result;
