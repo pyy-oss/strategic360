@@ -334,10 +334,14 @@ exports.ingestInternal = onObjectFinalized(
       ts: FieldValue.serverTimestamp(),
     });
 
+    // SOURCE DE VÉRITÉ (m4 audit 2026-07) : depuis le branchement nt360, `summaries/quanti` est
+    // alimenté EXCLUSIVEMENT par runInternalQuantiSync (données internes live). L'import Excel
+    // (chemin legacy/manuel) écrit dans un doc DISTINCT `summaries/quanti_excel` pour ne plus
+    // entrer en conflit d'écrivains sur le même document (« dernier écrivain gagne » ambigu).
     const summary = await computeSummaryQuanti(db);
-    await db.doc("summaries/quanti").set(summary);
+    await db.doc("summaries/quanti_excel").set({ ...summary, source: `excel:${kind}` });
 
-    logger.info(`ingestInternal: kind=${kind} file=${filePath} rowsIn=${rowsIn} rowsOk=${rowsOk} warnings=${warnings.length}`);
+    logger.info(`ingestInternal: kind=${kind} file=${filePath} rowsIn=${rowsIn} rowsOk=${rowsOk} warnings=${warnings.length} → summaries/quanti_excel`);
   } catch (err) {
     // Observability (V8): a parse/Firestore failure here must be loud — nothing downstream
     // (aggregates, UI) will otherwise explain why summaries/quanti didn't update.

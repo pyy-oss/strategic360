@@ -574,6 +574,10 @@ pas de texte hors JSON) respectant STRICTEMENT ce schéma :
 }
 
 Contraintes :
+- "issue.branches" doit être RÉELLEMENT MECE : les branches ne doivent PAS se chevaucher
+  (mutuellement exclusives — une même cause n'apparaît que dans une seule branche) ET couvrir
+  l'ensemble du problème (collectivement exhaustives — aucune dimension majeure omise). Chaque
+  intitulé "t" nomme un axe de cause distinct ; chaque hypothèse "h" est testable par les données.
 - "s7" doit contenir EXACTEMENT ces 7 dimensions : ${S7_DIMENSIONS.map((s) => `"${s}"`).join(", ")}.
 - Les scores (0-100) sont des estimations honnêtes justifiables par le contexte/les signaux — pas
   de complaisance (une ESN régionale n'a pas 90 partout).
@@ -604,10 +608,19 @@ function parseDiagnosticResponse(raw) {
 
   const issue = raw.issue;
   if (issue && typeof issue === "object" && typeof issue.q === "string" && issue.q.trim()) {
+    // Garde MECE structurelle (m3 audit) : on déduplique les branches dont l'intitulé normalisé
+    // est identique (mutuelle exclusivité minimale — deux branches « Coûts » sont fusionnées).
+    const seenTitles = new Set();
     const branches = (Array.isArray(issue.branches) ? issue.branches : [])
       .filter((b) => b && typeof b === "object" && typeof b.t === "string" && b.t.trim())
       .map((b) => ({ t: b.t.trim(), h: coerceStringArray(b.h) }))
-      .filter((b) => b.h.length > 0);
+      .filter((b) => b.h.length > 0)
+      .filter((b) => {
+        const key = b.t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "");
+        if (seenTitles.has(key)) return false;
+        seenTitles.add(key);
+        return true;
+      });
     if (branches.length > 0) out.issue = { q: issue.q.trim(), branches };
   }
 

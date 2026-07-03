@@ -417,6 +417,21 @@ describe("parseDiagnosticResponse", () => {
     expect(S7_DIMENSIONS).toHaveLength(7);
   });
 
+  it("MECE : déduplique les branches au titre normalisé identique (m3 audit)", async () => {
+    const { parseDiagnosticResponse } = await import("../domain/enrich.js");
+    const parsed = parseDiagnosticResponse({
+      issue: {
+        q: "Pourquoi la marge stagne ?",
+        branches: [
+          { t: "Coûts", h: ["h1"] },
+          { t: "  coûts  ", h: ["h2"] }, // même titre normalisé → fusionné (mutuelle exclusivité)
+          { t: "Mix produit", h: ["h3"] },
+        ],
+      },
+    });
+    expect(parsed.issue.branches.map((b) => b.t)).toEqual(["Coûts", "Mix produit"]);
+  });
+
   it("drops empty sections and returns null when nothing survives; never emits undefined", async () => {
     const { parseDiagnosticResponse } = await import("../domain/enrich.js");
     expect(parseDiagnosticResponse({ issue: { q: "" }, s7: [], maturite: [] })).toBeNull();
