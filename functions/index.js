@@ -866,6 +866,10 @@ const {
   parseContextRefreshResponse,
   buildGe9Prompt,
   parseGe9Response,
+  buildInnovationBetsPrompt,
+  parseInnovationBetsResponse,
+  buildFullBattlecardsPrompt,
+  parseFullBattlecardsResponse,
   buildHorizonsPrompt,
   parseHorizonsResponse,
   pickSignalsForEnrichment,
@@ -963,26 +967,44 @@ async function runEnrichment(db) {
     if (!techSignals.length) {
       logger.info("runEnrichment: no tech-axis signals — tech radar left untouched");
     } else {
-      const parsed = parseTechRadarResponse(await generateJson(buildTechRadarPrompt(techSignals, companyContext)));
+      // CONSOLIDATION (« radar illisible », 2026-07) : la réponse REMPLACE l'ensemble des blips
+      // générés par l'IA (les noms actuels sont passés au prompt pour fusion/élagage) — sans ça,
+      // chaque run accumulait de nouveaux slugs et le radar devenait un nuage illisible de
+      // quasi-doublons. Les blips créés par un humain (sans generatedBy:"ai") ne sont JAMAIS
+      // supprimés ni renommés.
+      const radarSnap = await db.collection("techRadar").get();
+      const aiBlipDocs = radarSnap.docs.filter((d) => d.data()?.generatedBy === "ai");
+      const parsed = parseTechRadarResponse(
+        await generateJson(buildTechRadarPrompt(techSignals, companyContext, aiBlipDocs.map((d) => d.data().name)))
+      );
       if (!parsed) {
         logger.error("runEnrichment: tech radar response unusable (parse returned null)");
       } else {
+        const keptSlugs = new Set();
         for (const blip of parsed.blips) {
-          const ref = db.doc(`techRadar/${enrichSlugId(blip.name)}`);
+          const slug = enrichSlugId(blip.name);
+          keptSlugs.add(slug);
+          const ref = db.doc(`techRadar/${slug}`);
           const existing = await ref.get();
-          // merge:true — a human-created blip with the same slug only gets its
-          // ring/momentum/rationale refreshed, its other fields survive.
           await ref.set(
             {
               ...blip,
-              generatedBy: "ai",
+              generatedBy: existing.exists && existing.data()?.generatedBy !== "ai" ? existing.data().generatedBy : "ai",
               ...(existing.exists ? {} : { linkedItems: [] }),
               updatedAt: FieldValue.serverTimestamp(),
             },
             { merge: true }
           );
         }
+        let pruned = 0;
+        for (const doc of aiBlipDocs) {
+          if (!keptSlugs.has(doc.id)) {
+            await doc.ref.delete();
+            pruned += 1;
+          }
+        }
         summary.techRadarBlips = parsed.blips.length;
+        if (pruned) logger.info(`runEnrichment: tech radar consolidé — ${pruned} blip(s) IA obsolète(s) supprimé(s)`);
       }
     }
   } catch (err) {
@@ -1012,6 +1034,63 @@ async function runEnrichment(db) {
     }
   } catch (err) {
     logger.error(`runEnrichment: battlecard moves generation FAILED — ${err.message}`, { err });
+  }
+
+  // 3b. Battlecards complètes — top 20 concurrents de la watchlist (« pas assez riche / top 20 »,
+  // 2026-07). Positionnement/forces/faiblesses/axes de victoire générés par l'IA ; une carte éditée
+  // par un humain (generatedBy absent ou ≠ "ai") n'est jamais écrasée. recentMoves reste géré par 3.
+  // GÉNÉRATION PAR LOTS de 8 : 20 cartes complètes dépasseraient le plafond de 8192 tokens de
+  // sortie (JSON tronqué → parse en échec) — on découpe pour fiabiliser.
+  try {
+    const watchSnap = await db.collection("intelWatchlist").where("type", "==", "Concurrent").get();
+    const PRIO = { Haute: 0, Moyenne: 1, Basse: 2 };
+    const topCompetitors = watchSnap.docs
+      .map((d) => d.data())
+      .filter((w) => typeof w?.name === "string" && w.name.trim())
+      .sort((a, b) => (PRIO[a.priority] ?? 3) - (PRIO[b.priority] ?? 3))
+      .slice(0, 20)
+      .map((w) => ({ name: w.name.trim(), note: typeof w.note === "string" ? w.note : "" }));
+    if (!topCompetitors.length) {
+      logger.info("runEnrichment: watchlist sans concurrents — battlecards complètes ignorées");
+    } else {
+      const CHUNK = 8;
+      let written = 0;
+      let anyParsed = false;
+      for (let i = 0; i < topCompetitors.length; i += CHUNK) {
+        const batch = topCompetitors.slice(i, i + CHUNK);
+        const parsed = parseFullBattlecardsResponse(
+          await generateJson(buildFullBattlecardsPrompt(signals, batch, companyContext))
+        );
+        if (!parsed) {
+          logger.error(`runEnrichment: full battlecards lot ${i / CHUNK + 1} inutilisable (parse null)`);
+          continue;
+        }
+        anyParsed = true;
+        for (const card of parsed.cards) {
+          const ref = db.doc(`battlecards/${enrichSlugId(card.competitor)}`);
+          const existing = await ref.get();
+          if (existing.exists && existing.data()?.generatedBy && existing.data().generatedBy !== "ai") continue;
+          // recentMoves volontairement absent du payload — géré par l'étape 3 (arrayUnion).
+          await ref.set(
+            {
+              competitor: card.competitor,
+              positioning: card.positioning,
+              strengths: card.strengths,
+              weaknesses: card.weaknesses,
+              ourWinThemes: card.ourWinThemes,
+              generatedBy: "ai",
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+          written += 1;
+        }
+      }
+      summary.fullBattlecards = anyParsed ? written : "parse-failed";
+    }
+  } catch (err) {
+    summary.fullBattlecards = "failed";
+    logger.error(`runEnrichment: full battlecards generation FAILED — ${err.message}`, { err });
   }
 
   // 4. Business Model Canvas (frameworks/canvas) — added 2026-07-02 ("encore des vues vides") ----
@@ -1072,6 +1151,30 @@ async function runEnrichment(db) {
   } catch (err) {
     summary.horizons = "failed";
     logger.error(`runEnrichment: horizons generation FAILED — ${err.message}`, { err });
+  }
+
+  // 9. Paris d'innovation (RICE) — suggestions IA dans innovationPortfolio. Un pari existant
+  // NON généré par l'IA (créé au formulaire) n'est jamais modifié ; les paris IA sont upsertés
+  // par slug (pas de suppression : le RICE humain peut évoluer après édition).
+  try {
+    const parsed = parseInnovationBetsResponse(await generateJson(buildInnovationBetsPrompt(signals, companyContext)));
+    if (!parsed) {
+      summary.innovationBets = "parse-failed";
+      logger.error("runEnrichment: innovation bets response unusable (parse returned null)");
+    } else {
+      let written = 0;
+      for (const bet of parsed.bets) {
+        const ref = db.doc(`innovationPortfolio/bet-${enrichSlugId(bet.title)}`);
+        const existing = await ref.get();
+        if (existing.exists && existing.data()?.generatedBy !== "ai") continue; // pari humain — intouchable
+        await ref.set({ ...bet, generatedBy: "ai", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        written += 1;
+      }
+      summary.innovationBets = written;
+    }
+  } catch (err) {
+    summary.innovationBets = "failed";
+    logger.error(`runEnrichment: innovation bets generation FAILED — ${err.message}`, { err });
   }
 
   // 6. Opportunités business (bizOpportunities) — Action 6.1 de l'audit 2026-07 : transformer les

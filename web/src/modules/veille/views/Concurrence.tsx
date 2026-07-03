@@ -242,13 +242,13 @@ export function Concurrence() {
                 </div>
                 <div style={{ marginTop: 10, fontSize: 12.5, color: T.dim, lineHeight: 1.6 }}>
                   <div>
-                    <b style={{ color: T.gold }}>Force :</b> {c.strengths.join("; ") || "—"}
+                    <b style={{ color: T.gold }}>Force :</b> {(c.strengths ?? []).join("; ") || "—"}
                   </div>
                   <div>
-                    <b style={{ color: T.steel }}>Faiblesse :</b> {c.weaknesses.join("; ") || "—"}
+                    <b style={{ color: T.steel }}>Faiblesse :</b> {(c.weaknesses ?? []).join("; ") || "—"}
                   </div>
                   <div style={{ marginTop: 6, padding: "8px 10px", background: T.panel2, borderRadius: 8 }}>
-                    <b style={{ color: T.emerald }}>Comment gagner :</b> {c.ourWinThemes.join("; ") || "—"}
+                    <b style={{ color: T.emerald }}>Comment gagner :</b> {(c.ourWinThemes ?? []).join("; ") || "—"}
                   </div>
                   {c.recentMoves?.length > 0 && (
                     <div style={{ marginTop: 6, fontSize: 11.5, color: T.faint }}>

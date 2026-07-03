@@ -218,13 +218,16 @@ function parseSwotPestelResponse(raw) {
  * @param {Array<object>} items Lightweight signals (typically axis === 'tech').
  * @returns {string}
  */
-function buildTechRadarPrompt(items, companyContext = COMPANY_CONTEXT) {
+function buildTechRadarPrompt(items, companyContext = COMPANY_CONTEXT, existingBlipNames) {
+  const existing = Array.isArray(existingBlipNames) && existingBlipNames.length
+    ? `\nRadar actuel (générés par IA — ta réponse REMPLACE cette liste, consolide/fusionne les doublons, retire ce qui n'est plus pertinent) :\n${existingBlipNames.map((n) => `- ${n}`).join("\n")}\n`
+    : "";
   return `Tu es un analyste technologique senior travaillant pour l'entreprise suivante :
 ${companyContext}
-
-À partir des signaux de veille technologique réels ci-dessous, propose les entrées ("blips") d'un
-radar technologique pour cette entreprise. Réponds UNIQUEMENT avec un objet JSON valide (pas de
-markdown, pas de texte hors JSON) respectant STRICTEMENT ce schéma :
+${existing}
+À partir des signaux de veille technologique réels ci-dessous, produis le radar technologique
+CONSOLIDÉ de cette entreprise. Réponds UNIQUEMENT avec un objet JSON valide (pas de markdown,
+pas de texte hors JSON) respectant STRICTEMENT ce schéma :
 
 {
   "blips": [
@@ -244,6 +247,15 @@ Consignes impératives :
 - Chaque blip doit être justifié par les signaux fournis chaque fois que possible.
 - "ring" reflète la recommandation pour cette entreprise (adopter = en production ;
   essayer = pilote ; evaluer = à étudier ; suspendre = éviter/désinvestir).
+
+Contraintes impératives :
+- Chaque blip est une TECHNOLOGIE ou famille de technologies/pratiques (ex: "SASE", "SD-WAN",
+  "Zero Trust", "Cloud souverain", "EDR/XDR managé", "IA générative d'entreprise") — JAMAIS une
+  action ou tâche ("patching X", "mise à jour Y", "audit Z" sont INTERDITS comme blips).
+- Nom court : 4 mots maximum, pas de doublons ni de quasi-doublons.
+- 5 à 10 blips au TOTAL, répartis sur les quadrants quand les signaux le justifient (pas tout
+  en cybersécurité).
+- "rationale" : justification courte ancrée dans les signaux.
 
 Signaux de veille technologique :
 ${signalsBlock(items)}
@@ -795,6 +807,146 @@ function parseContextRefreshResponse(raw, currentContext) {
   return { text, changes };
 }
 
+
+/* ------------------------------------------------------------------------------------------- *
+ * Paris d'innovation (RICE) — suggestions IA (« portefeuille d'innovation vide », 2026-07).
+ * L'IA propose 3-6 paris chiffrés RICE dérivés des signaux ; écrits dans innovationPortfolio
+ * avec generatedBy:"ai" — l'humain les édite/supprime via le formulaire existant.
+ * ------------------------------------------------------------------------------------------- */
+
+const VALID_STAGES = ["idée", "exploration", "poc", "pilote", "scale"];
+
+function clamp(v, lo, hi) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(hi, Math.max(lo, Math.round(n)));
+}
+
+/**
+ * @param {Array<object>} items Lightweight signals.
+ * @param {string} [companyContext]
+ */
+function buildInnovationBetsPrompt(items, companyContext = COMPANY_CONTEXT) {
+  return `Tu es responsable innovation pour l'entreprise suivante :
+${companyContext}
+
+Propose des PARIS D'INNOVATION (nouvelles offres/capacités à explorer) dérivés des signaux réels
+ci-dessous, chiffrés selon RICE. Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "bets": [
+    {
+      "title": string,        // intitulé court du pari (ex: "Offre SOC managé souverain")
+      "reach": number,        // 1-10 : combien de clients/segments touchés
+      "impact": number,       // 1-10 : impact business si succès
+      "confidence": number,   // 0-1 : confiance dans les estimations
+      "effort": number,       // 1-10 : effort de mise en œuvre
+      "stage": "idée" | "exploration" | "poc" | "pilote" | "scale",
+      "horizon": string       // ex: "H2" ou "2027"
+    }
+  ]
+}
+
+Contraintes : 3 à 6 paris, chacun justifiable par un signal/fait fourni (réglementation, EOL,
+financement, tendance techno monétisable en CI/UEMOA) ; estimations honnêtes et différenciées.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+/** parseInnovationBetsResponse(raw) -> {bets:[{title, reach, impact, confidence, effort, rice, stage, horizon}]} | null */
+function parseInnovationBetsResponse(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.bets)) return null;
+  const bets = raw.bets
+    .filter((b) => b && typeof b === "object" && typeof b.title === "string" && b.title.trim())
+    .map((b) => {
+      const reach = clamp(b.reach, 1, 10) ?? 5;
+      const impact = clamp(b.impact, 1, 10) ?? 5;
+      const effort = clamp(b.effort, 1, 10) ?? 5;
+      let confidence = Number(b.confidence);
+      confidence = Number.isFinite(confidence) ? Math.min(1, Math.max(0, confidence)) : 0.5;
+      return {
+        title: b.title.trim(),
+        reach,
+        impact,
+        confidence: Math.round(confidence * 100) / 100,
+        effort,
+        // RICE = (reach·impact·confidence)/effort — même formule que web/lib/innovation.ts.
+        rice: Math.round(((reach * impact * confidence) / effort) * 10) / 10,
+        stage: VALID_STAGES.includes(b.stage) ? b.stage : "idée",
+        horizon: typeof b.horizon === "string" && b.horizon.trim() ? b.horizon.trim() : "H2",
+      };
+    });
+  return bets.length >= 2 ? { bets } : null;
+}
+
+/* ------------------------------------------------------------------------------------------- *
+ * Battlecards complètes — top 10 concurrents de la watchlist (« pas assez riche », 2026-07).
+ * L'IA génère positionnement/forces/faiblesses/axes de victoire pour chaque concurrent ;
+ * écrites avec generatedBy:"ai" — une carte éditée par un humain n'est jamais écrasée.
+ * ------------------------------------------------------------------------------------------- */
+
+/**
+ * @param {Array<object>} items Lightweight signals.
+ * @param {Array<{name: string, note?: string}>} competitors Watchlist competitors (top 10).
+ * @param {string} [companyContext]
+ */
+function buildFullBattlecardsPrompt(items, competitors, companyContext = COMPANY_CONTEXT) {
+  const list = competitors
+    .map((c) => `- ${c.name}${c.note ? ` — ${c.note}` : ""}`)
+    .join("\n");
+  return `Tu es analyste en intelligence concurrentielle pour l'entreprise suivante :
+${companyContext}
+
+Rédige une BATTLECARD COMPLÈTE pour CHACUN des concurrents listés ci-dessous (tous, sans exception).
+Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "cards": [
+    {
+      "competitor": string,      // le nom EXACT tel que fourni dans la liste
+      "positioning": string,     // 1-2 phrases : positionnement marché, segments, points d'appui
+      "strengths": [string],     // 2 à 4 forces concrètes (références, partenariats, capacités)
+      "weaknesses": [string],    // 2 à 4 faiblesses exploitables
+      "ourWinThemes": [string]   // 2 à 4 axes concrets pour gagner contre lui
+    }
+  ]
+}
+
+Contraintes :
+- Ancre chaque affirmation dans des faits connus du marché ivoirien/UEMOA ou les notes fournies ;
+  pas de généralités interchangeables ("bon service client", "prix compétitifs" sans contexte).
+- Les axes de victoire doivent s'appuyer sur NOS atouts réels (partenariats, certifications,
+  proximité, Academy, références) face aux faiblesses de CE concurrent précis.
+- Tout en français.
+
+Concurrents à traiter :
+${list}
+
+Signaux de veille récents (utilise ceux qui concernent ces concurrents) :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+/** parseFullBattlecardsResponse(raw) -> {cards:[{competitor, positioning, strengths, weaknesses, ourWinThemes}]} | null */
+function parseFullBattlecardsResponse(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.cards)) return null;
+  const cards = raw.cards
+    .filter((c) => c && typeof c === "object" && typeof c.competitor === "string" && c.competitor.trim())
+    .map((c) => ({
+      competitor: c.competitor.trim(),
+      positioning: typeof c.positioning === "string" ? c.positioning.trim() : "",
+      strengths: coerceStringArray(c.strengths),
+      weaknesses: coerceStringArray(c.weaknesses),
+      ourWinThemes: coerceStringArray(c.ourWinThemes),
+    }))
+    .filter((c) => c.strengths.length || c.weaknesses.length || c.ourWinThemes.length);
+  return cards.length ? { cards } : null;
+}
+
 module.exports = {
   buildSwotPestelPrompt,
   parseSwotPestelResponse,
@@ -812,6 +964,10 @@ module.exports = {
   parseContextRefreshResponse,
   buildGe9Prompt,
   parseGe9Response,
+  buildInnovationBetsPrompt,
+  parseInnovationBetsResponse,
+  buildFullBattlecardsPrompt,
+  parseFullBattlecardsResponse,
   buildHorizonsPrompt,
   parseHorizonsResponse,
   CONTEXT_REQUIRED_MARKERS,
