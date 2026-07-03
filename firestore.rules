@@ -18,6 +18,8 @@ service cloud.firestore {
     function exec() { return role() in ['direction', 'strategie', 'innovation']; }
     // Copilote Commercial (add-on) : rôles commerciaux + exécutifs.
     function commercial() { return request.auth != null && role() in ['commercial', 'commercial_dir', 'direction', 'strategie', 'innovation']; }
+    // Rôles NON cloisonnés (voient tout le portefeuille) : directeurs commerciaux + exécutifs.
+    function copiloteUnscoped() { return request.auth != null && role() in ['commercial_dir', 'direction', 'strategie', 'innovation']; }
 
     // — Signaux & détection —
     match /intelItems/{id} {
@@ -101,11 +103,29 @@ service cloud.firestore {
     // Functions (Admin SDK, qui outrepasse ces règles). Côté client, un commercial peut lire, créer,
     // supprimer et éditer le QUALITATIF, mais ne peut pas écrire/écraser `nt360` — sinon une simple
     // requête client pourrait corrompre les vraies données de pipeline jusqu'à la prochaine synchro.
+    // Lecture DIRECTE réservée aux rôles non cloisonnés ; le rôle « commercial » simple lit son
+    // portefeuille via le callable listCopiloteAccounts (Admin SDK), qui applique son périmètre —
+    // impossible de contourner le cloisonnement par une requête client. `nt360` et `owners` sont des
+    // champs SERVEUR : jamais écrits depuis le client (empreinte pipeline + attribution).
     match /copiloteAccounts/{id} {
-      allow read, delete: if commercial();
-      allow create: if commercial() && !('nt360' in request.resource.data);
+      allow read: if copiloteUnscoped();
+      allow delete: if commercial();
+      // `createdBy`, s'il est fourni, doit être l'appelant (un commercial ne peut pas attribuer un
+      // compte à autrui via createdBy) ; `nt360`/`owners` restent réservés au serveur.
+      allow create: if commercial()
+        && !('nt360' in request.resource.data) && !('owners' in request.resource.data)
+        && (!('createdBy' in request.resource.data) || request.resource.data.createdBy == request.auth.uid);
       allow update: if commercial()
-        && !('nt360' in request.resource.data.diff(resource.data).affectedKeys());
+        && !('nt360' in request.resource.data.diff(resource.data).affectedKeys())
+        && !('owners' in request.resource.data.diff(resource.data).affectedKeys())
+        && (!('createdBy' in request.resource.data.diff(resource.data).affectedKeys())
+            || request.resource.data.createdBy == request.auth.uid);
+    }
+
+    // — Copilote : périmètres de cloisonnement par commercial (écrits par callable Admin uniquement) —
+    match /copiloteProfiles/{uid} {
+      allow read: if commercial();
+      allow write: if false;
     }
 
     // — Agrégats (écrits par Cloud Functions / Admin SDK uniquement) —

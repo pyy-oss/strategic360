@@ -1766,6 +1766,7 @@ const {
   pickObjectives: nt360PickObjectives,
   pickCurrentFy: nt360PickCurrentFy,
   deriveCopiloteAccounts: nt360DeriveCopiloteAccounts,
+  copiloteAccountMatchesScope: nt360AccountMatchesScope,
 } = require("./domain/nt360");
 
 async function runInternalQuantiSync(db) {
@@ -1893,6 +1894,8 @@ async function runSyncCopiloteAccounts(db) {
             pipelinePondere: acc.pipelinePondere,
             wins: acc.wins,
             opportunites: acc.opportunites,
+            ams: acc.ams,
+            bus: acc.bus,
             updatedAt: FieldValue.serverTimestamp(),
           },
         },
@@ -1919,6 +1922,91 @@ exports.syncCopiloteAccountsNow = onCall(HEAVY_CALLABLE_OPTS, async (request) =>
   const result = await runSyncCopiloteAccounts(firestoreDb());
   logger.info(`syncCopiloteAccountsNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
   return result;
+});
+
+/* ------------------------------------------------------------------------------------------- *
+ * Cloisonnement du portefeuille Copilote (décision 2026-07 : « mix des 3 » — override manuel /
+ * account manager nt360 / BU ; exec + directeurs commerciaux voient tout, seul le rôle
+ * « commercial » simple est cloisonné). La lecture passe par un callable côté serveur (Admin SDK)
+ * qui applique le périmètre — impossible à contourner par une requête client directe (verrouillé
+ * aussi par firestore.rules). Bonus : règle aussi le point d'audit « ne pas streamer 800 docs ».
+ * ------------------------------------------------------------------------------------------- */
+
+/** Rôles qui voient TOUT le portefeuille (pas de cloisonnement). */
+const COPILOTE_UNSCOPED_ROLES = ["commercial_dir", ...EXEC_ROLES];
+
+/**
+ * listCopiloteAccounts — callable. Retourne les comptes visibles par l'appelant :
+ *  - exec / commercial_dir : tout le portefeuille ;
+ *  - commercial : uniquement les comptes de son périmètre (owners e-mail, am, ou BU depuis son
+ *    profil copiloteProfiles/{uid}).
+ */
+exports.listCopiloteAccounts = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  requireCommercialCaller(request, "consulter les comptes du copilote");
+  const db = firestoreDb();
+  const role = request.auth?.token?.role;
+  const snap = await db.collection("copiloteAccounts").get();
+  const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const unscoped = COPILOTE_UNSCOPED_ROLES.includes(role);
+  if (unscoped) return { accounts: all, scoped: false };
+  // Périmètre du commercial : e-mail (token) + am/bu de son profil.
+  const profSnap = await db.doc(`copiloteProfiles/${request.auth.uid}`).get();
+  const prof = profSnap.exists ? profSnap.data() : {};
+  const scope = {
+    uid: request.auth.uid,
+    email: request.auth?.token?.email || "",
+    ams: Array.isArray(prof.ams) ? prof.ams : [],
+    bus: Array.isArray(prof.bus) ? prof.bus : [],
+  };
+  const accounts = all.filter((a) => nt360AccountMatchesScope(a, scope));
+  return { accounts, scoped: true };
+});
+
+/** Rôles autorisés à administrer le cloisonnement (profils + owners). */
+function requireCopiloteAdmin(request, action) {
+  const role = request.auth?.token?.role;
+  const allowed = ["commercial_dir", "direction"];
+  if (!request.auth || !allowed.includes(role)) {
+    throw new HttpsError("permission-denied", `Seuls la Direction et les directeurs commerciaux peuvent ${action}.`);
+  }
+}
+const coerceStrList = (v) =>
+  Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()))] : [];
+
+/**
+ * setCopiloteScope — callable (direction / commercial_dir). Définit le périmètre d'un commercial :
+ * data { uid, ams?: string[], bus?: string[] } → copiloteProfiles/{uid}. Écrit côté serveur
+ * uniquement (le commercial ne peut pas élargir son propre périmètre).
+ */
+exports.setCopiloteScope = onCall(CALLABLE_OPTS, async (request) => {
+  requireCopiloteAdmin(request, "définir le périmètre d'un commercial");
+  const { uid, ams, bus } = request.data || {};
+  if (typeof uid !== "string" || !uid) throw new HttpsError("invalid-argument", "uid (string) requis.");
+  await firestoreDb().doc(`copiloteProfiles/${uid}`).set(
+    { ams: coerceStrList(ams), bus: coerceStrList(bus), updatedBy: request.auth.uid, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true }
+  );
+  logger.info(`setCopiloteScope: uid=${uid} by=${request.auth.uid}`);
+  return { uid, ams: coerceStrList(ams), bus: coerceStrList(bus) };
+});
+
+/**
+ * setCopiloteAccountOwners — callable (direction / commercial_dir). Attribue manuellement un compte
+ * à des commerciaux : data { accountId, owners: string[] (e-mails) }. `owners` est un champ
+ * SERVEUR (interdit d'écriture côté client par firestore.rules) → impossible de s'auto-attribuer.
+ */
+exports.setCopiloteAccountOwners = onCall(CALLABLE_OPTS, async (request) => {
+  requireCopiloteAdmin(request, "attribuer un compte");
+  const { accountId, owners } = request.data || {};
+  assertAccountId(accountId);
+  if (!accountId) throw new HttpsError("invalid-argument", "accountId requis.");
+  const list = coerceStrList(owners).map((x) => x.toLowerCase());
+  await firestoreDb().doc(`copiloteAccounts/${accountId}`).set(
+    { owners: list, ownersUpdatedBy: request.auth.uid, ownersUpdatedAt: FieldValue.serverTimestamp() },
+    { merge: true }
+  );
+  logger.info(`setCopiloteAccountOwners: account=${accountId} owners=${list.length} by=${request.auth.uid}`);
+  return { accountId, owners: list };
 });
 
 /**

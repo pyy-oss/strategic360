@@ -213,4 +213,31 @@ describe("deriveCopiloteAccounts (empreinte comptes pour le Copilote)", () => {
     expect(accts.every((a) => a.slug && a.slug.startsWith("cpt-"))).toBe(true);
     expect(accts.reduce((s, a) => s + a.casTotal, 0)).toBe(100); // aucun CAS perdu
   });
+
+  it("collecte les account managers (am) et BU réels du compte (rattachement/cloisonnement)", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const a = deriveCopiloteAccounts(
+      [{ client: "SGCI", bu: "ICT", cas: 10, am: "K. Diallo" }],
+      [{ client: "SGCI", bu: "CYBER", stage: 2, amount: 100, am: "M. Traoré" }]
+    ).find((x) => x.slug === "sgci");
+    expect(a.ams.sort()).toEqual(["K. Diallo", "M. Traoré"]);
+    expect(a.bus.sort()).toEqual(["CYBER", "ICT"]);
+  });
+});
+
+describe("copiloteAccountMatchesScope (cloisonnement « mix des 3 »)", () => {
+  it("matche par owner (e-mail), par am, ou par BU — insensible casse/espaces ; sinon false", async () => {
+    const { copiloteAccountMatchesScope } = await import("../domain/nt360.js");
+    const acc = { owners: ["Jean.Vendeur@nt.ci"], nt360: { ams: ["K. Diallo"], bus: ["ICT"] } };
+    // 1) override e-mail
+    expect(copiloteAccountMatchesScope(acc, { email: "jean.vendeur@nt.ci", ams: [], bus: [] })).toBe(true);
+    // 2) account manager
+    expect(copiloteAccountMatchesScope(acc, { email: "x@y.z", ams: ["k. diallo"], bus: [] })).toBe(true);
+    // 3) BU
+    expect(copiloteAccountMatchesScope(acc, { email: "x@y.z", ams: [], bus: ["ict"] })).toBe(true);
+    // aucune correspondance
+    expect(copiloteAccountMatchesScope(acc, { email: "autre@nt.ci", ams: ["M. Autre"], bus: ["CYBER"] })).toBe(false);
+    // compte sans rattachement + périmètre vide → non visible
+    expect(copiloteAccountMatchesScope({ nt360: {} }, { email: "", ams: [], bus: [] })).toBe(false);
+  });
 });

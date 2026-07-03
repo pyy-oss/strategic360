@@ -5,12 +5,9 @@
  * Le moteur IA vit côté serveur (callables copiloteGenerate / copiloteChat) ; ici on ne fait que
  * wrapper les appels + gérer la collection `copiloteAccounts` (qualitatif compte).
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   collection,
-  onSnapshot,
-  query,
-  orderBy,
   doc,
   setDoc,
   addDoc,
@@ -19,7 +16,7 @@ import {
   type Timestamp,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
-import { db, functions } from "../../../lib/firebase";
+import { auth, db, functions } from "../../../lib/firebase";
 
 /* ---------------------------------------------------------------------------------------------
  * Comptes (copiloteAccounts) — qualitatif édité par les commerciaux
@@ -58,6 +55,8 @@ export interface CopiloteAccount {
   tendances?: string[];
   reglementation?: string;
   concurrence?: string;
+  /** Attribution manuelle (e-mails) — champ SERVEUR, écrit via setCopiloteAccountOwners. */
+  owners?: string[];
   /** Empreinte dérivée du pipeline nt360 (read-only) — additive, ne remplace jamais le qualitatif. */
   nt360?: {
     historique?: CopiloteHistoriqueItem[];
@@ -66,6 +65,8 @@ export interface CopiloteAccount {
     pipelinePondere?: number;
     wins?: number;
     opportunites?: CopiloteOpportunite[];
+    ams?: string[];
+    bus?: string[];
     updatedAt?: Timestamp | FieldValue;
   };
   updatedAt?: Timestamp | FieldValue;
@@ -85,63 +86,77 @@ export function slugifyClient(name: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
-export function useCopiloteAccounts(): { accounts: CopiloteAccount[]; loading: boolean; error: Error | null } {
+/** Normalise un doc compte (défauts sûrs) — un compte issu seulement de la synchro nt360 ne porte
+ *  que nom + nt360 ; sans ces défauts, `account.enjeux.map` planterait la fiche. */
+function normalizeAccount(raw: CopiloteAccount): CopiloteAccount {
+  return {
+    id: raw.id,
+    nom: raw.nom || "",
+    secteur: raw.secteur || "",
+    tier: raw.tier || "",
+    enjeux: raw.enjeux ?? [],
+    whitespace: raw.whitespace ?? [],
+    enCours: raw.enCours ?? [],
+    historique: raw.historique ?? [],
+    contacts: raw.contacts ?? [],
+    preuves: raw.preuves ?? [],
+    tendances: raw.tendances ?? [],
+    reglementation: raw.reglementation,
+    concurrence: raw.concurrence,
+    owners: raw.owners ?? [],
+    nt360: raw.nt360,
+  };
+}
+
+/**
+ * Portefeuille CLOISONNÉ : on ne streame plus les ~800 docs côté client (cf. audit). On appelle le
+ * callable listCopiloteAccounts qui applique le périmètre serveur (exec/dir → tout ; commercial →
+ * son périmètre). `reload` rafraîchit après une synchro/création/attribution.
+ */
+export function useCopiloteAccounts(): {
+  accounts: CopiloteAccount[];
+  loading: boolean;
+  error: Error | null;
+  scoped: boolean;
+  reload: () => void;
+} {
   const [accounts, setAccounts] = useState<CopiloteAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [scoped, setScoped] = useState(false);
 
-  useEffect(() => {
-    const q = query(collection(db, "copiloteAccounts"), orderBy("nom", "asc"));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        // Normalisation : garantit que les champs qualitatifs sont toujours des tableaux/chaînes,
-        // même pour un compte issu seulement de la synchro nt360 (qui n'écrit que nom + nt360).
-        setAccounts(
-          snap.docs.map((d) => {
-            const raw = d.data() as Omit<CopiloteAccount, "id">;
-            return {
-              id: d.id,
-              nom: raw.nom || "",
-              secteur: raw.secteur || "",
-              tier: raw.tier || "",
-              enjeux: raw.enjeux ?? [],
-              whitespace: raw.whitespace ?? [],
-              enCours: raw.enCours ?? [],
-              historique: raw.historique ?? [],
-              contacts: raw.contacts ?? [],
-              preuves: raw.preuves ?? [],
-              tendances: raw.tendances ?? [],
-              reglementation: raw.reglementation,
-              concurrence: raw.concurrence,
-              nt360: raw.nt360,
-            };
-          })
-        );
-        setLoading(false);
+  const reload = useCallback(() => {
+    setLoading(true);
+    const call = httpsCallable<void, { accounts: CopiloteAccount[]; scoped: boolean }>(functions, "listCopiloteAccounts");
+    call()
+      .then(({ data }) => {
+        setAccounts((data.accounts || []).map(normalizeAccount));
+        setScoped(!!data.scoped);
         setError(null);
-      },
-      (err) => {
-        setError(err as Error);
-        setLoading(false);
-      }
-    );
-    return unsub;
+      })
+      .catch((e) => setError(e as Error))
+      .finally(() => setLoading(false));
   }, []);
 
-  return { accounts, loading, error };
+  useEffect(() => { reload(); }, [reload]);
+
+  return { accounts, loading, error, scoped, reload };
 }
 
 export async function createCopiloteAccount(input: CopiloteAccountInput): Promise<string> {
   // Vise le doc `copiloteAccounts/<slug(nom)>` (merge) au lieu d'un id auto : ainsi un compte créé
   // à la main et son jumeau synchronisé depuis nt360 partagent le MÊME doc — plus de doublon ni de
   // double comptage dans les KPIs du portefeuille. Repli id auto si le nom n'a pas de slug.
+  // `createdBy` = créateur : garantit qu'un commercial voit le compte qu'il vient de créer même
+  // sans rattachement am/BU/owner (le cloisonnement filtrerait sinon son propre compte).
+  const uid = auth.currentUser?.uid;
+  const payload = uid ? { ...input, createdBy: uid } : input;
   const slug = slugifyClient(input.nom);
   if (slug) {
-    await setDoc(doc(db, "copiloteAccounts", slug), input, { merge: true });
+    await setDoc(doc(db, "copiloteAccounts", slug), payload, { merge: true });
     return slug;
   }
-  const ref = await addDoc(collection(db, "copiloteAccounts"), input);
+  const ref = await addDoc(collection(db, "copiloteAccounts"), payload);
   return ref.id;
 }
 export async function upsertCopiloteAccount(id: string, patch: Partial<CopiloteAccountInput>): Promise<void> {
@@ -193,4 +208,16 @@ export async function syncCopiloteAccountsFromNt360(): Promise<{ accounts: numbe
   const call = httpsCallable<void, { accounts: number }>(functions, "syncCopiloteAccountsNow");
   const { data } = await call();
   return data;
+}
+
+/** Attribue un compte à des commerciaux (e-mails). Réservé direction / commercial_dir (gate serveur). */
+export async function setCopiloteAccountOwners(accountId: string, owners: string[]): Promise<void> {
+  const call = httpsCallable<{ accountId: string; owners: string[] }, { accountId: string; owners: string[] }>(functions, "setCopiloteAccountOwners");
+  await call({ accountId, owners });
+}
+
+/** Définit le périmètre (am / BU) d'un commercial. Réservé direction / commercial_dir (gate serveur). */
+export async function setCopiloteScope(uid: string, ams: string[], bus: string[]): Promise<void> {
+  const call = httpsCallable<{ uid: string; ams: string[]; bus: string[] }, unknown>(functions, "setCopiloteScope");
+  await call({ uid, ams, bus });
 }

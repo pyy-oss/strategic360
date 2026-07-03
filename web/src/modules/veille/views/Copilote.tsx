@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { T, fmt as fmtC } from "../../../design/tokens";
 import { Eyebrow, Card, Badge } from "../../../design/ui";
-import { useCan } from "../../../lib/rbac";
+import { useCan, useClaims } from "../../../lib/rbac";
 import {
   useCopiloteAccounts,
   createCopiloteAccount,
   copiloteGenerate,
   copiloteChat,
   syncCopiloteAccountsFromNt360,
+  setCopiloteAccountOwners,
   slugifyClient,
   type CopiloteAccount,
   type CopiloteAgent,
@@ -36,8 +37,10 @@ const lbl: React.CSSProperties = { fontSize: 11, color: T.faint, marginBottom: 3
 
 /** Copilote Commercial (add-on) — réutilise le moteur IA serveur + le PESTEL/les signaux de la veille. */
 export function Copilote() {
-  const { accounts, loading } = useCopiloteAccounts();
+  const { accounts, loading, scoped, reload } = useCopiloteAccounts();
   const { canWrite } = useCan("veille");
+  const { role } = useClaims();
+  const isAdmin = role === "direction" || role === "commercial_dir"; // peut attribuer les comptes
   const [accountId, setAccountId] = useState<string>("");
   const [tab, setTab] = useState<string>("prospection");
   const [showNew, setShowNew] = useState(false);
@@ -78,6 +81,7 @@ export function Copilote() {
     try {
       const { accounts: n } = await syncCopiloteAccountsFromNt360();
       setSyncMsg(`${n} comptes pré-remplis depuis nt360.`);
+      reload(); // portefeuille non streamé : on rafraîchit après la synchro
     } catch (e) {
       setSyncMsg(e instanceof Error ? e.message : "Échec de la synchronisation.");
     } finally { setSyncing(false); }
@@ -101,6 +105,7 @@ export function Copilote() {
             ))}
           </select>
           {account && <Badge c={T.steel}>{account.tier || "compte"}</Badge>}
+          {scoped && <Badge c={T.plum}>Mon périmètre</Badge>}
         </div>
         {canWrite && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -113,7 +118,7 @@ export function Copilote() {
         )}
       </div>
 
-      {showNew && canWrite && <NewAccountPanel onClose={() => setShowNew(false)} onCreated={(id) => { setAccountId(id); setShowNew(false); }} />}
+      {showNew && canWrite && <NewAccountPanel onClose={() => setShowNew(false)} onCreated={(id) => { setAccountId(id); setShowNew(false); reload(); }} />}
 
       <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 14 }}>
         {AGENT_TABS.map((t) => (
@@ -156,6 +161,14 @@ export function Copilote() {
               </div>
             </div>
           )}
+          {(account.nt360?.ams?.length || account.nt360?.bus?.length) ? (
+            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: T.faint }}>Rattachement :</span>
+              {(account.nt360?.ams ?? []).map((am, i) => <Badge key={`am${i}`} c={T.steel}>AM {am}</Badge>)}
+              {(account.nt360?.bus ?? []).map((bu, i) => <Badge key={`bu${i}`} c={T.faint}>{bu}</Badge>)}
+            </div>
+          ) : null}
+          <OwnersEditor account={account} isAdmin={isAdmin} onSaved={reload} />
         </Card>
       )}
 
@@ -557,5 +570,43 @@ function NewAccountPanel({ onClose, onCreated }: { onClose: () => void; onCreate
       </div>
       <ErrLine err={err} />
     </Card>
+  );
+}
+
+/* -------- Attribution manuelle du compte (owners) — édition réservée direction/commercial_dir -------- */
+function OwnersEditor({ account, isAdmin, onSaved }: { account: CopiloteAccount; isAdmin: boolean; onSaved: () => void }) {
+  const owners = account.owners ?? [];
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(owners.join(", "));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { setVal((account.owners ?? []).join(", ")); setEditing(false); }, [account.id, account.owners]);
+  const save = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const list = val.split(/[,\n]/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+      await setCopiloteAccountOwners(account.id, list);
+      setEditing(false); onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Échec de l'attribution.");
+    } finally { setBusy(false); }
+  };
+  if (!isAdmin && owners.length === 0) return null; // rien à montrer aux non-admins sans attribution
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.line}` }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, color: T.faint }}>Attribué à :</span>
+        {owners.length ? owners.map((o, i) => <Badge key={i} c={T.emerald}>{o}</Badge>) : <span style={{ fontSize: 11.5, color: T.faint }}>non attribué</span>}
+        {isAdmin && !editing && <button className="pill" onClick={() => setEditing(true)}>Modifier</button>}
+      </div>
+      {isAdmin && editing && (
+        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          <input style={{ ...inp, minWidth: 260, flex: 1 }} value={val} placeholder="e-mails séparés par des virgules" onChange={(e) => setVal(e.target.value)} />
+          <button className="pill on" disabled={busy} onClick={() => void save()}>{busy ? "…" : "Enregistrer"}</button>
+          <button className="pill" disabled={busy} onClick={() => { setEditing(false); setVal(owners.join(", ")); }}>Annuler</button>
+        </div>
+      )}
+      <ErrLine err={err} />
+    </div>
   );
 }
