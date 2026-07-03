@@ -99,17 +99,32 @@ async function generateJson(prompt, schema) {
       ? response.text
       : (response.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") ?? "");
 
-  // One retry on empty text — observed as a transient production failure mode (finish without
-  // any text part); a single immediate retry is cheap and usually enough.
+  // Retry avec back-off (m1 audit 2026-07) : au-delà du texte vide, on retente aussi sur les
+  // erreurs réseau/5xx/quota transitoires (503, 429, ECONNRESET…) — sinon un simple hoquet perdait
+  // toute la classification/l'enrichissement de l'item pour la journée. 3 tentatives, back-off
+  // 0/500/1500 ms. Les erreurs déterministes (4xx hors 429) sont propagées immédiatement.
+  const isTransient = (err) => {
+    const s = String(err && (err.status || err.code || err.message || err)).toLowerCase();
+    return /(429|500|502|503|504|econnreset|etimedout|eai_again|unavailable|deadline|socket hang up|fetch failed|network)/.test(s);
+  };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let text = "";
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    const response = await ai.models.generateContent({ model: modelName, contents: prompt, config });
-    text = extractText(response);
-    if (text.trim()) break;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await ai.models.generateContent({ model: modelName, contents: prompt, config });
+      text = extractText(response);
+      if (text.trim()) break;
+      lastErr = new Error("empty response text");
+    } catch (err) {
+      lastErr = err;
+      if (!isTransient(err)) throw err; // erreur déterministe : inutile de retenter
+    }
+    if (attempt < 3) await sleep(attempt === 1 ? 500 : 1500);
   }
 
   if (!text.trim()) {
-    throw new Error("generateJson: empty response text from Gemini (after retry).");
+    throw new Error(`generateJson: empty/failed response from Gemini after retries — ${lastErr ? lastErr.message : "unknown"}.`);
   }
 
   try {

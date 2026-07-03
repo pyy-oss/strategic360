@@ -46,6 +46,37 @@ const VALID_AXES = ["partenaires", "concurrents", "clients_prospects", "tech", "
 const VALID_IMPACTS = ["high", "medium", "low"];
 const VALID_STANCES = ["opportunity", "threat", "neutral"];
 const VALID_PROX = ["imminent", "court", "moyen", "horizon"];
+// Vocabulaire canonique des subtypes (m2 audit 2026-07) — aligné sur SUBTYPE_BUSINESS du scoring.
+// Le subtype reste libre (on ne jette pas une valeur inconnue), mais il est normalisé (minuscule,
+// tirets) et les synonymes fréquents sont ramenés à la forme canonique pour fiabiliser les filtres.
+const VALID_SUBTYPES = new Set([
+  "tender", "funding", "eol", "supply", "vulnerability", "cve", "regulation", "budget",
+  "implantation", "market_entry", "expansion", "pricing", "program_change", "ma", "win",
+  "product_launch", "hire", "leadership", "trend", "macro",
+]);
+const SUBTYPE_SYNONYMS = {
+  appel_offre: "tender", appel_doffres: "tender", ao: "tender", rfp: "tender", tenders: "tender",
+  financement: "funding", grant: "funding", fund: "funding",
+  fin_de_vie: "eol", end_of_life: "eol", eos: "eol",
+  approvisionnement: "supply", sourcing: "supply", shortage: "supply", penurie: "supply",
+  faille: "vulnerability", vuln: "vulnerability", cves: "cve",
+  reglementation: "regulation", compliance: "regulation", conformite: "regulation",
+  nouvel_entrant: "market_entry", new_entrant: "market_entry",
+  fusion: "ma", acquisition: "ma", merger: "ma",
+  recrutement: "hire", hiring: "hire", nomination: "leadership",
+  tendance: "trend", macroeconomie: "macro",
+};
+function normalizeSubtype(value) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const k = value.trim().toLowerCase().replace(/[\s'/]+/g, "_").replace(/[^a-z0-9_]/g, "");
+  if (VALID_SUBTYPES.has(k)) return k;
+  if (SUBTYPE_SYNONYMS[k]) return SUBTYPE_SYNONYMS[k];
+  return k || undefined; // inconnu : conservé sous forme normalisée (pas de perte d'information)
+}
+function normalizeGeo(value) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  return value.trim().toLowerCase().replace(/[\s']+/g, "_");
+}
 // businessAngle.bu — quelle Business Unit est concernée par le signal (Action 4.2 de l'audit).
 const VALID_BUS = ["ICT", "FORMATION", "les_deux"];
 
@@ -223,11 +254,11 @@ function parseClassificationResponse(rawJsonResponse, context) {
     summary: summary || title,
     axis,
     cat: AXIS_TO_DETECTION_CAT[axis],
-    subtype: coerceString(r.subtype, undefined),
+    subtype: normalizeSubtype(r.subtype),
     impact: coerceEnum(r.impact, VALID_IMPACTS, "low"),
     stance: coerceEnum(r.stance, VALID_STANCES, "neutral"),
     ent: coerceString(r.entity, undefined),
-    geo: coerceString(r.geo, undefined),
+    geo: normalizeGeo(r.geo),
     prox: coerceEnum(r.prox, VALID_PROX, "moyen"),
     neuf: r.weakSignal === true,
     soWhat: coerceString(r.soWhat, undefined),

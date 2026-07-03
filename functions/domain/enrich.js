@@ -966,11 +966,13 @@ Réponds UNIQUEMENT avec un objet JSON valide :
 {
   "cards": [
     {
-      "competitor": string,      // le nom EXACT tel que fourni dans la liste
-      "positioning": string,     // 1-2 phrases : positionnement marché, segments, points d'appui
-      "strengths": [string],     // 2 à 4 forces concrètes (références, partenariats, capacités)
-      "weaknesses": [string],    // 2 à 4 faiblesses exploitables
-      "ourWinThemes": [string]   // 2 à 4 axes concrets pour gagner contre lui
+      "competitor": string,       // le nom EXACT tel que fourni dans la liste
+      "positioning": string,      // 1-2 phrases : positionnement marché, segments, points d'appui
+      "strengths": [string],      // 2 à 4 forces concrètes (références, partenariats, capacités)
+      "weaknesses": [string],     // 2 à 4 faiblesses exploitables
+      "ourWinThemes": [string],   // 2 à 4 axes concrets pour gagner contre lui
+      "theirLikelyMoves": [string],   // 2 à 3 coups probables du concurrent (ce qu'il va tenter)
+      "objectionHandling": [string]   // 2 à 3 objections clients typiques face à nous + la réponse à donner
     }
   ]
 }
@@ -991,7 +993,7 @@ ${signalsBlock(items)}
 Réponds avec le JSON uniquement.`;
 }
 
-/** parseFullBattlecardsResponse(raw) -> {cards:[{competitor, positioning, strengths, weaknesses, ourWinThemes}]} | null */
+/** parseFullBattlecardsResponse(raw) -> {cards:[{competitor, positioning, strengths, weaknesses, ourWinThemes, theirLikelyMoves, objectionHandling}]} | null */
 function parseFullBattlecardsResponse(raw) {
   if (!raw || typeof raw !== "object" || !Array.isArray(raw.cards)) return null;
   const cards = raw.cards
@@ -1002,14 +1004,150 @@ function parseFullBattlecardsResponse(raw) {
       strengths: coerceStringArray(c.strengths),
       weaknesses: coerceStringArray(c.weaknesses),
       ourWinThemes: coerceStringArray(c.ourWinThemes),
+      theirLikelyMoves: coerceStringArray(c.theirLikelyMoves),
+      objectionHandling: coerceStringArray(c.objectionHandling),
     }))
     .filter((c) => c.strengths.length || c.weaknesses.length || c.ourWinThemes.length);
   return cards.length ? { cards } : null;
 }
 
+/* ------------------------------------------------------------------------------------------- *
+ * Cadres stratégiques additionnels (audit 2026-07 — cadres attendus d'un cabinet mais absents) :
+ * Ansoff (produit × marché), VRIO (avantages ressources), Chaîne de valeur (Porter). Générés par
+ * l'IA depuis les signaux + contexte, écrits dans frameworks/{ansoff,vrio,valueChain} (garde humaine).
+ * ------------------------------------------------------------------------------------------- */
+
+function buildAnsoffPrompt(items, companyContext = COMPANY_CONTEXT) {
+  return `Tu es consultant en stratégie (matrice d'Ansoff) pour l'entreprise suivante :
+${companyContext}
+
+Propose des initiatives de croissance réparties dans les 4 cases de la matrice d'Ansoff, dérivées
+des signaux réels. Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "penetration": [string],     // marchés actuels × offres actuelles (gagner des parts)
+  "devProduit": [string],      // marchés actuels × nouvelles offres (ex: SOC managé, cloud souverain)
+  "devMarche": [string],       // nouveaux marchés/géos × offres actuelles (ex: Burkina, Sénégal)
+  "diversification": [string]  // nouveaux marchés × nouvelles offres (pari plus risqué)
+}
+
+Contraintes : 2 à 3 initiatives concrètes par case, chacune ancrée dans un signal/fait (AO, EOL,
+obligation, tendance, mouvement concurrent). Français. JSON uniquement.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+function parseAnsoffResponse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const keys = ["penetration", "devProduit", "devMarche", "diversification"];
+  const out = {};
+  let total = 0;
+  for (const k of keys) {
+    out[k] = coerceStringArray(raw[k]);
+    total += out[k].length;
+  }
+  return total >= 2 ? out : null;
+}
+
+function buildVrioPrompt(items, companyContext = COMPANY_CONTEXT) {
+  return `Tu es consultant en stratégie (analyse VRIO des ressources et capacités) pour l'entreprise suivante :
+${companyContext}
+
+Évalue les ressources/capacités DISTINCTIVES de l'entreprise (ex : agrément PASSI, statut WALLIX
+Premier, Neurones Academy, références bancaires, proximité régulateurs). Pour chacune, indique si
+elle est Valorisable, Rare, Inimitable et si l'entreprise est Organisée pour l'exploiter, puis un
+verdict d'avantage. Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "resources": [
+    {
+      "resource": string,        // nom de la ressource/capacité
+      "valuable": boolean,
+      "rare": boolean,
+      "inimitable": boolean,
+      "organized": boolean,
+      "verdict": "avantage durable" | "avantage temporaire" | "parité concurrentielle" | "désavantage",
+      "note": string             // 1 phrase justifiant, ancrée dans un fait
+    }
+  ]
+}
+
+Contraintes : 4 à 6 ressources, honnêtes (toutes ne sont pas des avantages durables). Français. JSON uniquement.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+const VRIO_VERDICTS = ["avantage durable", "avantage temporaire", "parité concurrentielle", "désavantage"];
+function parseVrioResponse(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.resources)) return null;
+  const resources = raw.resources
+    .filter((r) => r && typeof r === "object" && typeof r.resource === "string" && r.resource.trim())
+    .map((r) => ({
+      resource: r.resource.trim(),
+      valuable: r.valuable === true,
+      rare: r.rare === true,
+      inimitable: r.inimitable === true,
+      organized: r.organized === true,
+      verdict: VRIO_VERDICTS.includes(r.verdict) ? r.verdict : "parité concurrentielle",
+      note: typeof r.note === "string" ? r.note.trim() : "",
+    }));
+  return resources.length >= 3 ? { resources } : null;
+}
+
+function buildValueChainPrompt(items, companyContext = COMPANY_CONTEXT) {
+  return `Tu es consultant en stratégie (chaîne de valeur de Porter) pour l'entreprise suivante :
+${companyContext}
+
+Évalue la chaîne de valeur d'un intégrateur IT (avant-vente/conseil → approvisionnement →
+intégration/déploiement → services managés → support & formation) et les activités de soutien
+(RH/talents, achats/distributeurs, technologie/certifications, infrastructure). Pour chaque
+activité, donne une force 0-100 et un levier d'amélioration. Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "primary": [ { "activity": string, "strength": number, "lever": string } ],   // 4 à 6 activités principales
+  "support": [ { "activity": string, "strength": number, "lever": string } ]    // 3 à 4 activités de soutien
+}
+
+Contraintes : strength 0-100 honnête et différenciée ; lever = 1 action concrète ancrée dans le
+contexte/les signaux. Français. JSON uniquement.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+function parseValueChainResponse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const mapActs = (arr) =>
+    (Array.isArray(arr) ? arr : [])
+      .filter((a) => a && typeof a === "object" && typeof a.activity === "string" && a.activity.trim())
+      .map((a) => ({
+        activity: a.activity.trim(),
+        strength: clamp100(a.strength) ?? 50,
+        lever: typeof a.lever === "string" ? a.lever.trim() : "",
+      }));
+  const primary = mapActs(raw.primary);
+  const support = mapActs(raw.support);
+  if (primary.length + support.length < 4) return null;
+  return { primary, support };
+}
+
 module.exports = {
   buildSwotPestelPrompt,
   parseSwotPestelResponse,
+  buildAnsoffPrompt,
+  parseAnsoffResponse,
+  buildVrioPrompt,
+  parseVrioResponse,
+  buildValueChainPrompt,
+  parseValueChainResponse,
   buildTechRadarPrompt,
   parseTechRadarResponse,
   buildBattlecardMovesPrompt,

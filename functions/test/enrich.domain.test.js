@@ -521,6 +521,40 @@ describe("consolidation radar + paris d'innovation (lisibilité 2026-07)", () =>
   });
 });
 
+describe("Cadres additionnels IA (audit 2026-07 : Ansoff / VRIO / Chaîne de valeur)", () => {
+  it("parseAnsoffResponse : 4 cases coercées, null si trop vide", async () => {
+    const { parseAnsoffResponse } = await import("../domain/enrich.js");
+    const p = parseAnsoffResponse({ penetration: ["gagner BRVM"], devProduit: ["SOC managé", 3], devMarche: [], diversification: ["x"] });
+    expect(p.penetration).toEqual(["gagner BRVM"]);
+    expect(p.devProduit).toEqual(["SOC managé"]);
+    expect(p.devMarche).toEqual([]);
+    expect(parseAnsoffResponse({ penetration: ["seul"] })).toBeNull(); // <2 items total
+    expect(parseAnsoffResponse(null)).toBeNull();
+  });
+  it("parseVrioResponse : booléens + verdict coercé, null si <3", async () => {
+    const { parseVrioResponse } = await import("../domain/enrich.js");
+    const p = parseVrioResponse({ resources: [
+      { resource: "Agrément PASSI", valuable: true, rare: true, inimitable: true, organized: true, verdict: "avantage durable", note: "n" },
+      { resource: "WALLIX Premier", valuable: true, rare: true, inimitable: false, organized: true, verdict: "n'importe" },
+      { resource: "Academy", valuable: true },
+    ] });
+    expect(p.resources).toHaveLength(3);
+    expect(p.resources[1].verdict).toBe("parité concurrentielle"); // verdict invalide → défaut
+    expect(p.resources[2].rare).toBe(false); // absent → false
+    expect(parseVrioResponse({ resources: [{ resource: "a" }] })).toBeNull();
+  });
+  it("parseValueChainResponse : strength clamp, null si trop peu d'activités", async () => {
+    const { parseValueChainResponse } = await import("../domain/enrich.js");
+    const p = parseValueChainResponse({
+      primary: [{ activity: "Intégration", strength: 120, lever: "x" }, { activity: "Managed", strength: 40 }],
+      support: [{ activity: "Talents", strength: -5, lever: "recruter" }, { activity: "Achats", strength: 55 }],
+    });
+    expect(p.primary[0].strength).toBe(100);
+    expect(p.support[0].strength).toBe(0);
+    expect(parseValueChainResponse({ primary: [{ activity: "a", strength: 50 }] })).toBeNull();
+  });
+});
+
 describe("Porter 3 forces IA (M3 audit)", () => {
   it("parsePorterResponse : clamp 0-100, note trim, null si aucune force exploitable", async () => {
     const { parsePorterResponse } = await import("../domain/enrich.js");

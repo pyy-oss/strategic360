@@ -717,22 +717,45 @@ exports.classifyAI = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
 });
 
 /**
- * scoreItems — onWrite intelItems
- * Calcule priorityScore (BUILD_KIT.md §8.1) : credibilite × (impact/alignement/probabilite/proximite).
- * Guarded against infinite retrigger loops: only writes when the computed score differs from
- * the currently stored one (this function's own write would otherwise re-trigger itself forever).
- * Roadmap: V3 Scoring & agrégats veille.
+ * onIntelItemWrite — trigger UNIQUE onWrite intelItems (M9 audit 2026-07).
+ * Fusionne les trois anciens triggers (scoreItems + aggregateVeille + aggregateVeilleExecOnWrite)
+ * qui rescannaient chacun toute la collection à CHAQUE écriture, et dont l'écriture de score par
+ * scoreItems re-déclenchait les deux autres → coût de lecture en O(N²). Nouveau flux :
+ *   1) si le score a changé → on l'écrit et on RETURN (cette écriture nous re-déclenche) ;
+ *   2) si le score est stable (ou suppression) → on recalcule les agrégats UNE fois.
+ * Résultat : une écriture de contenu = une passe de scoring + une passe d'agrégats, pas davantage.
  */
-exports.scoreItems = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1", database: FIRESTORE_DATABASE_ID }, async (event) => {
+exports.onIntelItemWrite = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1", database: FIRESTORE_DATABASE_ID }, async (event) => {
+  const db = firestoreDb();
   const after = event.data && event.data.after;
-  if (!after || !after.exists) return; // deleted — nothing to score
 
-  const item = after.data();
-  const computed = computePriorityScore(item);
-  if (item.priorityScore === computed) return; // no-op guard: avoid re-triggering ourselves
+  if (after && after.exists) {
+    const item = after.data();
+    const computed = computePriorityScore(item);
+    if (item.priorityScore !== computed) {
+      // Le score a bougé : on l'écrit et on sort. La mise à jour re-déclenche ce trigger, et c'est
+      // à cette passe-là (score stabilisé) que les agrégats seront recalculés — évite de les
+      // recalculer sur un état intermédiaire.
+      await after.ref.update({ priorityScore: computed });
+      logger.info(`onIntelItemWrite: ${after.ref.path} priorityScore=${computed}`);
+      return;
+    }
+  }
 
-  await after.ref.update({ priorityScore: computed });
-  logger.info(`scoreItems: ${after.ref.path} priorityScore=${computed}`);
+  // Score stabilisé (ou suppression) → recalcul des deux agrégats, chacun une seule fois.
+  try {
+    const [veille, veilleExec] = await Promise.all([
+      computeVeilleSummary(db),
+      computeVeilleExecSummary(db),
+    ]);
+    await Promise.all([
+      db.doc("summaries/veille").set(veille),
+      db.doc("summaries/veille_exec").set(veilleExec),
+    ]);
+  } catch (err) {
+    logger.error(`onIntelItemWrite: agrégats FAILED pour ${event.document} — ${err.message}`, { err });
+    throw err;
+  }
 });
 
 /**
@@ -815,27 +838,6 @@ async function computeVeilleSummary(db) {
     updatedAt: FieldValue.serverTimestamp(),
   };
 }
-
-/**
- * aggregateVeille — onWrite intelItems
- * Construit summaries/veille (countsByAxis, countsByImpact, topThreats/Opportunities, ...).
- * Writes to a DIFFERENT document than intelItems, so no self-retrigger risk (unlike scoreItems,
- * no guard is needed here — recomputing on every intelItems write, including scoreItems's own
- * priorityScore update, is exactly what keeps this summary fresh).
- * Roadmap: V3 Scoring & agrégats veille.
- */
-exports.aggregateVeille = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1", database: FIRESTORE_DATABASE_ID }, async (event) => {
-  const db = firestoreDb();
-  try {
-    const summary = await computeVeilleSummary(db);
-    await db.doc("summaries/veille").set(summary);
-  } catch (err) {
-    // Observability (V8): without this, a failure here silently leaves summaries/veille stale —
-    // Radar exécutif/Fil would keep showing outdated counts with no visible error anywhere.
-    logger.error(`aggregateVeille: FAILED for ${event.document} — ${err.message}`, { err });
-    throw err;
-  }
-});
 
 /**
  * Recomputes summaries/veille_exec (BUILD_KIT.md §6 / DELTA_01B §13). Shared by the scheduled
@@ -948,24 +950,6 @@ exports.aggregateVeilleExec = onSchedule({ schedule: "every 60 minutes", timeZon
 });
 
 /**
- * aggregateVeilleExecOnWrite — onWrite intelItems (companion trigger to aggregateVeilleExec)
- * Keeps summaries/veille_exec fresh in near-real-time as signals are created/updated, instead of
- * waiting for the hourly schedule. Shares computeVeilleExecSummary with the scheduled trigger to
- * avoid duplicating the computation (BUILD_KIT.md §10 lists this pair as "onWrite + planifié").
- * Roadmap: V3 Scoring & agrégats veille.
- */
-exports.aggregateVeilleExecOnWrite = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1", database: FIRESTORE_DATABASE_ID }, async (event) => {
-  const db = firestoreDb();
-  try {
-    const summary = await computeVeilleExecSummary(db);
-    await db.doc("summaries/veille_exec").set(summary);
-  } catch (err) {
-    logger.error(`aggregateVeilleExecOnWrite: FAILED for ${event.document} — ${err.message}`, { err });
-    throw err;
-  }
-});
-
-/**
  * generateBriefing — callable (BUILD_KIT.md §11: "Briefing | briefings, summaries/* |
  * exécutifs (generate)"), exec-gated same as classifyAI.
  * IA : idée directrice + 3 arguments MECE + KPIs → briefings (revue humaine obligatoire).
@@ -1069,6 +1053,12 @@ const {
   parseHorizonsResponse,
   buildPorterPrompt,
   parsePorterResponse,
+  buildAnsoffPrompt,
+  parseAnsoffResponse,
+  buildVrioPrompt,
+  parseVrioResponse,
+  buildValueChainPrompt,
+  parseValueChainResponse,
   pickSignalsForEnrichment,
   slugId: enrichSlugId,
 } = require("./domain/enrich");
@@ -1310,6 +1300,8 @@ async function runEnrichment(db) {
               strengths: card.strengths,
               weaknesses: card.weaknesses,
               ourWinThemes: card.ourWinThemes,
+              theirLikelyMoves: card.theirLikelyMoves,
+              objectionHandling: card.objectionHandling,
               generatedBy: "ai",
               updatedAt: FieldValue.serverTimestamp(),
             },
@@ -1385,6 +1377,26 @@ async function runEnrichment(db) {
   } catch (err) {
     summary.porter = "failed";
     logger.error(`runEnrichment: porter generation FAILED — ${err.message}`, { err });
+  }
+
+  // 7c. Cadres additionnels (audit 2026-07) : Ansoff, VRIO, Chaîne de valeur — chacun indépendant.
+  for (const [key, build, parse] of [
+    ["ansoff", buildAnsoffPrompt, parseAnsoffResponse],
+    ["vrio", buildVrioPrompt, parseVrioResponse],
+    ["valueChain", buildValueChainPrompt, parseValueChainResponse],
+  ]) {
+    try {
+      const parsed = parse(await generateJson(build(signals, companyContext)));
+      if (!parsed) {
+        summary[key] = "parse-failed";
+        logger.error(`runEnrichment: ${key} response unusable (parse returned null)`);
+      } else {
+        summary[key] = await writeFrameworkDoc(db, key, parsed);
+      }
+    } catch (err) {
+      summary[key] = "failed";
+      logger.error(`runEnrichment: ${key} generation FAILED — ${err.message}`, { err });
+    }
   }
 
   // 8. Three Horizons — suggestions d'initiatives (frameworks/horizons). L'humain adopte une

@@ -269,22 +269,40 @@ export function Concurrence() {
           <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
             {rows.map((c) => (
               <Card key={c.id} style={{ borderTop: `3px solid ${T.clay}` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
                   <Eyebrow color={T.clay}>{c.competitor}</Eyebrow>
                   <Badge c={c.win >= 0.5 ? T.emerald : T.clay}>
                     {c.deals > 0 ? `${pct(c.win)} · ${c.deals} deals` : "pas de win/loss"}
                   </Badge>
                 </div>
+                {c.generatedBy === "ai" && (
+                  <div style={{ marginTop: 4 }}>
+                    <Badge c={T.gold}>Suggéré par l'IA · à valider</Badge>
+                  </div>
+                )}
                 <div style={{ marginTop: 10, fontSize: 12.5, color: T.dim, lineHeight: 1.6 }}>
+                  {c.positioning && (
+                    <div style={{ marginBottom: 6, color: T.ink }}>{c.positioning}</div>
+                  )}
                   <div>
-                    <b style={{ color: T.gold }}>Force :</b> {(c.strengths ?? []).join("; ") || "—"}
+                    <b style={{ color: T.gold }}>Forces :</b> {(c.strengths ?? []).join("; ") || "—"}
                   </div>
                   <div>
-                    <b style={{ color: T.steel }}>Faiblesse :</b> {(c.weaknesses ?? []).join("; ") || "—"}
+                    <b style={{ color: T.steel }}>Faiblesses :</b> {(c.weaknesses ?? []).join("; ") || "—"}
                   </div>
                   <div style={{ marginTop: 6, padding: "8px 10px", background: T.panel2, borderRadius: 8 }}>
                     <b style={{ color: T.emerald }}>Comment gagner :</b> {(c.ourWinThemes ?? []).join("; ") || "—"}
                   </div>
+                  {(c.theirLikelyMoves ?? []).length > 0 && (
+                    <div style={{ marginTop: 6 }}>
+                      <b style={{ color: T.clay }}>Ses coups probables :</b> {(c.theirLikelyMoves ?? []).join("; ")}
+                    </div>
+                  )}
+                  {(c.objectionHandling ?? []).length > 0 && (
+                    <div style={{ marginTop: 6 }}>
+                      <b style={{ color: T.plum }}>Objections / réponses :</b> {(c.objectionHandling ?? []).join("; ")}
+                    </div>
+                  )}
                   {c.recentMoves?.length > 0 && (
                     <div style={{ marginTop: 6, fontSize: 11.5, color: T.faint }}>
                       <b style={{ color: T.faint }}>Mouvements récents :</b> {c.recentMoves.join("; ")}
