@@ -521,6 +521,27 @@ describe("consolidation radar + paris d'innovation (lisibilité 2026-07)", () =>
   });
 });
 
+describe("Scénarios IA avec signposts (M4 audit)", () => {
+  it("parseScenariosResponse : 4 mondes, proba clamp, signposts, null si <3", async () => {
+    const { parseScenariosResponse } = await import("../domain/enrich.js");
+    const p = parseScenariosResponse({
+      axisX: " PASSI ", axisY: "Hyperscalers",
+      worlds: [
+        { title: "Conformité rapide", probability: 1.4, narrative: "n", signposts: ["décret publié", 2], response: "pousser audits" },
+        { title: "Statu quo", probability: 0.3, signposts: [] },
+        { title: "Désintermédiation", probability: 0.2, narrative: "x" },
+        { title: "Rupture", probability: -1 },
+      ],
+    });
+    expect(p.axisX).toBe("PASSI");
+    expect(p.worlds).toHaveLength(4);
+    expect(p.worlds[0].probability).toBe(1); // clampé
+    expect(p.worlds[0].signposts).toEqual(["décret publié"]);
+    expect(p.worlds[3].probability).toBe(0); // clampé
+    expect(parseScenariosResponse({ worlds: [{ title: "seul" }, { title: "deux" }] })).toBeNull();
+  });
+});
+
 describe("Cadres additionnels IA (audit 2026-07 : Ansoff / VRIO / Chaîne de valeur)", () => {
   it("parseAnsoffResponse : 4 cases coercées, null si trop vide", async () => {
     const { parseAnsoffResponse } = await import("../domain/enrich.js");

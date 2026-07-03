@@ -1139,9 +1139,69 @@ function parseValueChainResponse(raw) {
   return { primary, support };
 }
 
+/* ------------------------------------------------------------------------------------------- *
+ * Scénarios prospectifs (M4 audit 2026-07 : les scénarios étaient inertes — pas de signaux
+ * précurseurs). L'IA propose 2 axes d'incertitude, 4 mondes probabilisés, et pour chacun des
+ * SIGNPOSTS (signaux précurseurs à guetter) + une réponse préparée. Écrit dans frameworks/scenarios
+ * (advisory, comme horizons — l'humain adopte en créant un scénario réel dans la vue Scénarios).
+ * ------------------------------------------------------------------------------------------- */
+
+function buildScenariosPrompt(items, companyContext = COMPANY_CONTEXT) {
+  return `Tu es consultant en planification par scénarios (méthode GBN/Shell) pour l'entreprise suivante :
+${companyContext}
+
+Construis un exercice de scénarios à partir des incertitudes clés révélées par les signaux.
+Réponds UNIQUEMENT avec un objet JSON valide :
+
+{
+  "axisX": string,   // 1re incertitude structurante (ex: "Rythme d'application des obligations PASSI")
+  "axisY": string,   // 2e incertitude structurante et INDÉPENDANTE (ex: "Arrivée directe des hyperscalers")
+  "worlds": [
+    {
+      "title": string,        // nom évocateur du monde
+      "probability": number,  // 0-1
+      "narrative": string,    // 1-2 phrases décrivant ce monde
+      "signposts": [string],  // 2-3 signaux précurseurs concrets à guetter dans la veille (early-warning)
+      "response": string      // la réponse stratégique préparée si ce monde advient
+    }
+  ]
+}
+
+Contraintes : EXACTEMENT 4 mondes (les 4 combinaisons des 2 axes), probabilités sommant ~1,
+signposts ancrés dans des faits observables. Français. JSON uniquement.
+
+Signaux de veille :
+${signalsBlock(items)}
+
+Réponds avec le JSON uniquement.`;
+}
+
+function parseScenariosResponse(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.worlds)) return null;
+  const axisX = typeof raw.axisX === "string" ? raw.axisX.trim() : "";
+  const axisY = typeof raw.axisY === "string" ? raw.axisY.trim() : "";
+  const worlds = raw.worlds
+    .filter((w) => w && typeof w === "object" && typeof w.title === "string" && w.title.trim())
+    .map((w) => {
+      let p = Number(w.probability);
+      p = Number.isFinite(p) ? Math.min(1, Math.max(0, p)) : 0.25;
+      return {
+        title: w.title.trim(),
+        probability: Math.round(p * 100) / 100,
+        narrative: typeof w.narrative === "string" ? w.narrative.trim() : "",
+        signposts: coerceStringArray(w.signposts),
+        response: typeof w.response === "string" ? w.response.trim() : "",
+      };
+    });
+  if (worlds.length < 3) return null;
+  return { axisX, axisY, worlds };
+}
+
 module.exports = {
   buildSwotPestelPrompt,
   parseSwotPestelResponse,
+  buildScenariosPrompt,
+  parseScenariosResponse,
   buildAnsoffPrompt,
   parseAnsoffResponse,
   buildVrioPrompt,

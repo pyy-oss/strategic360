@@ -1059,6 +1059,8 @@ const {
   parseVrioResponse,
   buildValueChainPrompt,
   parseValueChainResponse,
+  buildScenariosPrompt,
+  parseScenariosResponse,
   pickSignalsForEnrichment,
   slugId: enrichSlugId,
 } = require("./domain/enrich");
@@ -1384,6 +1386,7 @@ async function runEnrichment(db) {
     ["ansoff", buildAnsoffPrompt, parseAnsoffResponse],
     ["vrio", buildVrioPrompt, parseVrioResponse],
     ["valueChain", buildValueChainPrompt, parseValueChainResponse],
+    ["scenarios", buildScenariosPrompt, parseScenariosResponse],
   ]) {
     try {
       const parsed = parse(await generateJson(build(signals, companyContext)));

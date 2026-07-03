@@ -3,6 +3,53 @@ import { T, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Badge } from "../../../design/ui";
 import { useIsExec } from "../../../lib/rbac";
 import { createScenario, useScenarios } from "../lib/execution";
+import { useFramework } from "../lib/frameworks";
+
+type ScenarioWorldAI = { title: string; probability: number; narrative: string; signposts: string[]; response: string };
+type ScenariosContent = { axisX?: string; axisY?: string; worlds?: ScenarioWorldAI[] };
+
+/** Suggestions de scénarios générées par l'IA (M4 audit) avec SIGNAUX PRÉCURSEURS à guetter —
+ * rend le cadre actionnable (early-warning) au lieu d'inerte. L'exécutif adopte en créant un scénario. */
+function AiScenarioSuggestions() {
+  const { data: fw } = useFramework<ScenariosContent>("scenarios");
+  const s = fw?.content;
+  if (!s || !(s.worlds && s.worlds.length)) return null;
+  return (
+    <Card style={{ marginTop: 14, borderColor: T.steel }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+        <Eyebrow color={T.steel}>Scénarios suggérés par l'IA — signaux précurseurs à guetter</Eyebrow>
+        <Badge c={T.gold}>Suggéré · à adopter</Badge>
+      </div>
+      {(s.axisX || s.axisY) && (
+        <div style={{ fontSize: 11.5, color: T.faint, marginTop: 6 }}>
+          Axes d'incertitude : <b style={{ color: T.dim }}>{s.axisY}</b> × <b style={{ color: T.dim }}>{s.axisX}</b>
+        </div>
+      )}
+      <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
+        {s.worlds.map((w, i) => (
+          <div key={i} style={{ background: T.panel2, borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{w.title}</span>
+              <Badge c={T.steel}>proba {pct(w.probability)}</Badge>
+            </div>
+            {w.narrative && <div style={{ fontSize: 12, color: T.dim, marginTop: 6, lineHeight: 1.5 }}>{w.narrative}</div>}
+            {w.signposts.length > 0 && (
+              <div style={{ marginTop: 8, fontSize: 11.5, color: T.dim }}>
+                <b style={{ color: T.clay }}>À guetter :</b>
+                <ul style={{ margin: "2px 0 0", paddingLeft: 16 }}>{w.signposts.map((sp, j) => <li key={j}>{sp}</li>)}</ul>
+              </div>
+            )}
+            {w.response && (
+              <div style={{ marginTop: 6, fontSize: 11.5, color: T.emerald }}>
+                <b>Réponse préparée :</b> {w.response}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 const WORLD_COLORS = [T.gold, T.emerald, T.clay, T.steel];
 
@@ -172,6 +219,7 @@ export function Scenarios() {
           </div>
         </>
       )}
+      <AiScenarioSuggestions />
     </div>
   );
 }
