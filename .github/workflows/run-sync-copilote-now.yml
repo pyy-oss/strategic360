@@ -1,0 +1,73 @@
+name: Run syncCopiloteAccounts now (propulse-business-87f7a / strategic360)
+
+# Manual trigger only. Force-runs the syncCopiloteAccounts scheduled Cloud Function immediately,
+# instead of waiting for its daily 05:45 Africa/Abidjan slot — pré-remplit la collection
+# copiloteAccounts (empreinte nt360 : clients, CAS réalisé, pipeline pondéré, opportunités en cours)
+# depuis la base nt360 en lecture seule. Utile pour peupler le portefeuille du Copilote Commercial
+# à la demande (sinon écran vide au premier lancement).
+#
+# Comme run-sync-now.yml, on déclenche le job Cloud Scheduler que Firebase crée pour une fonction v2
+# onSchedule ("firebase-schedule-<functionName>-<region>") via `gcloud scheduler jobs run`, ce qui
+# ne requiert que des credentials infra GCP (GCP_SA_KEY_STRATEGIC360) — pas d'ID token exec, à la
+# différence du callable syncCopiloteAccountsNow (bouton « ⟳ Empreinte nt360 » in-app).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tapez "sync" pour confirmer'
+        required: true
+
+jobs:
+  run-sync-copilote:
+    name: Force-run syncCopiloteAccounts
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Refuse to run without explicit confirmation
+        if: ${{ github.event.inputs.confirm != 'sync' }}
+        run: |
+          echo "Le champ 'confirm' doit valoir exactement 'sync'. Annulé."
+          exit 1
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
+
+      - name: Find and run the syncCopiloteAccounts scheduler job
+        run: |
+          set -e
+          JOB=$(gcloud scheduler jobs list \
+            --project=propulse-business-87f7a \
+            --location=europe-west1 \
+            --format="value(name)" \
+            --filter="name:firebase-schedule-syncCopiloteAccounts" | head -n1)
+          if [ -z "$JOB" ]; then
+            echo "::error::Aucun job Cloud Scheduler trouvé pour syncCopiloteAccounts — vérifier qu'il est bien déployé (functions:veille) et lister les jobs existants pour ajuster le filtre."
+            gcloud scheduler jobs list --project=propulse-business-87f7a --location=europe-west1
+            exit 1
+          fi
+          echo "Running $JOB"
+          gcloud scheduler jobs run "$JOB" --project=propulse-business-87f7a --location=europe-west1
+
+      - name: Wait for the function to run (Pub/Sub trigger is asynchronous)
+        run: sleep 30
+
+      - name: Fetch syncCopiloteAccounts logs
+        run: |
+          echo "--- Logs syncCopiloteAccounts (dernières exécutions) ---"
+          gcloud functions logs read syncCopiloteAccounts \
+            --project=propulse-business-87f7a \
+            --region=europe-west1 \
+            --gen2 \
+            --limit=100 \
+            2>&1 || echo "::warning::Impossible de lire les logs via 'gcloud functions logs read' — essai via gcloud logging read en repli."
+          echo "--- Repli : gcloud logging read ---"
+          gcloud logging read \
+            'resource.type="cloud_run_revision" resource.labels.service_name="synccopiloteaccounts"' \
+            --project=propulse-business-87f7a \
+            --limit=50 \
+            --format="table(timestamp, severity, textPayload)" \
+            --freshness=10m \
+            2>&1 || true
