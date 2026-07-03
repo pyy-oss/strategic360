@@ -203,15 +203,31 @@ function slugifyClient(name) {
     .trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
+// Repli déterministe (djb2 → base36) quand slugifyClient est vide (nom purement non-latin/symboles) :
+// on ne veut PAS perdre le CAS de ce client ni fusionner tous ces clients dans une seule clé "".
+function hashName(name) {
+  let h = 5381;
+  const s = String(name || "");
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
 function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
   const byClient = new Map();
   const get = (client) => {
     const nom = String(client).trim();
-    const slug = slugifyClient(nom);
+    const slug = slugifyClient(nom) || `cpt-${hashName(nom)}`;
     if (!byClient.has(slug)) {
       byClient.set(slug, { slug, nom, wonBu: new Set(), openBu: new Set(), casTotal: 0, pipelinePondere: 0, wins: 0, opps: [] });
     }
     return byClient.get(slug);
+  };
+  // Résout le stade comme mapOpportunities : `stage` numérique prioritaire, sinon 1er chiffre de
+  // `stageLabel` ("3-Négociation" → 3). Sans ce repli, un deal sans `stage` numérique disparaissait
+  // entièrement du pipeline (audit profond 2026-07).
+  const resolveStage = (o) => {
+    let s = Number(o.stage);
+    if (!Number.isFinite(s) && typeof o.stageLabel === "string") s = Number.parseInt(o.stageLabel, 10);
+    return s;
   };
   for (const o of Array.isArray(nt360Orders) ? nt360Orders : []) {
     if (!o || !o.client) continue;
@@ -221,12 +237,15 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
   }
   for (const o of Array.isArray(nt360Opps) ? nt360Opps : []) {
     if (!o || !o.client) continue;
-    const stage = Number(o.stage);
+    const stage = resolveStage(o);
     const a = get(o.client);
     if (stage === 6) { a.wins += 1; if (o.bu) a.wonBu.add(String(o.bu)); }
     else if (stage >= 1 && stage <= 5) {
       if (o.bu) a.openBu.add(String(o.bu));
-      a.pipelinePondere += Number.isFinite(Number(o.weighted)) ? num(o.weighted) : num(o.amount) * 0.5;
+      // `weighted` non renseigné (null/undefined/NaN) → repli amount*0.5. Number(null)===0 est fini,
+      // d'où le garde explicite `!= null` pour ne pas comptabiliser un pipeline nul par erreur.
+      const hasWeighted = o.weighted != null && Number.isFinite(Number(o.weighted));
+      a.pipelinePondere += hasWeighted ? num(o.weighted) : num(o.amount) * 0.5;
       // Opportunité RÉELLE en cours (deal en pipeline) — détail chiffré pour l'effet « portefeuille vivant ».
       a.opps.push({
         nom: String(o.oppId || o.fp || o.bu || "Opportunité").trim(),

@@ -56,4 +56,30 @@ describe("Copilote — parsers (coercition, jamais d'undefined)", () => {
     expect(parseRedactionResponse({ variantes: [{ label: "douce", objet: "", corps: "Bonjour…" }] }).variantes).toHaveLength(1);
     expect(parseRedactionResponse({ variantes: [{ corps: "" }] })).toBeNull();
   });
+
+  it("parseProspectionResponse : cible sans source → chaleur forcée à Froid, source exposée, borné à 4", async () => {
+    const { parseProspectionResponse } = await import("../domain/copilote.js");
+    const r = parseProspectionResponse({ cibles: [
+      { nom: "Profil banque UEMOA", angle: "a", accroche: "b", chaleur: "Chaud" }, // pas de source → Froid
+      { nom: "Orange CI", source: "Signal WAN Orange", angle: "a", accroche: "b", chaleur: "Chaud" },
+      { nom: "C3", source: "s", chaleur: "Tiède" }, { nom: "C4", source: "s" }, { nom: "C5", source: "s" },
+    ]});
+    expect(r.cibles).toHaveLength(4); // borné à 4
+    expect(r.cibles[0].chaleur).toBe("Froid"); // non sourcée
+    expect(r.cibles[0].source).toBe("");
+    expect(r.cibles[1].chaleur).toBe("Chaud"); // sourcée → conservée
+    expect(r.cibles[1].source).toBe("Signal WAN Orange");
+  });
+
+  it("parseRedactionResponse : objet vidé hors e-mail, borné à 2 variantes", async () => {
+    const { parseRedactionResponse } = await import("../domain/copilote.js");
+    const three = { variantes: [
+      { label: "A", objet: "Sujet", corps: "1" }, { label: "B", objet: "Sujet2", corps: "2" }, { label: "C", objet: "S3", corps: "3" },
+    ]};
+    const wa = parseRedactionResponse(three, { canal: "whatsapp" });
+    expect(wa.variantes).toHaveLength(2); // borné à 2
+    expect(wa.variantes.every((v) => v.objet === "")).toBe(true); // pas d'objet hors e-mail
+    const mail = parseRedactionResponse(three, { canal: "email" });
+    expect(mail.variantes[0].objet).toBe("Sujet"); // objet conservé en e-mail
+  });
 });

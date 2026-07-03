@@ -1627,13 +1627,22 @@ async function assembleCopiloteContext(db, accountId) {
   const humanHisto = Array.isArray(a.historique) ? a.historique : [];
   const derivedHisto = Array.isArray(nt.historique) ? nt.historique : [];
   const histoSeen = new Set();
+  // Garde `h && typeof === object` : un doc édité à la main peut contenir null / une string dans
+  // historique — sans ce garde `h.offre` levait une exception → « internal » sur ce compte.
   const historique = [...humanHisto, ...derivedHisto].filter((h) => {
-    const k = `${(h.offre || "").toLowerCase()}|${(h.statut || "").toLowerCase()}`;
-    if (!h.offre || histoSeen.has(k)) return false;
+    if (!h || typeof h !== "object" || !h.offre) return false;
+    const k = `${String(h.offre).toLowerCase()}|${String(h.statut || "").toLowerCase()}`;
+    if (histoSeen.has(k)) return false;
     histoSeen.add(k);
     return true;
   });
-  const enCours = [...new Set([...(Array.isArray(a.enCours) ? a.enCours : []), ...(Array.isArray(nt.enCours) ? nt.enCours : [])])];
+  // Coerce en chaînes non vides avant fusion : évite qu'une saisie humaine non-string ne produise
+  // « [object Object] » dans le prompt, et déduplique proprement.
+  const enCours = [...new Set(
+    [...(Array.isArray(a.enCours) ? a.enCours : []), ...(Array.isArray(nt.enCours) ? nt.enCours : [])]
+      .filter((x) => typeof x === "string" && x.trim())
+      .map((x) => x.trim())
+  )];
   // PESTEL réutilisé depuis la veille (frameworks/pestel content.factors = [{f, d, ...}]).
   const pestel = (pestelSnap.exists ? pestelSnap.data()?.content?.factors || [] : [])
     .filter((x) => x && typeof x === "object" && x.d)
@@ -1641,7 +1650,7 @@ async function assembleCopiloteContext(db, accountId) {
   // Signaux : d'abord les VRAIES opportunités en cours du compte (pipeline nt360), puis les leads
   // de veille. Donne aux agents (plan de compte, prospection) de la matière chiffrée et réelle.
   const dealSignaux = (Array.isArray(nt.opportunites) ? nt.opportunites : []).map((o) => ({
-    titre: `${o.nom} — ${o.montant ? new Intl.NumberFormat("fr-FR").format(o.montant) + " XOF" : "montant n.c."} (${o.etape})`,
+    titre: `${o.nom} — ${Number.isFinite(o.montant) ? new Intl.NumberFormat("fr-FR").format(o.montant) + " XOF" : "montant n.c."} (${o.etape})`,
   }));
   const veilleSignaux = bizSnap.docs
     .map((d) => d.data())
@@ -1664,7 +1673,12 @@ async function assembleCopiloteContext(db, accountId) {
     concurrence: a.concurrence || "",
     pestel,
     signaux,
-    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux: Array.isArray(a.enjeux) ? a.enjeux : [], historique, whitespace: Array.isArray(a.whitespace) ? a.whitespace : [] },
+    // Empreinte CHIFFRÉE réelle (pipeline nt360) — matière non inventable pour CVP/triennal/plan de
+    // compte. CAS total = historique cumulé réalisé avec ce compte ; pipeline pondéré = deals ouverts.
+    casTotal: Number(nt.casTotal) || 0,
+    pipelinePondere: Number(nt.pipelinePondere) || 0,
+    wins: Number(nt.wins) || 0,
+    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux: Array.isArray(a.enjeux) ? a.enjeux : [], historique, whitespace: Array.isArray(a.whitespace) ? a.whitespace : [], casTotal: Number(nt.casTotal) || 0, pipelinePondere: Number(nt.pipelinePondere) || 0, wins: Number(nt.wins) || 0, signaux },
   };
 }
 
@@ -1673,17 +1687,32 @@ async function assembleCopiloteContext(db, accountId) {
  * agent ∈ {prospection, cvp, triennal, planCompte, redaction}. `extra` fusionne des champs ctx
  * fournis par l'écran (ex. redaction : {kind, canal, ton, contexte}).
  */
+// Champs d'écran que le client a le droit de fournir (redaction) — tout le reste du contexte est
+// assemblé côté serveur depuis nt360/veille et ne doit PAS être surchargé par le client.
+const COPILOTE_EXTRA_ALLOWED = ["kind", "canal", "ton", "contexte", "compte"];
+function assertAccountId(accountId) {
+  if (accountId == null || accountId === "") return;
+  if (typeof accountId !== "string" || !/^[A-Za-z0-9_-]+$/.test(accountId)) {
+    throw new HttpsError("invalid-argument", "Identifiant de compte invalide.");
+  }
+}
+
 exports.copiloteGenerate = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   requireCommercialCaller(request, "utiliser le copilote commercial");
   const { agent, accountId, extra } = request.data || {};
   const spec = COPILOTE_AGENTS[agent];
   if (!spec) throw new HttpsError("invalid-argument", `agent inconnu : ${agent}`);
+  assertAccountId(accountId);
   const db = firestoreDb();
   const base = await assembleCopiloteContext(db, accountId);
-  const ctx = { ...base, ...(extra && typeof extra === "object" ? extra : {}) };
+  const safeExtra = {};
+  if (extra && typeof extra === "object") {
+    for (const k of COPILOTE_EXTRA_ALLOWED) if (k in extra) safeExtra[k] = extra[k];
+  }
+  const ctx = { ...base, ...safeExtra };
   let parsed;
   try {
-    parsed = spec.parse(await generateJson(spec.build(ctx)));
+    parsed = spec.parse(await generateJson(spec.build(ctx)), ctx);
   } catch (err) {
     logger.error(`copiloteGenerate: agent=${agent} FAILED — ${err.message}`, { err });
     throw new HttpsError("internal", "L'IA n'a pas pu générer ce livrable (réessayez dans un instant).");
@@ -1702,6 +1731,7 @@ exports.copiloteChat = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new HttpsError("invalid-argument", "messages (non vide) est requis.");
   }
+  assertAccountId(accountId);
   const db = firestoreDb();
   const base = await assembleCopiloteContext(db, accountId);
   const ctx = { ecran: ecran || "Copilote", compte: base.account.nom ? base.account : null };

@@ -180,4 +180,37 @@ describe("deriveCopiloteAccounts (empreinte comptes pour le Copilote)", () => {
     // Jamais d'undefined : probability absente → null.
     expect(sgci.opportunites[0].probability).toBeNull();
   });
+
+  it("résout le stade via stageLabel quand `stage` numérique est absent (deal sinon perdu du pipeline)", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const opps = [
+      { client: "Orange CI", bu: "WAN", stageLabel: "3-Négociation", amount: 100, weighted: 40 }, // stage absent
+      { client: "Orange CI", bu: "CYBER", stageLabel: "6-Gagné" }, // gagné via label
+    ];
+    const a = deriveCopiloteAccounts([], opps).find((x) => x.slug === "orange-ci");
+    expect(a.pipelinePondere).toBe(40);
+    expect(a.enCours).toEqual(["WAN"]);
+    expect(a.wins).toBe(1);
+  });
+
+  it("weighted null/absent → repli amount*0.5 (Number(null)===0 ne doit pas compter un pipeline nul)", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const opps = [
+      { client: "Coris", bu: "ICT", stage: 3, amount: 200, weighted: null },
+      { client: "Coris", bu: "ICT", stage: 2, amount: 100 }, // weighted absent
+    ];
+    const a = deriveCopiloteAccounts([], opps).find((x) => x.slug === "coris");
+    expect(a.pipelinePondere).toBe(150); // 200*0.5 + 100*0.5
+  });
+
+  it("nom purement non-latin → slug de repli déterministe (CAS non perdu), clients distincts non fusionnés", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const accts = deriveCopiloteAccounts(
+      [{ client: "株式会社", bu: "ICT", cas: 80 }, { client: "会社银行", bu: "ICT", cas: 20 }],
+      []
+    );
+    expect(accts).toHaveLength(2); // pas fusionnés dans une clé ""
+    expect(accts.every((a) => a.slug && a.slug.startsWith("cpt-"))).toBe(true);
+    expect(accts.reduce((s, a) => s + a.casTotal, 0)).toBe(100); // aucun CAS perdu
+  });
 });

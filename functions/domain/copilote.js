@@ -36,6 +36,18 @@ function coerceEnum(v, allowed, fallback) {
 function list(arr) {
   return Array.isArray(arr) && arr.length ? arr.join(", ") : "aucun";
 }
+function xof(n) {
+  return Number.isFinite(Number(n)) && Number(n) > 0 ? `${new Intl.NumberFormat("fr-FR").format(Math.round(Number(n)))} XOF` : "n.c.";
+}
+/** Bloc d'empreinte chiffrée réelle (nt360) — matière NON inventable à citer par les agents compte. */
+function empreinteChiffree(c) {
+  return (
+    `Empreinte chiffrée réelle (pipeline nt360, à citer telle quelle, ne jamais arrondir ni inventer) : ` +
+    `CA total déjà réalisé avec ce compte : ${xof(c.casTotal)} ; ` +
+    `pipeline pondéré en cours : ${xof(c.pipelinePondere)} ; ` +
+    `affaires déjà gagnées : ${Number(c.wins) > 0 ? c.wins : "n.c."}.`
+  );
+}
 
 /* ------------------------------------------------------------------------------------------- *
  * §B — PROSPECTION (comptes cibles)
@@ -52,27 +64,38 @@ Réglementation : ${coerceStr(c.reglementation, "non précisée")}.
 Différenciation NT / concurrence : ${coerceStr(c.concurrence, "non précisée")}.
 Signaux de veille exploitables : ${list((c.signaux || []).map((s) => s.titre))}.
 
-Rends 3 à 4 comptes RÉELS et plausibles de ce secteur/zone. Priorise les comptes adossés à un signal.
+Règle anti-invention STRICTE : ne NOMME une entreprise (raison sociale) que si elle est explicitement
+citée dans les "Signaux de veille exploitables" ci-dessus. Sinon, décris un PROFIL de compte cible
+(secteur précis, taille, critère déclencheur) SANS inventer de raison sociale, de chiffre ni de contact.
+Rends 3 à 4 cibles, en priorisant celles adossées à un signal.
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
   "cibles": [
-    { "nom": string, "angle": string, "accroche": string, "chaleur": "Chaud" | "Tiède" | "Froid" }
+    { "nom": string, "source": string, "angle": string, "accroche": string, "chaleur": "Chaud" | "Tiède" | "Froid" }
   ]
 }
+"source" = le signal exact qui justifie cette cible, ou "profil-type (non nommé)" si aucune source ;
+"nom" = raison sociale UNIQUEMENT si sourcée, sinon un libellé de profil (ex. « Banque de détail UEMOA, >200 agences ») ;
 "angle" = pourquoi maintenant / sur quel besoin ; "accroche" = valeur chiffrable si possible ;
-"chaleur" = Chaud si un signal/historique le justifie, sinon Tiède/Froid. JSON uniquement.`;
+"chaleur" = Chaud seulement si un signal/historique le justifie, sinon Tiède/Froid. JSON uniquement.`;
 }
 
 function parseProspectionResponse(raw) {
   if (!raw || typeof raw !== "object" || !Array.isArray(raw.cibles)) return null;
   const cibles = raw.cibles
     .filter((x) => x && typeof x === "object" && coerceStr(x.nom))
-    .map((x) => ({
-      nom: coerceStr(x.nom),
-      angle: coerceStr(x.angle),
-      accroche: coerceStr(x.accroche),
-      chaleur: coerceEnum(x.chaleur, CHALEURS, "Froid"),
-    }));
+    .slice(0, 4)
+    .map((x) => {
+      const source = coerceStr(x.source);
+      return {
+        nom: coerceStr(x.nom),
+        source,
+        angle: coerceStr(x.angle),
+        accroche: coerceStr(x.accroche),
+        // Pas de source explicite → on ne laisse pas passer un « Chaud » : une cible non sourcée est froide.
+        chaleur: source ? coerceEnum(x.chaleur, CHALEURS, "Froid") : "Froid",
+      };
+    });
   return cibles.length ? { cibles } : null;
 }
 
@@ -90,6 +113,8 @@ function buildCvpPrompt(ctx) {
 Construis la proposition de valeur de Neurones Technologies pour ${coerceStr(c.compte, "le compte")} (${coerceStr(c.secteur, "secteur non précisé")}).
 Enjeux client : ${list(c.enjeux)}.
 Whitespace (offres non encore vendues) : ${list(c.whitespace)}.
+${empreinteChiffree(c)}
+Opportunités réelles en cours sur ce compte : ${list((c.signaux || []).map((s) => s.titre))}.
 Contexte PESTEL (déjà établi par la veille, à EXPLOITER, pas à réécrire) :
 ${pestel || "- (aucun PESTEL disponible)"}
 Preuves / références NT mobilisables : ${list(c.preuves)}.
@@ -126,6 +151,7 @@ function buildTriennalPrompt(ctx) {
 
 Bâtis un plan de croissance à 3 ans pour le compte ${coerceStr(c.compte, "le compte")} (${coerceStr(c.secteur, "secteur")}) chez Neurones Technologies.
 Empreinte actuelle (offres déjà vendues) : ${list(histo)}.
+${empreinteChiffree(c)}
 Travaux en cours : ${list(c.enCours)}.
 Whitespace à conquérir : ${list(c.whitespace)}.
 Logique attendue : An 1 = consolider/sécuriser la base + un premier cross-sell ; An 2 = étendre le périmètre
@@ -150,7 +176,8 @@ function parseTriennalResponse(raw) {
       offres: coerceStrArray(x.offres),
       jalon: coerceStr(x.jalon),
     }))
-    .filter((x) => x.titre || x.offres.length);
+    .filter((x) => x.titre || x.offres.length)
+    .slice(0, 3); // An 1/2/3 : jamais plus de 3 lignes
   return roadmap.length ? { roadmap } : null;
 }
 
@@ -169,10 +196,11 @@ function buildPlanComptePrompt(ctx) {
 
 Rédige le cœur d'un plan de compte pour ${coerceStr(c.compte, "le compte")} (${coerceStr(c.secteur, "secteur")}, compte ${coerceStr(c.tier, "?")}) chez Neurones Technologies.
 Enjeux : ${list(c.enjeux)}.
+${empreinteChiffree(c)}
 Actions déjà en cours : ${list(c.enCours)}.
 Whitespace : ${list(c.whitespace)}.
 Décideurs connus : ${list(contacts)}.
-Signaux de veille : ${list((c.signaux || []).map((s) => s.titre))}.
+Signaux & opportunités en cours : ${list((c.signaux || []).map((s) => s.titre))}.
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
@@ -187,10 +215,12 @@ function parsePlanCompteResponse(raw) {
   if (!raw || typeof raw !== "object") return null;
   const actions = (Array.isArray(raw.actions) ? raw.actions : [])
     .filter((x) => x && typeof x === "object" && coerceStr(x.libelle))
-    .map((x) => ({ libelle: coerceStr(x.libelle), horizon: coerceEnum(x.horizon, HORIZONS, "Continu") }));
+    .map((x) => ({ libelle: coerceStr(x.libelle), horizon: coerceEnum(x.horizon, HORIZONS, "Continu") }))
+    .slice(0, 6);
   const risques = (Array.isArray(raw.risques) ? raw.risques : [])
     .filter((x) => x && typeof x === "object" && coerceStr(x.r))
-    .map((x) => ({ r: coerceStr(x.r), m: coerceStr(x.m), niv: coerceEnum(x.niv, NIVEAUX, "Moyen") }));
+    .map((x) => ({ r: coerceStr(x.r), m: coerceStr(x.m), niv: coerceEnum(x.niv, NIVEAUX, "Moyen") }))
+    .slice(0, 5);
   if (!actions.length && !risques.length) return null;
   return { actions, risques };
 }
@@ -205,12 +235,19 @@ function buildChatSystem(ctx) {
     "Tu es le copilote commercial de Neurones Technologies (intégrateur IT/télécom/cyber, zone UEMOA/CEMAC). " +
     "Tu aides un commercial à préparer ses RDV, bâtir ses argumentaires et ses plans de compte. " +
     "Français, très concis (max 6 lignes), concret et actionnable. " +
+    "Ne fournis AUCUNE donnée client (chiffre, contact, budget, échéance) qui ne figure pas dans le " +
+    "contexte ci-dessous : si elle manque, dis-le explicitement au lieu de l'estimer. " +
     `Contexte : écran « ${coerceStr(c.ecran, "Copilote")} ». `;
+  const histoOffres = (Array.isArray(c.compte && c.compte.historique) ? c.compte.historique : [])
+    .filter((h) => h && typeof h === "object" && h.offre)
+    .map((h) => h.offre);
   const compte = c.compte
     ? `Compte en cours : ${coerceStr(c.compte.nom)} (${coerceStr(c.compte.secteur, "?")}, ${coerceStr(c.compte.tier, "?")}). ` +
       `Enjeux : ${list(c.compte.enjeux)}. ` +
-      `Offres déjà vendues : ${list((c.compte.historique || []).map((h) => h.offre))}. ` +
-      `Whitespace : ${list(c.compte.whitespace)}.`
+      `Offres déjà vendues : ${list(histoOffres)}. ` +
+      `Whitespace : ${list(c.compte.whitespace)}. ` +
+      `${empreinteChiffree(c.compte)} ` +
+      `Opportunités en cours : ${list((c.compte.signaux || []).map((s) => s.titre))}.`
     : "Aucun compte précis sélectionné : réponds au niveau méthode/portefeuille.";
   return base + compte;
 }
@@ -271,11 +308,15 @@ Produis 2 "variantes" à STRATÉGIE DIFFÉRENTE (ex. « relance douce / entreten
 chacune avec un "label" court décrivant la stratégie, un "objet" (vide si canal ≠ email), et le "corps". JSON uniquement.`;
 }
 
-function parseRedactionResponse(raw) {
+function parseRedactionResponse(raw, ctx) {
   if (!raw || typeof raw !== "object" || !Array.isArray(raw.variantes)) return null;
+  // WhatsApp/LinkedIn n'ont pas d'objet : on force `objet` à vide hors e-mail (le prompt le demande,
+  // le parser le garantit). Et on borne à 2 variantes comme spécifié.
+  const isEmail = !ctx || ctx.canal == null || ctx.canal === "email";
   const variantes = raw.variantes
     .filter((x) => x && typeof x === "object" && coerceStr(x.corps))
-    .map((x) => ({ label: coerceStr(x.label, "Variante"), objet: coerceStr(x.objet), corps: coerceStr(x.corps) }));
+    .map((x) => ({ label: coerceStr(x.label, "Variante"), objet: isEmail ? coerceStr(x.objet) : "", corps: coerceStr(x.corps) }))
+    .slice(0, 2);
   return variantes.length ? { variantes } : null;
 }
 

@@ -44,15 +44,18 @@ export interface CopiloteOpportunite {
 export interface CopiloteAccount {
   id: string;
   nom: string;
-  secteur: string;
-  tier: string; // ex: "Stratégique", "Clé", "Standard"
-  enjeux: string[];
-  whitespace: string[];
-  enCours: string[];
-  historique: CopiloteHistoriqueItem[];
-  contacts: CopiloteContact[];
-  preuves: string[];
-  tendances: string[];
+  // Champs qualitatifs OPTIONNELS : un compte issu UNIQUEMENT de la synchro nt360 ne porte que
+  // `nom` + `nt360`. Le hook les normalise à [] / "" pour que les consommateurs n'aient jamais
+  // à manipuler d'undefined (sinon `account.enjeux.map` plante la fiche).
+  secteur?: string;
+  tier?: string; // ex: "Stratégique", "Clé", "Standard"
+  enjeux?: string[];
+  whitespace?: string[];
+  enCours?: string[];
+  historique?: CopiloteHistoriqueItem[];
+  contacts?: CopiloteContact[];
+  preuves?: string[];
+  tendances?: string[];
   reglementation?: string;
   concurrence?: string;
   /** Empreinte dérivée du pipeline nt360 (read-only) — additive, ne remplace jamais le qualitatif. */
@@ -70,6 +73,18 @@ export interface CopiloteAccount {
 
 export type CopiloteAccountInput = Omit<CopiloteAccount, "id" | "updatedAt">;
 
+/** Slug client — MÊME règle que le backend (functions/domain/nt360.js#slugifyClient), pour que la
+ *  création manuelle vise le même doc que la synchro nt360 (réconciliation, pas de doublon). */
+export function slugifyClient(name: string): string {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
 export function useCopiloteAccounts(): { accounts: CopiloteAccount[]; loading: boolean; error: Error | null } {
   const [accounts, setAccounts] = useState<CopiloteAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +95,29 @@ export function useCopiloteAccounts(): { accounts: CopiloteAccount[]; loading: b
     const unsub = onSnapshot(
       q,
       (snap) => {
-        setAccounts(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CopiloteAccount, "id">) })));
+        // Normalisation : garantit que les champs qualitatifs sont toujours des tableaux/chaînes,
+        // même pour un compte issu seulement de la synchro nt360 (qui n'écrit que nom + nt360).
+        setAccounts(
+          snap.docs.map((d) => {
+            const raw = d.data() as Omit<CopiloteAccount, "id">;
+            return {
+              id: d.id,
+              nom: raw.nom || "",
+              secteur: raw.secteur || "",
+              tier: raw.tier || "",
+              enjeux: raw.enjeux ?? [],
+              whitespace: raw.whitespace ?? [],
+              enCours: raw.enCours ?? [],
+              historique: raw.historique ?? [],
+              contacts: raw.contacts ?? [],
+              preuves: raw.preuves ?? [],
+              tendances: raw.tendances ?? [],
+              reglementation: raw.reglementation,
+              concurrence: raw.concurrence,
+              nt360: raw.nt360,
+            };
+          })
+        );
         setLoading(false);
         setError(null);
       },
@@ -96,6 +133,14 @@ export function useCopiloteAccounts(): { accounts: CopiloteAccount[]; loading: b
 }
 
 export async function createCopiloteAccount(input: CopiloteAccountInput): Promise<string> {
+  // Vise le doc `copiloteAccounts/<slug(nom)>` (merge) au lieu d'un id auto : ainsi un compte créé
+  // à la main et son jumeau synchronisé depuis nt360 partagent le MÊME doc — plus de doublon ni de
+  // double comptage dans les KPIs du portefeuille. Repli id auto si le nom n'a pas de slug.
+  const slug = slugifyClient(input.nom);
+  if (slug) {
+    await setDoc(doc(db, "copiloteAccounts", slug), input, { merge: true });
+    return slug;
+  }
   const ref = await addDoc(collection(db, "copiloteAccounts"), input);
   return ref.id;
 }
@@ -112,7 +157,7 @@ export async function deleteCopiloteAccount(id: string): Promise<void> {
 
 export type CopiloteAgent = "prospection" | "cvp" | "triennal" | "planCompte" | "redaction";
 
-export interface ProspectionCible { nom: string; angle: string; accroche: string; chaleur: "Chaud" | "Tiède" | "Froid" }
+export interface ProspectionCible { nom: string; source?: string; angle: string; accroche: string; chaleur: "Chaud" | "Tiède" | "Froid" }
 export interface ProspectionResult { cibles: ProspectionCible[] }
 
 export interface CvpResult { message: string; differenciateurs: string[] }
