@@ -132,6 +132,39 @@ function defaultBucket() {
   return STORAGE_BUCKET_NAME ? getStorage().bucket(STORAGE_BUCKET_NAME) : getStorage().bucket();
 }
 
+/* ------------------------------------------------------------------------------------------- *
+ * Contexte entreprise DYNAMIQUE (décision 2026-07 : « le contexte est aussi censé être
+ * dynamique »). La vérité vit dans frameworks/companyContext (versionné, éditable Direction,
+ * rafraîchi par l'enrichissement hebdo avec la garde anti-écrasement humain de
+ * writeFrameworkDoc) ; domain/companyContext.js n'est plus que le seed initial + le repli.
+ * Cache en mémoire d'instance (TTL 10 min) pour ne pas relire le doc à chaque classification.
+ * ------------------------------------------------------------------------------------------- */
+const { COMPANY_CONTEXT: STATIC_COMPANY_CONTEXT } = require("./domain/companyContext");
+const COMPANY_CONTEXT_TTL_MS = 10 * 60 * 1000;
+let companyContextCache = { text: null, ts: 0 };
+
+async function getCompanyContext() {
+  const now = Date.now();
+  if (companyContextCache.text && now - companyContextCache.ts < COMPANY_CONTEXT_TTL_MS) {
+    return companyContextCache.text;
+  }
+  try {
+    const snap = await firestoreDb().doc("frameworks/companyContext").get();
+    const text = snap.exists ? snap.data()?.content?.text : null;
+    companyContextCache = { text: typeof text === "string" && text.trim() ? text : STATIC_COMPANY_CONTEXT, ts: now };
+  } catch (err) {
+    logger.warn(`getCompanyContext: lecture frameworks/companyContext échouée (${err.message}) — repli sur le contexte statique`);
+    companyContextCache = { text: STATIC_COMPANY_CONTEXT, ts: now };
+  }
+  return companyContextCache.text;
+}
+
+/** Invalide le cache après une écriture du contexte (rafraîchissement IA) pour que les étapes
+ * suivantes du même run utilisent immédiatement la nouvelle version. */
+function invalidateCompanyContextCache() {
+  companyContextCache = { text: null, ts: 0 };
+}
+
 const NOT_IMPLEMENTED = (fn, phase) => {
   const msg = `${fn} not implemented — see BUILD_KIT.md roadmap ${phase}`;
   logger.warn(msg);
@@ -345,7 +378,8 @@ function extractWebText(html, maxChars = 4000) {
  * response was unusable (mirrors `parseClassificationResponse`'s contract).
  */
 async function classifyRawText(rawText, watchlistEntities, context) {
-  const prompt = buildClassificationPrompt(rawText, watchlistEntities);
+  const companyContext = await getCompanyContext();
+  const prompt = buildClassificationPrompt(rawText, watchlistEntities, companyContext);
   const response = await generateJson(prompt);
   return parseClassificationResponse(response, context);
 }
@@ -746,10 +780,7 @@ exports.aggregateVeilleExecOnWrite = onDocumentWritten({ document: "intelItems/{
  * gate, BUILD_KIT.md §1).
  * Roadmap: V7 IA & sync.
  */
-exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
-  requireExecCaller(request, "générer un briefing");
-
-  const db = firestoreDb();
+async function runGenerateBriefing(db, generatedBy) {
   const [veilleSnap, veilleExecSnap, topItemsSnap] = await Promise.all([
     db.doc("summaries/veille").get(),
     db.doc("summaries/veille_exec").get(),
@@ -760,27 +791,52 @@ exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
   const veilleExecSummary = veilleExecSnap.exists ? veilleExecSnap.data() : null;
   const topItems = topItemsSnap.docs.map((d) => {
     const it = d.data();
-    return { title: it.title, axis: it.axis, impact: it.impact, stance: it.stance, soWhat: it.soWhat, priorityScore: it.priorityScore };
+    // ent/date rendus par briefing.js#itemsBlock (Action 4.3) — recommandations nominatives.
+    return { title: it.title, axis: it.axis, impact: it.impact, stance: it.stance, soWhat: it.soWhat, priorityScore: it.priorityScore, ent: it.ent, date: it.date };
   });
 
   const now = new Date();
   const period = `semaine du ${now.toISOString().slice(0, 10)}`;
 
-  const prompt = buildBriefingPrompt({ veilleSummary, veilleExecSummary, topItems, period });
+  const companyContext = await getCompanyContext();
+  const prompt = buildBriefingPrompt({ veilleSummary, veilleExecSummary, topItems, period, companyContext });
   const response = await generateJson(prompt);
   const briefing = parseBriefingResponse(response, {
     period,
-    generatedBy: `vertex-ai:${request.auth.uid}`,
+    generatedBy,
     kpis: veilleExecSummary?.boardKpis ?? null,
   });
-  if (!briefing) {
-    throw new HttpsError("internal", "La réponse IA n'a pas pu être exploitée (contenu vide/incomplet).");
-  }
+  if (!briefing) return null;
 
   const ref = await db.collection("briefings").add({ ...briefing, createdAt: FieldValue.serverTimestamp() });
-  logger.info(`generateBriefing: created briefings/${ref.id} caller=${request.auth.uid}`);
+  logger.info(`runGenerateBriefing: created briefings/${ref.id} generatedBy=${generatedBy}`);
   return { id: ref.id, status: briefing.status };
+}
+
+exports.generateBriefing = onCall(CALLABLE_OPTS, async (request) => {
+  requireExecCaller(request, "générer un briefing");
+  const result = await runGenerateBriefing(firestoreDb(), `vertex-ai:${request.auth.uid}`);
+  if (!result) {
+    throw new HttpsError("internal", "La réponse IA n'a pas pu être exploitée (contenu vide/incomplet).");
+  }
+  return result;
 });
+
+/**
+ * generateBriefingWeekly — Scheduler (hebdomadaire, vendredi 07:00 Africa/Abidjan) : le briefing
+ * exécutif se génère tout seul en fin de semaine ("encore des vues vides", 2026-07-02 — la vue
+ * Briefing restait vide tant que personne ne cliquait). Toujours créé en `status:'draft'` — la
+ * revue humaine reste obligatoire avant toute diffusion (garde dans parseBriefingResponse).
+ */
+exports.generateBriefingWeekly = onSchedule(
+  { schedule: "0 7 * * 5", timeZone: "Africa/Abidjan", region: "europe-west1" },
+  async () => {
+    const result = await runGenerateBriefing(firestoreDb(), "vertex-ai:scheduled");
+    if (!result) {
+      logger.error("generateBriefingWeekly: réponse IA inexploitable — aucun briefing créé cette semaine");
+    }
+  }
+);
 
 // ---------------------------------------------------------------------------------------------
 // AI enrichment of strategic artifacts (SWOT/PESTEL frameworks, tech radar, battlecard moves)
@@ -797,6 +853,18 @@ const {
   parseTechRadarResponse,
   buildBattlecardMovesPrompt,
   parseBattlecardMovesResponse,
+  buildOpportunitiesPrompt,
+  parseOpportunitiesResponse,
+  buildCanvasPrompt,
+  parseCanvasResponse,
+  buildDiagnosticPrompt,
+  parseDiagnosticResponse,
+  buildContextRefreshPrompt,
+  parseContextRefreshResponse,
+  buildGe9Prompt,
+  parseGe9Response,
+  buildHorizonsPrompt,
+  parseHorizonsResponse,
   pickSignalsForEnrichment,
   slugId: enrichSlugId,
 } = require("./domain/enrich");
@@ -844,11 +912,36 @@ async function runEnrichment(db) {
     return { skipped: true };
   }
 
+  // 0. Rafraîchissement du contexte entreprise (dynamique) — AVANT les autres générations pour
+  // qu'elles utilisent la version à jour. writeFrameworkDoc applique la garde humaine : un
+  // contexte édité par la Direction n'est jamais réécrit par l'IA.
+  let companyContext = await getCompanyContext();
+  try {
+    const parsed = parseContextRefreshResponse(
+      await generateJson(buildContextRefreshPrompt(companyContext, signals)),
+      companyContext
+    );
+    if (!parsed) {
+      logger.warn("runEnrichment: context refresh response rejected by guards — contexte inchangé");
+    } else if (parsed.text === companyContext || parsed.changes.length === 0) {
+      logger.info("runEnrichment: contexte entreprise inchangé (aucune mise à jour justifiée)");
+    } else {
+      const status = await writeFrameworkDoc(db, "companyContext", { text: parsed.text, changes: parsed.changes });
+      if (status === "written") {
+        invalidateCompanyContextCache();
+        companyContext = parsed.text;
+        logger.info(`runEnrichment: contexte entreprise mis à jour — ${parsed.changes.join(" ; ")}`);
+      }
+    }
+  } catch (err) {
+    logger.error(`runEnrichment: context refresh FAILED — ${err.message}`, { err });
+  }
+
   const summary = { swotPestel: "failed", techRadarBlips: 0, battlecardMoves: 0 };
 
   // 1. SWOT + PESTEL frameworks -----------------------------------------------------------------
   try {
-    const parsed = parseSwotPestelResponse(await generateJson(buildSwotPestelPrompt(signals)));
+    const parsed = parseSwotPestelResponse(await generateJson(buildSwotPestelPrompt(signals, companyContext)));
     if (!parsed) {
       summary.swotPestel = "parse-failed";
       logger.error("runEnrichment: SWOT/PESTEL response unusable (parse returned null)");
@@ -867,7 +960,7 @@ async function runEnrichment(db) {
     if (!techSignals.length) {
       logger.info("runEnrichment: no tech-axis signals — tech radar left untouched");
     } else {
-      const parsed = parseTechRadarResponse(await generateJson(buildTechRadarPrompt(techSignals)));
+      const parsed = parseTechRadarResponse(await generateJson(buildTechRadarPrompt(techSignals, companyContext)));
       if (!parsed) {
         logger.error("runEnrichment: tech radar response unusable (parse returned null)");
       } else {
@@ -899,7 +992,7 @@ async function runEnrichment(db) {
     if (!competitorSignals.length) {
       logger.info("runEnrichment: no concurrents-axis signals — battlecards left untouched");
     } else {
-      const parsed = parseBattlecardMovesResponse(await generateJson(buildBattlecardMovesPrompt(competitorSignals)));
+      const parsed = parseBattlecardMovesResponse(await generateJson(buildBattlecardMovesPrompt(competitorSignals, companyContext)));
       if (!parsed) {
         logger.error("runEnrichment: battlecard moves response unusable (parse returned null)");
       } else {
@@ -916,6 +1009,95 @@ async function runEnrichment(db) {
     }
   } catch (err) {
     logger.error(`runEnrichment: battlecard moves generation FAILED — ${err.message}`, { err });
+  }
+
+  // 4. Business Model Canvas (frameworks/canvas) — added 2026-07-02 ("encore des vues vides") ----
+  try {
+    const parsed = parseCanvasResponse(await generateJson(buildCanvasPrompt(signals, companyContext)));
+    if (!parsed) {
+      summary.canvas = "parse-failed";
+      logger.error("runEnrichment: canvas response unusable (parse returned null)");
+    } else {
+      summary.canvas = await writeFrameworkDoc(db, "canvas", parsed);
+    }
+  } catch (err) {
+    summary.canvas = "failed";
+    logger.error(`runEnrichment: canvas generation FAILED — ${err.message}`, { err });
+  }
+
+  // 5. Diagnostic (frameworks/diagnostic : arbre MECE + 7S + maturité) ---------------------------
+  try {
+    const parsed = parseDiagnosticResponse(await generateJson(buildDiagnosticPrompt(signals, companyContext)));
+    if (!parsed) {
+      summary.diagnostic = "parse-failed";
+      logger.error("runEnrichment: diagnostic response unusable (parse returned null)");
+    } else {
+      summary.diagnostic = await writeFrameworkDoc(db, "diagnostic", parsed);
+    }
+  } catch (err) {
+    summary.diagnostic = "failed";
+    logger.error(`runEnrichment: diagnostic generation FAILED — ${err.message}`, { err });
+  }
+
+  // 7. GE-McKinsey (frameworks/ge9) — attractivité marché estimée par l'IA, position/taille
+  // ancrées sur les CAS réels par BU (summaries/quanti.granularite). « Portefeuille vide », 2026-07.
+  try {
+    const quantiSnap = await db.doc("summaries/quanti").get();
+    const granularite = quantiSnap.exists ? quantiSnap.data()?.granularite : null;
+    const parsed = parseGe9Response(await generateJson(buildGe9Prompt(signals, granularite, companyContext)));
+    if (!parsed) {
+      summary.ge9 = "parse-failed";
+      logger.error("runEnrichment: ge9 response unusable (parse returned null)");
+    } else {
+      summary.ge9 = await writeFrameworkDoc(db, "ge9", parsed);
+    }
+  } catch (err) {
+    summary.ge9 = "failed";
+    logger.error(`runEnrichment: ge9 generation FAILED — ${err.message}`, { err });
+  }
+
+  // 8. Three Horizons — suggestions d'initiatives (frameworks/horizons). L'humain adopte une
+  // suggestion en créant l'initiative réelle dans Exécution & Décisions.
+  try {
+    const parsed = parseHorizonsResponse(await generateJson(buildHorizonsPrompt(signals, companyContext)));
+    if (!parsed) {
+      summary.horizons = "parse-failed";
+      logger.error("runEnrichment: horizons response unusable (parse returned null)");
+    } else {
+      summary.horizons = await writeFrameworkDoc(db, "horizons", parsed);
+    }
+  } catch (err) {
+    summary.horizons = "failed";
+    logger.error(`runEnrichment: horizons generation FAILED — ${err.message}`, { err });
+  }
+
+  // 6. Opportunités business (bizOpportunities) — Action 6.1 de l'audit 2026-07 : transformer les
+  // signaux en pipeline de leads qualifiés. Upsert par slugId(name) ; statut "new" forcé à la
+  // création uniquement — un statut humain (qualified/dropped) déjà posé n'est JAMAIS écrasé.
+  try {
+    const parsed = parseOpportunitiesResponse(await generateJson(buildOpportunitiesPrompt(signals, companyContext)));
+    if (!parsed) {
+      summary.bizOpportunities = "parse-failed";
+      logger.error("runEnrichment: opportunities response unusable (parse returned null)");
+    } else {
+      for (const opp of parsed.opportunities) {
+        const ref = db.doc(`bizOpportunities/${enrichSlugId(opp.name)}`);
+        const existing = await ref.get();
+        const payload = {
+          ...opp,
+          generatedBy: "ai",
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+        // Le doc existe déjà : merge:true préserve son `status` courant (revue humaine) — on
+        // retire la clé du payload pour ne pas repasser un lead qualifié/écarté en "new".
+        if (existing.exists) delete payload.status;
+        await ref.set(payload, { merge: true });
+      }
+      summary.bizOpportunities = parsed.opportunities.length;
+    }
+  } catch (err) {
+    summary.bizOpportunities = "failed";
+    logger.error(`runEnrichment: opportunities generation FAILED — ${err.message}`, { err });
   }
 
   logger.info(`runEnrichment: done — ${JSON.stringify(summary)} (signals=${signals.length})`);

@@ -1,10 +1,13 @@
 import React, { useState } from "react";
-import { T, AX, IMP, STANCE } from "../../../design/tokens";
+import { T, AX, IMP, STANCE, PROX } from "../../../design/tokens";
 import { Card, Badge } from "../../../design/ui";
 import { useCan } from "../../../lib/rbac";
-import { createIntelItem, useIntelItems, type IntelAxis, type IntelImpact, type IntelStance } from "../lib/intel";
+import { DETECTION_SUBTYPE_LABELS, createIntelItem, useIntelItems, type IntelAxis, type IntelImpact, type IntelStance } from "../lib/intel";
 
 const AXIS_KEYS = Object.keys(AX) as IntelAxis[];
+
+/** Subtypes à contenu business direct (AO, fins de vie, réglementation, financements) — plan d'audit §5.3. */
+const BUSINESS_SUBTYPES = new Set(["tender", "eol", "regulation", "funding"]);
 
 interface NewItemForm {
   title: string;
@@ -91,7 +94,7 @@ function NewItemPanel({ onClose }: { onClose: () => void }) {
             Fermer
           </button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Titre *</label>
             <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} required />
@@ -164,13 +167,30 @@ function NewItemPanel({ onClose }: { onClose: () => void }) {
 export function Fil() {
   const [ax, setAx] = useState("all");
   const [st, setSt] = useState("all");
+  const [prx, setPrx] = useState("all");
+  const [watchOnly, setWatchOnly] = useState(false);
+  const [bizOnly, setBizOnly] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const { items, loading } = useIntelItems();
   const { canWrite } = useCan("veille");
 
   const rows = items
-    .filter((s) => (ax === "all" || s.axis === ax) && (st === "all" || s.stance === st))
-    .sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
+    .filter(
+      (s) =>
+        (ax === "all" || s.axis === ax) &&
+        (st === "all" || s.stance === st) &&
+        (prx === "all" || s.prox === prx) &&
+        (!watchOnly || !!s.ent) &&
+        (!bizOnly || BUSINESS_SUBTYPES.has(s.subtype ?? ""))
+    )
+    // Tri stable : score de priorité desc, puis échéance la plus proche (items sans dueDate en
+    // dernier), puis date de signal desc.
+    .sort(
+      (a, b) =>
+        (b.priorityScore ?? 0) - (a.priorityScore ?? 0) ||
+        (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999") ||
+        (b.date ?? "").localeCompare(a.date ?? "")
+    );
 
   return (
     <div>
@@ -186,11 +206,23 @@ export function Fil() {
             </button>
           ))}
           <span style={{ fontSize: 11.5, color: T.faint, marginLeft: 10 }}>Posture :</span>
-          {["all", "opportunity", "threat"].map((k) => (
+          {["all", "opportunity", "threat", "neutral"].map((k) => (
             <button key={k} className={`pill ${st === k ? "on" : ""}`} onClick={() => setSt(k)}>
               {k === "all" ? "Toutes" : STANCE[k].l}
             </button>
           ))}
+          <span style={{ fontSize: 11.5, color: T.faint, marginLeft: 10 }}>Imminence :</span>
+          {["all", "imminent", "court"].map((k) => (
+            <button key={k} className={`pill ${prx === k ? "on" : ""}`} onClick={() => setPrx((v) => (v === k ? "all" : k))}>
+              {k === "all" ? "Toutes" : PROX[k]?.l ?? k}
+            </button>
+          ))}
+          <button className={`pill ${watchOnly ? "on" : ""}`} onClick={() => setWatchOnly((v) => !v)} style={{ marginLeft: 10 }}>
+            Watchlist
+          </button>
+          <button className={`pill ${bizOnly ? "on" : ""}`} onClick={() => setBizOnly((v) => !v)}>
+            💼 Business
+          </button>
         </div>
         {canWrite && (
           <button className="pill on" onClick={() => setShowForm((v) => !v)}>
@@ -223,9 +255,16 @@ export function Fil() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, color: T.ink, fontWeight: 600 }}>{s.title}</div>
                 <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                  {s.prox === "imminent" ? (
+                    <Badge c={T.clay}>🔥 Imminent</Badge>
+                  ) : (
+                    s.prox && <Badge c={T.faint}>{PROX[s.prox]?.l ?? s.prox}</Badge>
+                  )}
                   <Badge c={AX[s.axis]?.c}>{AX[s.axis]?.l ?? s.axis}</Badge>
+                  {s.subtype && <Badge c={T.plum}>{DETECTION_SUBTYPE_LABELS[s.subtype] ?? s.subtype}</Badge>}
                   <Badge c={IMP[s.impact]?.c}>Impact {IMP[s.impact]?.l ?? s.impact}</Badge>
                   <Badge c={STANCE[s.stance]?.c}>{STANCE[s.stance]?.l ?? s.stance}</Badge>
+                  {s.neuf && <Badge c={T.steel}>Signal faible</Badge>}
                   <Badge c={T.faint}>
                     {s.ent || "—"} · {s.geo || "—"}
                   </Badge>

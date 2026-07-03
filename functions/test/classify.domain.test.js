@@ -24,6 +24,25 @@ describe("buildClassificationPrompt", () => {
     const prompt = buildClassificationPrompt("Un texte quelconque", []);
     expect(prompt).toContain("watchlist vide");
   });
+
+  it("embeds the full company context, the homonymy rule, and the business-angle schema", () => {
+    const prompt = buildClassificationPrompt("Un texte quelconque", []);
+    expect(prompt).toContain("Neurones Technologies S.A.");
+    expect(prompt).toContain("HOMONYMIE");
+    expect(prompt).toContain('"businessAngle"');
+    expect(prompt).toContain('"dueDate"');
+    expect(prompt).toContain('"budgetIdentified"');
+    expect(prompt).toContain("imminent = < 1 mois");
+  });
+
+  it("renders the watchlist note when present (Action 4.5)", () => {
+    const prompt = buildClassificationPrompt("Un texte", [
+      { name: "Talentys", type: "Concurrent", note: "Concurrent cyber le plus direct" },
+      { name: "Odoo" },
+    ]);
+    expect(prompt).toContain("- Talentys (Concurrent) — Concurrent cyber le plus direct");
+    expect(prompt).toContain("- Odoo");
+  });
 });
 
 describe("parseClassificationResponse — valid fixture", () => {
@@ -57,6 +76,70 @@ describe("parseClassificationResponse — valid fixture", () => {
     expect(item.neuf).toBe(false);
     expect(item.sourceName).toBe("Fortinet Newsroom");
     expect(item.url).toBe("https://example.com/a");
+  });
+});
+
+describe("parseClassificationResponse — businessAngle / dueDate / budgetIdentified (Action 4.2)", () => {
+  it("persists a valid business block: trimmed businessAngle, ISO dueDate, boolean budgetIdentified", () => {
+    const item = parseClassificationResponse(
+      {
+        title: "AO PADCI — lot cybersécurité",
+        businessAngle: {
+          buyer: "  Banque mondiale / MTND  ",
+          bu: "ICT",
+          estAmount: "152 M$",
+          deadline: "dépôt avant mi-septembre 2026",
+          tenderRef: "SIGOMAP",
+        },
+        dueDate: "2026-09-15",
+        budgetIdentified: true,
+      },
+      {}
+    );
+    expect(item.businessAngle).toEqual({
+      buyer: "Banque mondiale / MTND",
+      bu: "ICT",
+      estAmount: "152 M$",
+      deadline: "dépôt avant mi-septembre 2026",
+      tenderRef: "SIGOMAP",
+    });
+    expect(item.dueDate).toBe("2026-09-15");
+    expect(item.budgetIdentified).toBe(true);
+  });
+
+  it("rejects a non-ISO dueDate (regex YYYY-MM-DD) — the key must be absent, not undefined", () => {
+    for (const bad of ["15/09/2026", "septembre 2026", "2026-9-5", 20260915, null]) {
+      const item = parseClassificationResponse({ title: "x", dueDate: bad }, {});
+      expect(Object.keys(item)).not.toContain("dueDate");
+    }
+    // trims surrounding whitespace before validating
+    expect(parseClassificationResponse({ title: "x", dueDate: " 2026-09-15 " }, {}).dueDate).toBe("2026-09-15");
+  });
+
+  it("coerces businessAngle sub-fields: invalid bu dropped, empty strings dropped, junk block absent", () => {
+    const item = parseClassificationResponse(
+      { title: "x", businessAngle: { buyer: "BCEAO", bu: "MARKETING", estAmount: "   ", deadline: 42, tenderRef: null } },
+      {}
+    );
+    expect(item.businessAngle).toEqual({ buyer: "BCEAO" }); // seul champ exploitable
+    for (const junk of [null, "angle", [], { buyer: "", bu: "autre" }]) {
+      const it2 = parseClassificationResponse({ title: "x", businessAngle: junk }, {});
+      expect(Object.keys(it2)).not.toContain("businessAngle");
+    }
+  });
+
+  it("defaults budgetIdentified to false and never emits undefined anywhere in the business block", () => {
+    const item = parseClassificationResponse({ title: "Signal sans bloc business" }, {});
+    expect(item.budgetIdentified).toBe(false);
+    expect(Object.keys(item)).not.toContain("businessAngle");
+    expect(Object.keys(item)).not.toContain("dueDate");
+    const walk = (v, path) => {
+      expect(v, `"${path}" must not be undefined`).not.toBeUndefined();
+      if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, `${path}.${k}`);
+    };
+    walk(item, "item");
+    // budgetIdentified: "oui" (non-booléen) → false strict
+    expect(parseClassificationResponse({ title: "x", budgetIdentified: "oui" }, {}).budgetIdentified).toBe(false);
   });
 });
 

@@ -1,22 +1,32 @@
 import React, { useState } from "react";
+import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, ReferenceLine, Tooltip, Cell } from "recharts";
 import { T, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Badge } from "../../../design/ui";
 import { useInitiatives } from "../lib/execution";
+import { useFramework } from "../lib/frameworks";
 import { useQuantiSummary } from "../lib/quanti";
+
+type Ge9Content = { items: { n: string; attr: number; pos: number; size: number; note?: string }[] };
+type HorizonsContent = { items: { h: "H1" | "H2" | "H3"; title: string; d?: string }[] };
 
 /**
  * "Portefeuille & Croissance" (GE-McKinsey · Three Horizons · Granularité).
  *
- * Granularité reads `summaries/quanti.granularite` (croissance CAS N vs N-1 par BU, XOF bruts —
- * calculée depuis nt360). GE-McKinsey stays an explicit empty state: its market-attractiveness
- * axis needs EXTERNAL market data no internal source provides (not an import problem — a data
- * problem). Three Horizons is derived live from the `initiatives` collection, grouped by
- * `horizon` (H1/H2/H3), so it fills up as initiatives are created in "Exécution & Décisions".
+ * Granularité reads `summaries/quanti.granularite` (croissance CAS N vs N-1 par BU, XOF —
+ * nt360). GE-McKinsey reads `frameworks/ge9` : la position/taille viennent des CAS réels, et
+ * l'axe « attractivité du marché » — introuvable en interne — est ESTIMÉ par l'IA depuis les
+ * signaux + contexte (enrichissement hebdo, garde anti-écrasement humain). Three Horizons
+ * combine les initiatives réelles (Exécution & Décisions) et les SUGGESTIONS IA de
+ * `frameworks/horizons` — l'humain adopte une suggestion en créant l'initiative réelle.
  */
 export function Portefeuille() {
   const [c, setC] = useState("ge9");
   const { initiatives, loading } = useInitiatives();
   const { data: quanti } = useQuantiSummary();
+  const { data: ge9fw } = useFramework<Ge9Content>("ge9");
+  const { data: horizonsFw } = useFramework<HorizonsContent>("horizons");
+  const ge9 = ge9fw?.content?.items ?? [];
+  const hSuggestions = horizonsFw?.content?.items ?? [];
   const gran = quanti?.granularite ?? [];
   const granMax = Math.max(...gran.map((g) => Math.abs(g.delta)), 1);
   const CN: [string, string][] = [
@@ -42,22 +52,94 @@ export function Portefeuille() {
           </button>
         ))}
       </div>
-      {c === "ge9" && (
+      {c === "ge9" && ge9.length === 0 && (
         <Card>
           <Eyebrow color={T.emerald}>Matrice GE-McKinsey — attractivité du marché × position concurrentielle</Eyebrow>
           <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>
-            Nécessite un axe « attractivité du marché » (donnée externe : taille/croissance des marchés adressés) qu'aucune
-            source interne ne fournit — la position concurrentielle interne est déjà couverte par le BCG (vue Cadres).
+            En attente de la première génération IA (enrichissement hebdomadaire) — l'attractivité des marchés est estimée
+            depuis les signaux de veille, la position depuis les données internes.
+          </div>
+        </Card>
+      )}
+      {c === "ge9" && ge9.length > 0 && (
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+            <Eyebrow color={T.emerald}>Matrice GE-McKinsey — attractivité (IA, signaux) × position (données internes)</Eyebrow>
+            <Badge c={T.emerald}>Généré par l'IA — taille = poids du segment</Badge>
+          </div>
+          <div style={{ height: 340, marginTop: 10 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
+                <XAxis type="number" dataKey="pos" domain={[0, 100]} reversed tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Position concurrentielle", position: "insideBottom", offset: -8, fill: T.dim, fontSize: 11 }} />
+                <YAxis type="number" dataKey="attr" domain={[0, 100]} tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Attractivité du marché", angle: -90, position: "insideLeft", fill: T.dim, fontSize: 11 }} />
+                <ZAxis type="number" dataKey="size" range={[300, 2200]} />
+                <ReferenceLine x={33} stroke={T.line} />
+                <ReferenceLine x={66} stroke={T.line} />
+                <ReferenceLine y={33} stroke={T.line} />
+                <ReferenceLine y={66} stroke={T.line} />
+                <Tooltip cursor={{ stroke: T.faint }} content={({ payload }) => {
+                  const d = payload && payload[0] && (payload[0].payload as Ge9Content["items"][number]);
+                  if (!d) return null;
+                  return (
+                    <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 10px", maxWidth: 260, fontSize: 11.5, color: T.dim }}>
+                      <b style={{ color: T.ink }}>{d.n}</b>
+                      <div>Attractivité {d.attr} · Position {d.pos} · Poids {d.size}</div>
+                      {d.note && <div style={{ marginTop: 4, color: T.faint }}>{d.note}</div>}
+                    </div>
+                  );
+                }} />
+                <Scatter data={[...ge9]}>
+                  {ge9.map((e, i) => (
+                    <Cell key={i} fill={e.attr >= 66 && e.pos >= 66 ? T.emerald : e.attr < 33 && e.pos < 33 ? T.clay : T.gold} />
+                  ))}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+            {ge9.map((e, i) => (
+              <div key={i} style={{ fontSize: 12, color: T.dim }}>
+                <b style={{ color: T.ink }}>{e.n}</b> <span style={{ color: T.faint }}>(attr. {e.attr} · pos. {e.pos})</span>
+                {e.note ? <> — {e.note}</> : null}
+              </div>
+            ))}
           </div>
         </Card>
       )}
       {c === "horizons" && (
         <div>
-          {!loading && total === 0 && (
+          {!loading && total === 0 && hSuggestions.length === 0 && (
             <Card>
               <Eyebrow color={T.gold}>Three Horizons — allocation de l'ambition</Eyebrow>
               <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>
                 À alimenter via les initiatives (Exécution & Décisions) — chaque initiative porte un horizon H1/H2/H3.
+                Des suggestions IA arriveront avec le prochain enrichissement hebdomadaire.
+              </div>
+            </Card>
+          )}
+          {hSuggestions.length > 0 && (
+            <Card style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <Eyebrow color={T.plum}>Initiatives suggérées par l'IA (depuis les signaux)</Eyebrow>
+                <Badge c={T.plum}>À adopter via « Exécution & Décisions »</Badge>
+              </div>
+              <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginTop: 10 }}>
+                {HMETA.map((hm) => (
+                  <div key={hm.h}>
+                    <div style={{ fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase", color: hm.c, fontWeight: 700, marginBottom: 6 }}>{hm.label}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {hSuggestions.filter((sg) => sg.h === hm.h).map((sg, i) => (
+                        <div key={i} style={{ padding: "8px 10px", background: T.panel2, borderRadius: 8, borderLeft: `3px solid ${hm.c}` }}>
+                          <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{sg.title}</div>
+                          {sg.d && <div style={{ fontSize: 11.5, color: T.faint, marginTop: 3, lineHeight: 1.45 }}>{sg.d}</div>}
+                        </div>
+                      ))}
+                      {hSuggestions.filter((sg) => sg.h === hm.h).length === 0 && (
+                        <div style={{ fontSize: 11.5, color: T.faint }}>Aucune suggestion sur cet horizon.</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </Card>
           )}

@@ -76,7 +76,7 @@ function NewScenarioPanel({ onClose }: { onClose: () => void }) {
             Fermer
           </button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div className="g2 gform" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Titre *</label>
             <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} required />
@@ -151,7 +151,7 @@ export function Scenarios() {
           <div style={{ marginBottom: 10 }}>
             <Badge c={T.emerald}>{live.title}</Badge>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             {[1, 0, 3, 2].map((idx) => {
               const w = live.worlds[idx];
               if (!w) return null;

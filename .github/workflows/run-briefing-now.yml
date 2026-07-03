@@ -1,0 +1,66 @@
+name: Run generateBriefingWeekly now (propulse-business-87f7a / strategic360)
+
+# Manual trigger only. Force-runs the weekly executive-briefing generation immediately instead of
+# waiting for Friday 07:00 Africa/Abidjan. Same scheduler-force-run pattern as run-enrich-now.yml.
+# The briefing is always created as a DRAFT — human review stays mandatory before any diffusion.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tapez "briefing" pour confirmer'
+        required: true
+
+jobs:
+  run-briefing:
+    name: Force-run generateBriefingWeekly
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Refuse to run without explicit confirmation
+        if: ${{ github.event.inputs.confirm != 'briefing' }}
+        run: |
+          echo "Le champ 'confirm' doit valoir exactement 'briefing'. Annulé."
+          exit 1
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
+
+      - name: Find and run the generateBriefingWeekly scheduler job
+        run: |
+          set -e
+          JOB=$(gcloud scheduler jobs list \
+            --project=propulse-business-87f7a \
+            --location=europe-west1 \
+            --format="value(name)" \
+            --filter="name:firebase-schedule-generateBriefingWeekly" | head -n1)
+          if [ -z "$JOB" ]; then
+            echo "::error::Aucun job Cloud Scheduler trouvé pour generateBriefingWeekly — vérifier le déploiement (functions:veille)."
+            gcloud scheduler jobs list --project=propulse-business-87f7a --location=europe-west1
+            exit 1
+          fi
+          echo "Running $JOB"
+          gcloud scheduler jobs run "$JOB" --project=propulse-business-87f7a --location=europe-west1
+
+      - name: Wait for the function to run (Pub/Sub trigger is asynchronous)
+        run: sleep 45
+
+      - name: Fetch generateBriefingWeekly logs
+        run: |
+          echo "--- Logs generateBriefingWeekly ---"
+          gcloud functions logs read generateBriefingWeekly \
+            --project=propulse-business-87f7a \
+            --region=europe-west1 \
+            --gen2 \
+            --limit=100 \
+            2>&1 || echo "::warning::Impossible de lire les logs — repli gcloud logging read."
+          echo "--- Repli : gcloud logging read ---"
+          gcloud logging read \
+            'resource.type="cloud_run_revision" resource.labels.service_name="generatebriefingweekly"' \
+            --project=propulse-business-87f7a \
+            --limit=50 \
+            --format="table(timestamp, severity, textPayload)" \
+            --freshness=10m \
+            2>&1 || true

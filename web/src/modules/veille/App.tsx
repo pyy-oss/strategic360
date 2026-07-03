@@ -41,14 +41,18 @@ export default function VeilleApp() {
   const setView = (v: string) => navigate(`/veille/${v}`);
 
   return (
-    <div style={{ background: T.bg, minHeight: "100vh", color: T.ink, fontFamily: "'Inter',system-ui,sans-serif", padding: "20px 24px 40px" }}>
+    <div className="appshell" style={{ background: T.bg, minHeight: "100vh", color: T.ink, fontFamily: "'Inter',system-ui,sans-serif", padding: "20px 24px 40px" }}>
       <style>{`*{box-sizing:border-box}::selection{background:#C9A24B;color:#0E1613}
       .pill{cursor:pointer;border:1px solid ${T.line};background:${T.panel};color:${T.dim};border-radius:999px;padding:6px 13px;font-size:12.5px;font-weight:600}
       .pill.on{background:${T.gold};border-color:${T.gold};color:#0E1613}
       .tab{cursor:pointer;border:none;background:none;color:${T.dim};font-size:13.5px;font-weight:600;padding:9px 2px;border-bottom:2px solid transparent;white-space:nowrap}
       .tab.on{color:${T.ink};border-bottom-color:${T.gold}}
       .navwrap::-webkit-scrollbar{height:0}
-      @media(max-width:820px){.g2,.g3,.g4{grid-template-columns:1fr!important}}`}</style>
+      .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+      @media(max-width:1180px){.g3,.g4{grid-template-columns:repeat(2,1fr)!important}}
+      @media(max-width:1024px){.g2-stack{grid-template-columns:1fr!important}}
+      @media(max-width:820px){.g2,.g3,.g4,.canvas-grid{grid-template-columns:1fr!important}.gform>*,.canvas-grid>*{grid-column:auto!important}}
+      @media(max-width:640px){.pestel-row{grid-template-columns:1fr!important}.appshell{padding:14px 12px 32px!important}.apptitle{font-size:17px!important}}`}</style>
 
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -56,7 +60,7 @@ export default function VeilleApp() {
             V
           </div>
           <div>
-            <div style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 19, fontWeight: 700 }}>Veille Stratégique</div>
+            <div className="apptitle" style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 19, fontWeight: 700 }}>Veille Stratégique</div>
             <div style={{ fontSize: 11.5, color: T.dim }}>Neurones Technologies CI · intelligence & aide à la décision · Afrique / UEMOA / CI</div>
           </div>
         </div>

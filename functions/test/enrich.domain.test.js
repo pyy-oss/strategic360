@@ -17,6 +17,8 @@ import {
   parseTechRadarResponse,
   buildBattlecardMovesPrompt,
   parseBattlecardMovesResponse,
+  buildOpportunitiesPrompt,
+  parseOpportunitiesResponse,
   pickSignalsForEnrichment,
   slugId,
   SWOT_KEYS,
@@ -41,7 +43,7 @@ const SIGNALS = [
 describe("prompt builders", () => {
   it("buildSwotPestelPrompt embeds company context, signals, and the exact SWOT/PESTEL contract", () => {
     const prompt = buildSwotPestelPrompt(SIGNALS);
-    expect(prompt).toContain("Neurones Technologies CI");
+    expect(prompt).toContain("Neurones Technologies S.A."); // contexte unique (domain/companyContext.js)
     expect(prompt).toContain("Orange CI lance une offre SOC managé");
     for (const key of SWOT_KEYS) expect(prompt).toContain(`"${key}"`);
     for (const f of ["Politique", "Économique", "Social", "Technologique", "Environnemental", "Légal"]) {
@@ -202,6 +204,103 @@ describe("parseBattlecardMovesResponse", () => {
   });
 });
 
+describe("buildOpportunitiesPrompt", () => {
+  it("embeds company context, the opportunities schema, the no-invention rule, and the signals", () => {
+    const prompt = buildOpportunitiesPrompt(SIGNALS);
+    expect(prompt).toContain("Neurones Technologies");
+    expect(prompt).toContain('"opportunities"');
+    expect(prompt).toContain('"ICT" | "FORMATION"');
+    expect(prompt).toContain('"imminent" | "court" | "moyen" | "horizon"');
+    expect(prompt).toContain("N'invente AUCUN montant");
+    expect(prompt).toContain('{"opportunities": []}');
+    expect(prompt).toContain("Orange CI lance une offre SOC managé");
+    expect(buildOpportunitiesPrompt([])).toContain("aucun signal disponible");
+  });
+});
+
+describe("parseOpportunitiesResponse", () => {
+  const validOpp = {
+    name: "Audit conformité SI AMF-UMOA — BRVM",
+    client: "BRVM",
+    bu: "ICT",
+    offering: "Audit de conformité aux instructions SI AMF-UMOA",
+    estAmount: null,
+    deadline: "2026-09-30",
+    horizon: "court",
+    probability: "high",
+    nextAction: "Contacter le DSI de la BRVM pour proposer un audit avant fin septembre",
+    sourceSignals: [2],
+    competitorsLikely: ["Talentys", "Atos"],
+  };
+
+  it("passes through a valid fixture, forcing status 'new' and never emitting undefined", () => {
+    const parsed = parseOpportunitiesResponse({
+      opportunities: [{ ...validOpp, status: "qualified" }], // AI must NOT be able to set status
+    });
+    expect(parsed.opportunities).toHaveLength(1);
+    expect(parsed.opportunities[0]).toEqual({ ...validOpp, status: "new" });
+    expectNoUndefined(parsed);
+  });
+
+  it("drops entries missing name, client, or nextAction (and null/non-object entries)", () => {
+    const parsed = parseOpportunitiesResponse({
+      opportunities: [
+        validOpp,
+        { ...validOpp, name: "   " },
+        { ...validOpp, client: "" },
+        { ...validOpp, nextAction: undefined },
+        null,
+        "junk",
+      ],
+    });
+    expect(parsed.opportunities).toHaveLength(1);
+    expect(parsed.opportunities[0].name).toBe(validOpp.name);
+  });
+
+  it("coerces invalid enums (bu→ICT, horizon→moyen, probability→medium) and junk fields", () => {
+    const parsed = parseOpportunitiesResponse({
+      opportunities: [
+        {
+          name: "Refresh FortiGate — SONAPIE",
+          client: "SONAPIE",
+          bu: "les_deux", // pas un bu d'opportunité valide → ICT
+          offering: 42,
+          estAmount: "  ", // vide → null (jamais inventé)
+          deadline: 2026,
+          horizon: "asap",
+          probability: "sure",
+          nextAction: "Qualifier le parc FortiGate série E avec le commercial du compte",
+          sourceSignals: [1, 0, -3, 2.5, "2", null],
+          competitorsLikely: ["Talentys", "", 7, null],
+        },
+      ],
+    });
+    expect(parsed.opportunities[0]).toEqual({
+      name: "Refresh FortiGate — SONAPIE",
+      client: "SONAPIE",
+      bu: "ICT",
+      offering: "",
+      estAmount: null,
+      deadline: null,
+      horizon: "moyen",
+      probability: "medium",
+      nextAction: "Qualifier le parc FortiGate série E avec le commercial du compte",
+      sourceSignals: [1],
+      competitorsLikely: ["Talentys"],
+      status: "new",
+    });
+    expectNoUndefined(parsed);
+  });
+
+  it("returns {opportunities: []} for a legitimately empty run, null only for non-object input", () => {
+    expect(parseOpportunitiesResponse({ opportunities: [] })).toEqual({ opportunities: [] });
+    expect(parseOpportunitiesResponse({})).toEqual({ opportunities: [] });
+    expect(parseOpportunitiesResponse(null)).toBeNull();
+    expect(parseOpportunitiesResponse([])).toBeNull();
+    expect(parseOpportunitiesResponse("opps")).toBeNull();
+  });
+});
+
 describe("pickSignalsForEnrichment", () => {
   const items = [
     { title: "B", summary: "s", axis: "tech", impact: "low", stance: "neutral", date: "2026-06-01", priorityScore: 50, status: "new" },
@@ -227,6 +326,22 @@ describe("pickSignalsForEnrichment", () => {
     expectNoUndefined(picked);
   });
 
+  it("propagates ent/subtype/prox/recommendedAction when present, omits them (not undefined) otherwise", () => {
+    const picked = pickSignalsForEnrichment([
+      {
+        title: "AO BCEAO", summary: "s", axis: "clients_prospects", impact: "high", stance: "opportunity",
+        date: "2026-06-29", status: "new", ent: "BCEAO", subtype: "tender", prox: "imminent",
+        recommendedAction: "Constituer le dossier SIGOMAP avant le 15/07.",
+      },
+      { title: "Sans extras", summary: "s", axis: "tech", impact: "low", stance: "neutral", date: "2026-06-01", status: "new", ent: "  " },
+    ]);
+    expect(picked[0]).toMatchObject({ ent: "BCEAO", subtype: "tender", prox: "imminent", recommendedAction: "Constituer le dossier SIGOMAP avant le 15/07." });
+    for (const key of ["ent", "subtype", "prox", "recommendedAction"]) {
+      expect(Object.keys(picked[1])).not.toContain(key);
+    }
+    expectNoUndefined(picked);
+  });
+
   it("truncates long summaries to ~300 chars and tolerates junk entries", () => {
     const long = "x".repeat(500);
     const picked = pickSignalsForEnrichment([
@@ -244,5 +359,135 @@ describe("slugId", () => {
     expect(slugId("Sécurité & Réseaux (Palo Alto)")).toBe("securite-reseaux-palo-alto");
     expect(slugId("  Orange CI  ")).toBe("orange-ci");
     expect(slugId("Zero Trust")).toBe(slugId("zero---trust")); // deterministic across runs
+  });
+});
+
+describe("parseCanvasResponse", () => {
+  it("keeps only canonical block titles with non-empty text, ordered per CANVAS_BLOCKS", async () => {
+    const { parseCanvasResponse, CANVAS_BLOCKS } = await import("../domain/enrich.js");
+    const parsed = parseCanvasResponse({
+      blocks: [
+        { t: "Canaux", d: "Vente directe + partenaires distributeurs." },
+        { t: "Partenaires clés", d: "Cisco, Palo Alto, Westcon." },
+        { t: "Partenaires clés", d: "doublon ignoré" },
+        { t: "Bloc inventé", d: "à jeter" },
+        { t: "Revenus", d: "  " },
+        { t: "Propositions de valeur", d: "Intégration + managed services souverains." },
+      ],
+    });
+    expect(parsed.blocks.map((b) => b.t)).toEqual(["Partenaires clés", "Propositions de valeur", "Canaux"]);
+    expect(parsed.blocks[0].d).toBe("Cisco, Palo Alto, Westcon.");
+    expect(CANVAS_BLOCKS).toHaveLength(9);
+  });
+
+  it("returns null under 3 valid blocks or on junk", async () => {
+    const { parseCanvasResponse } = await import("../domain/enrich.js");
+    expect(parseCanvasResponse({ blocks: [{ t: "Canaux", d: "x" }] })).toBeNull();
+    expect(parseCanvasResponse(null)).toBeNull();
+    expect(parseCanvasResponse({ blocks: "nope" })).toBeNull();
+  });
+});
+
+describe("parseDiagnosticResponse", () => {
+  it("coerces a full fixture: issue branches filtered, s7 canonical order, scores clamped 0-100", async () => {
+    const { parseDiagnosticResponse, S7_DIMENSIONS } = await import("../domain/enrich.js");
+    const parsed = parseDiagnosticResponse({
+      issue: {
+        q: "Comment doubler le CA managed services d'ici 2028 ?",
+        branches: [
+          { t: "Offre", h: ["Packager 3 offres managed", "SOC souverain"] },
+          { t: "Sans hypothèses", h: [] },
+        ],
+      },
+      s7: [
+        { s: "Stratégie", v: 140 },
+        { s: "Systèmes", v: -5 },
+        { s: "Dimension inventée", v: 50 },
+        { s: "Structure", v: 61.4 },
+      ],
+      maturite: [
+        { c: "Cybersécurité", v: 70 },
+        { c: "", v: 50 },
+      ],
+    });
+    expect(parsed.issue.branches).toHaveLength(1);
+    expect(parsed.s7.map((e) => e.s)).toEqual(["Stratégie", "Structure", "Systèmes"]); // canonical order
+    expect(parsed.s7.map((e) => e.v)).toEqual([100, 61, 0]); // clamped/rounded
+    expect(parsed.maturite).toEqual([{ c: "Cybersécurité", v: 70 }]);
+    expect(S7_DIMENSIONS).toHaveLength(7);
+  });
+
+  it("drops empty sections and returns null when nothing survives; never emits undefined", async () => {
+    const { parseDiagnosticResponse } = await import("../domain/enrich.js");
+    expect(parseDiagnosticResponse({ issue: { q: "" }, s7: [], maturite: [] })).toBeNull();
+    const partial = parseDiagnosticResponse({ maturite: [{ c: "Cloud", v: 40 }] });
+    expect(partial).toEqual({ maturite: [{ c: "Cloud", v: 40 }] });
+    expect("issue" in partial).toBe(false);
+    const walk = (v) => {
+      if (v && typeof v === "object") Object.values(v).forEach(walk);
+      expect(v).not.toBeUndefined();
+    };
+    walk(partial);
+  });
+});
+
+describe("contexte entreprise dynamique", () => {
+  it("les builders acceptent un contexte custom injecté à la place du statique", async () => {
+    const { buildSwotPestelPrompt, buildOpportunitiesPrompt } = await import("../domain/enrich.js");
+    const custom = "CONTEXTE DE TEST DYNAMIQUE";
+    expect(buildSwotPestelPrompt([], custom)).toContain(custom);
+    expect(buildOpportunitiesPrompt([], custom)).toContain(custom);
+  });
+
+  it("parseContextRefreshResponse accepte une mise à jour valide et retourne text+changes", async () => {
+    const { parseContextRefreshResponse, COMPANY_CONTEXT } = await import("../domain/enrich.js");
+    const updated = COMPANY_CONTEXT.replace("OBJECTIF COMMERCIAL", "OBJECTIF COMMERCIAL (révisé)");
+    const parsed = parseContextRefreshResponse({ context: updated, changes: ["révision objectif"] }, COMPANY_CONTEXT);
+    expect(parsed).not.toBeNull();
+    expect(parsed.text).toContain("HOMONYMIE");
+    expect(parsed.changes).toEqual(["révision objectif"]);
+  });
+
+  it("rejette une réécriture qui perd les sections critiques ou raccourcit brutalement", async () => {
+    const { parseContextRefreshResponse, COMPANY_CONTEXT } = await import("../domain/enrich.js");
+    expect(parseContextRefreshResponse({ context: "trop court", changes: [] }, COMPANY_CONTEXT)).toBeNull();
+    const sansHomonymie = COMPANY_CONTEXT.replace(/HOMONYMIE/g, "X");
+    expect(parseContextRefreshResponse({ context: sansHomonymie, changes: [] }, COMPANY_CONTEXT)).toBeNull();
+    expect(parseContextRefreshResponse(null, COMPANY_CONTEXT)).toBeNull();
+  });
+});
+
+describe("parseGe9Response / parseHorizonsResponse", () => {
+  it("ge9: clamp 0-100, drop sans nom, null si moins de 3 segments", async () => {
+    const { parseGe9Response } = await import("../domain/enrich.js");
+    const parsed = parseGe9Response({
+      items: [
+        { n: "Cybersécurité", attr: 140, pos: 80, size: 55, note: "obligations RGSSI" },
+        { n: "  ", attr: 50, pos: 50, size: 50 },
+        { n: "Cloud", attr: 70, pos: -5, size: 30 },
+        { n: "Formation", attr: 60, pos: 65 },
+      ],
+    });
+    expect(parsed.items).toHaveLength(3);
+    expect(parsed.items[0]).toEqual({ n: "Cybersécurité", attr: 100, pos: 80, size: 55, note: "obligations RGSSI" });
+    expect(parsed.items[1].pos).toBe(0);
+    expect(parsed.items[2].size).toBe(30); // défaut
+    expect(parseGe9Response({ items: [{ n: "A", attr: 1, pos: 1, size: 1 }] })).toBeNull();
+    expect(parseGe9Response(null)).toBeNull();
+  });
+
+  it("horizons: h coercé vers H2, drop sans titre, null si moins de 3", async () => {
+    const { parseHorizonsResponse } = await import("../domain/enrich.js");
+    const parsed = parseHorizonsResponse({
+      items: [
+        { h: "H1", title: "Refresh Catalyst 3650 chez les clients équipés", d: "EOL oct. 2026" },
+        { h: "H9", title: "SOC souverain managé", d: "" },
+        { h: "H3", title: "Offre conformité CERTINUM" },
+        { title: "  " },
+      ],
+    });
+    expect(parsed.items).toHaveLength(3);
+    expect(parsed.items[1].h).toBe("H2");
+    expect(parseHorizonsResponse({ items: [] })).toBeNull();
   });
 });

@@ -71,6 +71,15 @@ service cloud.firestore {
       allow write: if canWrite('veille');
     }
 
+    // — Opportunités business (créées par runEnrichment via Admin SDK, qui bypasse les rules) —
+    // Les exécutifs qualifient (update de status/notes) ; create/delete restent réservés au
+    // backend pour que le pipeline IA garde la maîtrise du cycle de vie des docs.
+    match /bizOpportunities/{id} {
+      allow read: if canRead('veille');
+      allow update: if exec();
+      allow create, delete: if false;
+    }
+
     // Expanded from: match /{c}/{id} where c in ['winLoss','actions','briefings']
     match /winLoss/{id} {
       allow read: if canRead('veille');
