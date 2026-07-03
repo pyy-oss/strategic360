@@ -259,9 +259,11 @@ export interface Battlecard {
   id: string; // == competitorId
   competitor: string;
   positioning?: string;
-  strengths: string[];
-  weaknesses: string[];
-  ourWinThemes: string[];
+  // Optionnels : les battlecards créées par l'enrichissement IA (mouvements concurrents) ne
+  // portent que competitor + recentMoves — les tableaux ci-dessous arrivent avec l'édition humaine.
+  strengths?: string[];
+  weaknesses?: string[];
+  ourWinThemes?: string[];
   theirLikelyMoves: string[];
   objectionHandling: string[];
   recentMoves: string[];
