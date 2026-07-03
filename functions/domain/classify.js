@@ -90,7 +90,9 @@ exactement ce schéma :
   "summary": string,              // résumé en 2-3 phrases
   "axis": "partenaires" | "concurrents" | "clients_prospects" | "tech" | "reglementaire",
   "subtype": string,               // ex: product_launch, eol, supply, program_change, pricing, ma,
-                                    // tender, funding, leadership, win, hire, regulation, trend, macro
+                                    // tender, funding, leadership, win, hire, regulation, trend, macro,
+                                    // market_entry (nouvel entrant), implantation (nouvelle implantation),
+                                    // expansion (expansion d'un groupe)
   "impact": "high" | "medium" | "low",
   "stance": "opportunity" | "threat" | "neutral",
   "entity": string | null,         // nom de l'entité de la watchlist la plus proche, sinon null
@@ -110,6 +112,24 @@ exactement ce schéma :
   "dueDate": string | null,      // date d'échéance ISO YYYY-MM-DD (limite de dépôt AO, deadline conformité, date EOL) sinon null
   "budgetIdentified": boolean    // true si un budget/montant est explicitement mentionné
 }
+
+AXES DE GUET PRIORITAIRES (à détecter activement dans le texte) :
+- CRÉATION / ARRIVÉE D'ENTREPRISES : nouvelle société, filiale, banque, fintech, assurance ou
+  institution qui se crée ou s'implante en CI/UEMOA → subtype "implantation" ; c'est une
+  OPPORTUNITÉ (nouveau client potentiel à équiper : réseau, cyber, cloud, formation) sauf si
+  c'est un acteur IT/ESN → alors "market_entry", MENACE nouvel entrant.
+- EXPANSION DE GROUPES régionaux ou internationaux (ouverture de pays, rachat, croissance,
+  nouveau siège, datacenter, levée de fonds) → subtype "expansion" ; opportunité si client
+  potentiel, menace si concurrent/désintermédiation.
+- ACTUALITÉ TECHNOLOGIQUE : ne retenir que l'angle BUSINESS pour une ESN en CI/UEMOA —
+  vulnérabilité majeure sur les technologies de nos éditeurs (Cisco, Fortinet, Palo Alto, HPE,
+  Microsoft, Wallix) = opportunité de campagne de patch/upgrade/audit chez les clients équipés ;
+  nouvelle techno monétisable en zone = opportunité d'offre.
+
+RÈGLE DE PERTINENCE GÉOGRAPHIQUE : une actualité tech/cyber MONDIALE sans lien exploitable avec
+la Côte d'Ivoire/UEMOA, nos clients, nos concurrents ou les technologies de nos éditeurs doit être
+classée impact "low" et stance "neutral" (elle ne doit pas noyer le fil) — n'y rattache un angle
+business QUE s'il est réel et actionnable localement.
 
 Consignes impératives :
 - "soWhat" : impact concret citant la BU, le client ou le concurrent concerné (jamais de généralité).

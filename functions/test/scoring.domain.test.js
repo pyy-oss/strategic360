@@ -92,12 +92,12 @@ describe("businessFactor (Action 5.2)", () => {
 
 describe("alignementFactor (Action 5.2 — per-axis AXIS_ALIGN + watchlist bonus)", () => {
   it("maps axes per AXIS_ALIGN", () => {
-    expect(alignementFactor({ axis: "clients_prospects" })).toBe(1.0);
+    expect(alignementFactor({ axis: "clients_prospects" })).toBe(0.9);
     expect(alignementFactor({ axis: "reglementaire" })).toBe(0.75);
     expect(alignementFactor({ axis: "partenaires" })).toBe(0.7);
     expect(alignementFactor({ axis: "concurrents" })).toBe(0.6);
     expect(alignementFactor({ axis: "tech" })).toBe(0.45);
-    expect(AXIS_ALIGN.clients_prospects).toBe(1.0);
+    expect(AXIS_ALIGN.clients_prospects).toBe(0.9);
   });
   it("defaults unknown/missing axis to 0.6", () => {
     expect(alignementFactor({})).toBe(0.6);
@@ -240,8 +240,8 @@ describe("computePriorityScore (barème audité)", () => {
       { impact: "high", sourceRating: "A1", axis: "clients_prospects", dueDate: "2026-07-03" },
       now
     );
-    // 1.0 × (0.30 + 0.25 + 0.20×0.4 + 0.15×1.0 + 0.07) = 0.85 → 85
-    expect(score).toBe(85);
+    // 1.0 × (0.30 + 0.25 + 0.20×0.4 + 0.15×0.9 + 0.07) = 0.835 → 84 (clients_prospects aligné 0.9 depuis le rééquilibrage géo 2026-07)
+    expect(score).toBe(84);
     expect(score).toBeGreaterThanOrEqual(80);
   });
 
@@ -290,5 +290,27 @@ describe("computePriorityScore (barème audité)", () => {
     const low = computePriorityScore({ ...base, impact: "low" }, now);
     const high = computePriorityScore({ ...base, impact: "high" }, now);
     expect(high).toBeGreaterThan(low);
+  });
+});
+
+describe("rééquilibrage 2026-07 — mouvements d'acteurs et géographie", () => {
+  it("valorise implantation/market_entry/expansion dans le facteur business", async () => {
+    const { businessFactor, SUBTYPE_BUSINESS } = await import("../domain/scoring.js");
+    expect(SUBTYPE_BUSINESS.implantation).toBe(0.75);
+    expect(SUBTYPE_BUSINESS.market_entry).toBe(0.7);
+    expect(SUBTYPE_BUSINESS.expansion).toBe(0.65);
+    expect(businessFactor({ subtype: "implantation", stance: "opportunity" })).toBeCloseTo(0.85);
+  });
+
+  it("bonus géographique : ci > afrique_ouest > mondial, clampé à 1", async () => {
+    const { alignementFactor } = await import("../domain/scoring.js");
+    const ci = alignementFactor({ axis: "concurrents", geo: "ci" });
+    const ao = alignementFactor({ axis: "concurrents", geo: "afrique_ouest" });
+    const world = alignementFactor({ axis: "concurrents" });
+    expect(ci).toBeCloseTo(0.75);
+    expect(ao).toBeCloseTo(0.68);
+    expect(world).toBeCloseTo(0.6);
+    // clamp : base 0.9 + ent 0.2 + ci 0.15 → 1
+    expect(alignementFactor({ axis: "clients_prospects", ent: "BCEAO", geo: "ci" })).toBe(1);
   });
 });

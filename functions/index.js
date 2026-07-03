@@ -452,7 +452,10 @@ async function runSyncSources(db) {
         const res = await fetch(source.url, { headers: SOURCE_FETCH_HEADERS });
         if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
         const xml = await res.text();
-        const rssItems = extractRssItems(xml);
+        // Rééquilibrage du fil (2026-07) : les flux tech/cyber MONDIAUX (Hacker News,
+        // BleepingComputer...) sont très prolifiques et noyaient les signaux locaux — plafond
+        // réduit à 2 items/run pour l'axe tech, 5 pour les axes business/locaux.
+        const rssItems = extractRssItems(xml, source.axis === "tech" ? 2 : 5);
         for (const rssItem of rssItems) {
           const rawText = `${rssItem.title}\n${rssItem.description}`.trim();
           if (!rawText) continue;

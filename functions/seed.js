@@ -151,6 +151,13 @@ const SOURCES_SEED = [
   { name: "Sika Finance (RSS)", kind: "rss", url: "https://www.sikafinance.com/rss/news", axis: "clients_prospects", active: true },
   { name: "Abidjan.net Actualités (RSS)", kind: "rss", url: "https://news.abidjan.net/rss", axis: "clients_prospects", active: true },
   { name: "APA News (RSS)", kind: "rss", url: "https://apanews.net/feed/", axis: "clients_prospects", active: true },
+  // Mouvements d'acteurs — créations d'entreprises, investissements, implantations, expansions
+  // ("guetter les opportunités liées à la création/arrivée de nouvelles entreprises, l'expansion
+  // de groupes régionaux ou internationaux", 2026-07). Candidates auto-élaguées si mortes.
+  { name: "CEPICI — investissements & création d'entreprises (CI)", kind: "web", url: "https://www.cepici.gouv.ci/", axis: "clients_prospects", active: true },
+  { name: "Fraternité Matin — Économie", kind: "web", url: "https://www.fratmat.info/", axis: "clients_prospects", active: true },
+  { name: "Agence Ecofin — Entreprises (RSS)", kind: "rss", url: "https://www.agenceecofin.com/entreprises?format=feed", axis: "concurrents", active: true },
+  { name: "Jeune Afrique — Économie & Entreprises", kind: "web", url: "https://www.jeuneafrique.com/economie-entreprises/", axis: "clients_prospects", active: true },
   // Tendances tech / cybersécurité (mondial, pertinent pour le Tech Radar)
   { name: "The Hacker News (RSS)", kind: "rss", url: "https://feeds.feedburner.com/TheHackersNews", axis: "tech", active: true },
   { name: "BleepingComputer (RSS)", kind: "rss", url: "https://www.bleepingcomputer.com/feed/", axis: "tech", active: true },
