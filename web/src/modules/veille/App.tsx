@@ -21,6 +21,7 @@ import { Scenarios } from "./views/Scenarios";
 import { Execution } from "./views/Execution";
 import { PlanAction } from "./views/PlanAction";
 import { Briefing } from "./views/Briefing";
+import { Copilote } from "./views/Copilote";
 
 const VIEW_KEYS = NAV.map(([k]) => k);
 
@@ -104,6 +105,7 @@ export default function VeilleApp() {
       {view === "execution" && <Execution />}
       {view === "plan" && <PlanAction />}
       {view === "briefing" && <Briefing />}
+      {view === "copilote" && <Copilote />}
 
       <footer style={{ marginTop: 22, paddingTop: 14, borderTop: `1px solid ${T.line}`, fontSize: 11.5, color: T.faint, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <span>Veille Stratégique · données réelles (Firestore) · IA Gemini avec revue humaine</span>

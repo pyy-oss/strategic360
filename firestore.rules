@@ -16,6 +16,8 @@ service cloud.firestore {
     function canRead(m) { return request.auth != null && lvl(m) in ['read', 'write']; }
     function canWrite(m) { return request.auth != null && lvl(m) == 'write'; }
     function exec() { return role() in ['direction', 'strategie', 'innovation']; }
+    // Copilote Commercial (add-on) : rôles commerciaux + exécutifs.
+    function commercial() { return request.auth != null && role() in ['commercial', 'commercial_dir', 'direction', 'strategie', 'innovation']; }
 
     // — Signaux & détection —
     match /intelItems/{id} {
@@ -92,6 +94,11 @@ service cloud.firestore {
     match /briefings/{id} {
       allow read: if canRead('veille');
       allow write: if exec();
+    }
+
+    // — Copilote Commercial : comptes (qualitatif édité par les commerciaux) —
+    match /copiloteAccounts/{id} {
+      allow read, write: if commercial();
     }
 
     // — Agrégats (écrits par Cloud Functions / Admin SDK uniquement) —

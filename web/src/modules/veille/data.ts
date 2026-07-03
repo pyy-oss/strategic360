@@ -193,4 +193,5 @@ export const NAV: [string, string][] = [
   ["execution", "Exécution & Décisions"],
   ["plan", "Plan d'action"],
   ["briefing", "Briefing exécutif"],
+  ["copilote", "Copilote Commercial"],
 ];

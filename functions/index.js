@@ -28,6 +28,7 @@ const { buildClassificationPrompt, parseClassificationResponse } = require("./do
 const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
 const { buildBriefingPdf } = require("./domain/pdf");
 const { generateJson } = require("./domain/vertex");
+const { AGENTS: COPILOTE_AGENTS, buildChatPrompt, parseChatResponse } = require("./domain/copilote");
 const PDFDocument = require("pdfkit");
 const { v1: firestoreAdminV1 } = require("@google-cloud/firestore");
 
@@ -169,6 +170,15 @@ function isExecCaller(request) {
 function requireExecCaller(request, action) {
   if (!isExecCaller(request)) {
     throw new HttpsError("permission-denied", `Seuls les profils exécutifs (direction/strategie/innovation) peuvent ${action}.`);
+  }
+}
+
+/** Copilote Commercial : rôles commerciaux + exécutifs (le copilote est un outil de vente). */
+const COMMERCIAL_ROLES = ["commercial", "commercial_dir", ...EXEC_ROLES];
+function requireCommercialCaller(request, action) {
+  const role = request.auth?.token?.role;
+  if (!request.auth || !COMMERCIAL_ROLES.includes(role)) {
+    throw new HttpsError("permission-denied", `Seuls les profils commerciaux/exécutifs peuvent ${action}.`);
   }
 }
 
@@ -1594,6 +1604,86 @@ exports.enrichNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   const result = await runEnrichment(firestoreDb());
   logger.info(`enrichNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
   return result;
+});
+
+/* ------------------------------------------------------------------------------------------- *
+ * COPILOTE COMMERCIAL (add-on DELTA 02 / 02B) — callables server-side.
+ * Reuse maximum : moteur IA = generateJson (gemini-3.5-flash) ; contexte assemblé côté serveur
+ * depuis copiloteAccounts (qualitatif) + frameworks/pestel (RÉUTILISÉ, pas régénéré) +
+ * bizOpportunities (signaux). Aucune donnée nt360 n'est écrite. Gate : rôles commerciaux + exec.
+ * ------------------------------------------------------------------------------------------- */
+
+/** Assemble le contexte d'un compte pour les agents, en réutilisant l'existant de la veille. */
+async function assembleCopiloteContext(db, accountId) {
+  const [acctSnap, pestelSnap, bizSnap] = await Promise.all([
+    accountId ? db.doc(`copiloteAccounts/${accountId}`).get() : Promise.resolve(null),
+    db.doc("frameworks/pestel").get(),
+    db.collection("bizOpportunities").get(),
+  ]);
+  const a = acctSnap && acctSnap.exists ? acctSnap.data() : {};
+  // PESTEL réutilisé depuis la veille (frameworks/pestel content.factors = [{f, d, ...}]).
+  const pestel = (pestelSnap.exists ? pestelSnap.data()?.content?.factors || [] : [])
+    .filter((x) => x && typeof x === "object" && x.d)
+    .map((x) => ({ axe: x.f, texte: x.d }));
+  // Signaux = opportunités business détectées (leads), réutilisées comme accroches.
+  const signaux = bizSnap.docs
+    .map((d) => d.data())
+    .filter((o) => o && o.name)
+    .slice(0, 12)
+    .map((o) => ({ titre: o.name }));
+  return {
+    compte: a.nom || "",
+    secteur: a.secteur || "",
+    tier: a.tier || "",
+    enjeux: Array.isArray(a.enjeux) ? a.enjeux : [],
+    whitespace: Array.isArray(a.whitespace) ? a.whitespace : [],
+    enCours: Array.isArray(a.enCours) ? a.enCours : [],
+    historique: Array.isArray(a.historique) ? a.historique : [],
+    contacts: Array.isArray(a.contacts) ? a.contacts : [],
+    preuves: Array.isArray(a.preuves) ? a.preuves : ["BCEAO", "Orange CI", "BRVM"],
+    tendances: Array.isArray(a.tendances) ? a.tendances : [],
+    reglementation: a.reglementation || "",
+    concurrence: a.concurrence || "",
+    pestel,
+    signaux,
+    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux: Array.isArray(a.enjeux) ? a.enjeux : [], historique: Array.isArray(a.historique) ? a.historique : [], whitespace: Array.isArray(a.whitespace) ? a.whitespace : [] },
+  };
+}
+
+/**
+ * copiloteGenerate — callable. data: { agent, accountId?, extra? }.
+ * agent ∈ {prospection, cvp, triennal, planCompte, redaction}. `extra` fusionne des champs ctx
+ * fournis par l'écran (ex. redaction : {kind, canal, ton, contexte}).
+ */
+exports.copiloteGenerate = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  requireCommercialCaller(request, "utiliser le copilote commercial");
+  const { agent, accountId, extra } = request.data || {};
+  const spec = COPILOTE_AGENTS[agent];
+  if (!spec) throw new HttpsError("invalid-argument", `agent inconnu : ${agent}`);
+  const db = firestoreDb();
+  const base = await assembleCopiloteContext(db, accountId);
+  const ctx = { ...base, ...(extra && typeof extra === "object" ? extra : {}) };
+  const parsed = spec.parse(await generateJson(spec.build(ctx)));
+  if (!parsed) throw new HttpsError("internal", "Réponse IA inexploitable. Réessayez ou précisez le contexte.");
+  return parsed;
+});
+
+/**
+ * copiloteChat — callable multi-turn. data: { accountId?, ecran?, messages: [{role, content}] }.
+ * Réutilise generateJson en encapsulant la réponse dans { reply } (aucune fonction moteur ajoutée).
+ */
+exports.copiloteChat = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  requireCommercialCaller(request, "utiliser le copilote commercial");
+  const { accountId, ecran, messages } = request.data || {};
+  if (!Array.isArray(messages) || messages.length === 0) {
+    throw new HttpsError("invalid-argument", "messages (non vide) est requis.");
+  }
+  const db = firestoreDb();
+  const base = await assembleCopiloteContext(db, accountId);
+  const ctx = { ecran: ecran || "Copilote", compte: base.account.nom ? base.account : null };
+  const parsed = parseChatResponse(await generateJson(buildChatPrompt(ctx, messages)));
+  if (!parsed) throw new HttpsError("internal", "Réponse IA inexploitable.");
+  return parsed;
 });
 
 /* ------------------------------------------------------------------------------------------- *
