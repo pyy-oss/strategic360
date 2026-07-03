@@ -1,0 +1,41 @@
+name: Read Copilote function logs (diagnostic)
+
+# Manual diagnostic: dump recent logs for the Copilote read/admin callables to find why the
+# portfolio comes back empty (listCopiloteAccounts). Read-only; uses GCP_SA_KEY_STRATEGIC360.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tapez "logs" pour confirmer'
+        required: true
+
+jobs:
+  read-logs:
+    name: Read Copilote logs
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Refuse to run without explicit confirmation
+        if: ${{ github.event.inputs.confirm != 'logs' }}
+        run: |
+          echo "Le champ 'confirm' doit valoir exactement 'logs'. Annulé."
+          exit 1
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
+
+      - name: Dump listCopiloteAccounts + copiloteAdmin logs (last 30 min)
+        run: |
+          for svc in listcopiloteaccounts copiloteadmin; do
+            echo "===== $svc ====="
+            gcloud logging read \
+              "resource.type=\"cloud_run_revision\" resource.labels.service_name=\"$svc\"" \
+              --project=propulse-business-87f7a \
+              --limit=60 \
+              --format="table(timestamp, severity, textPayload)" \
+              --freshness=30m \
+              2>&1 || echo "::warning::lecture logs $svc impossible"
+          done

@@ -40,7 +40,7 @@ const lbl: React.CSSProperties = { fontSize: 11, color: T.faint, marginBottom: 3
 
 /** Copilote Commercial (add-on) — réutilise le moteur IA serveur + le PESTEL/les signaux de la veille. */
 export function Copilote() {
-  const { accounts, loading, scoped, reload } = useCopiloteAccounts();
+  const { accounts, loading, error, scoped, reload } = useCopiloteAccounts();
   const { canWrite } = useCan("veille");
   const { role } = useClaims();
   const isAdmin = role === "direction" || role === "commercial_dir"; // peut attribuer les comptes
@@ -122,6 +122,16 @@ export function Copilote() {
           </div>
         )}
       </div>
+
+      {error && (
+        <Card style={{ marginBottom: 14, borderColor: T.clay }}>
+          <div style={{ color: T.clay, fontSize: 13, fontWeight: 600 }}>Chargement du portefeuille impossible</div>
+          <div style={{ color: T.dim, fontSize: 12, marginTop: 6, whiteSpace: "pre-wrap" }}>{error.message}</div>
+          <div style={{ marginTop: 10 }}>
+            <button className="pill on" onClick={() => reload()}>Réessayer</button>
+          </div>
+        </Card>
+      )}
 
       {showPerim && isAdmin && <PerimetresPanel onClose={() => setShowPerim(false)} />}
       {showNew && canWrite && <NewAccountPanel onClose={() => setShowNew(false)} onCreated={(id) => { setAccountId(id); setShowNew(false); reload(); }} />}
