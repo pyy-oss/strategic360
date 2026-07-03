@@ -89,7 +89,7 @@ export interface IntelWatchlistEntry {
 
 export type IntelWatchlistInput = Omit<IntelWatchlistEntry, "id">;
 
-export type IntelSourceKind = "rss" | "web" | "newsletter" | "manual" | "portal";
+export type IntelSourceKind = "rss" | "web" | "web-js" | "newsletter" | "manual" | "portal";
 
 export interface IntelSource {
   id: string;
