@@ -138,3 +138,27 @@ describe("computeGranularite (via mapOrders)", () => {
     expect(computeGranularite({ orders: [] })).toEqual([]);
   });
 });
+
+describe("deriveCopiloteAccounts (empreinte comptes pour le Copilote)", () => {
+  it("dérive historique (Gagné) / en cours / CAS / pipeline par client, dédupliqué par slug", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const orders = [
+      { client: "SGCI", bu: "ICT", cas: 100 },
+      { client: "SGCI", bu: "ICT", cas: 50 },
+      { client: "Coris Bank", bu: "FORMATION", cas: 30 },
+    ];
+    const opps = [
+      { client: "SGCI", bu: "FORMATION", stage: 6, amount: 200 },   // gagné → historique
+      { client: "SGCI", bu: "ICT", stage: 2, amount: 400, weighted: 160 }, // en cours
+      { client: "SGCI", bu: "ICT", stage: 7, amount: 999 },          // perdu → ignoré
+    ];
+    const accts = deriveCopiloteAccounts(orders, opps);
+    const sgci = accts.find((a) => a.slug === "sgci");
+    expect(sgci.nom).toBe("SGCI");
+    expect(sgci.casTotal).toBe(150);
+    expect(sgci.pipelinePondere).toBe(160);
+    expect(sgci.historique.map((h) => h.offre).sort()).toEqual(["FORMATION", "ICT"]); // ICT via order, FORMATION via opp gagnée
+    expect(sgci.enCours).toEqual(["ICT"]);
+    expect(accts.find((a) => a.slug === "coris-bank").casTotal).toBe(30);
+  });
+});

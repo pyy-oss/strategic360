@@ -186,6 +186,61 @@ function pickCurrentFy(configDocs, fallbackYear) {
   return fallbackYear;
 }
 
+/**
+ * deriveCopiloteAccounts(nt360Orders, nt360Opps) -> [{ slug, nom, historique, enCours,
+ *   casTotal, pipelinePondere }] — empreinte commerciale par compte, dérivée du pipeline nt360.
+ *
+ * PUR (aucun accès Firestore). Réutilisé par le Copilote Commercial pour pré-remplir
+ * l'historique/les travaux en cours d'un compte À PARTIR DU RÉEL, en complément (jamais en
+ * remplacement) du qualitatif saisi par le commercial. La « BU » nt360 sert d'intitulé d'offre
+ * (proxy le plus fiable disponible). Gagné = stage 6 ; en cours = stages 1-5 ; perdu (7) ignoré.
+ *
+ * @param {Array<{client?:string, bu?:string, cas?:number}>} nt360Orders
+ * @param {Array<{client?:string, bu?:string, stage?:number, amount?:number, weighted?:number}>} nt360Opps
+ */
+function slugifyClient(name) {
+  return String(name || "")
+    .trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
+  const byClient = new Map();
+  const get = (client) => {
+    const nom = String(client).trim();
+    const slug = slugifyClient(nom);
+    if (!byClient.has(slug)) {
+      byClient.set(slug, { slug, nom, wonBu: new Set(), openBu: new Set(), casTotal: 0, pipelinePondere: 0 });
+    }
+    return byClient.get(slug);
+  };
+  for (const o of Array.isArray(nt360Orders) ? nt360Orders : []) {
+    if (!o || !o.client) continue;
+    const a = get(o.client);
+    a.casTotal += num(o.cas);
+    if (o.bu) a.wonBu.add(String(o.bu)); // un CAS réalisé = offre déjà vendue
+  }
+  for (const o of Array.isArray(nt360Opps) ? nt360Opps : []) {
+    if (!o || !o.client) continue;
+    const stage = Number(o.stage);
+    const a = get(o.client);
+    if (stage === 6 && o.bu) a.wonBu.add(String(o.bu));
+    else if (stage >= 1 && stage <= 5) {
+      if (o.bu) a.openBu.add(String(o.bu));
+      a.pipelinePondere += Number.isFinite(Number(o.weighted)) ? num(o.weighted) : num(o.amount) * 0.5;
+    }
+  }
+  return [...byClient.values()]
+    .filter((a) => a.slug)
+    .map((a) => ({
+      slug: a.slug,
+      nom: a.nom,
+      historique: [...a.wonBu].map((bu) => ({ offre: bu, statut: "Gagné" })),
+      enCours: [...a.openBu],
+      casTotal: Math.round(a.casTotal),
+      pipelinePondere: Math.round(a.pipelinePondere),
+    }));
+}
+
 module.exports = {
   STAGE_TO_ETAPE,
   mapOrders,
@@ -194,4 +249,6 @@ module.exports = {
   mapBcLinesToSupplierRows,
   pickObjectives,
   pickCurrentFy,
+  deriveCopiloteAccounts,
+  slugifyClient,
 };

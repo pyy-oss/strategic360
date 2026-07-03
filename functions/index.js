@@ -1621,6 +1621,19 @@ async function assembleCopiloteContext(db, accountId) {
     db.collection("bizOpportunities").get(),
   ]);
   const a = acctSnap && acctSnap.exists ? acctSnap.data() : {};
+  // Empreinte dérivée de nt360 (additive, jamais destructive) : on fusionne l'historique/les
+  // travaux en cours SAISIS par le commercial avec ceux DÉRIVÉS du pipeline réel (a.nt360).
+  const nt = a.nt360 && typeof a.nt360 === "object" ? a.nt360 : {};
+  const humanHisto = Array.isArray(a.historique) ? a.historique : [];
+  const derivedHisto = Array.isArray(nt.historique) ? nt.historique : [];
+  const histoSeen = new Set();
+  const historique = [...humanHisto, ...derivedHisto].filter((h) => {
+    const k = `${(h.offre || "").toLowerCase()}|${(h.statut || "").toLowerCase()}`;
+    if (!h.offre || histoSeen.has(k)) return false;
+    histoSeen.add(k);
+    return true;
+  });
+  const enCours = [...new Set([...(Array.isArray(a.enCours) ? a.enCours : []), ...(Array.isArray(nt.enCours) ? nt.enCours : [])])];
   // PESTEL réutilisé depuis la veille (frameworks/pestel content.factors = [{f, d, ...}]).
   const pestel = (pestelSnap.exists ? pestelSnap.data()?.content?.factors || [] : [])
     .filter((x) => x && typeof x === "object" && x.d)
@@ -1637,8 +1650,8 @@ async function assembleCopiloteContext(db, accountId) {
     tier: a.tier || "",
     enjeux: Array.isArray(a.enjeux) ? a.enjeux : [],
     whitespace: Array.isArray(a.whitespace) ? a.whitespace : [],
-    enCours: Array.isArray(a.enCours) ? a.enCours : [],
-    historique: Array.isArray(a.historique) ? a.historique : [],
+    enCours, // saisi + dérivé nt360
+    historique, // saisi + dérivé nt360
     contacts: Array.isArray(a.contacts) ? a.contacts : [],
     preuves: Array.isArray(a.preuves) ? a.preuves : ["BCEAO", "Orange CI", "BRVM"],
     tendances: Array.isArray(a.tendances) ? a.tendances : [],
@@ -1646,7 +1659,7 @@ async function assembleCopiloteContext(db, accountId) {
     concurrence: a.concurrence || "",
     pestel,
     signaux,
-    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux: Array.isArray(a.enjeux) ? a.enjeux : [], historique: Array.isArray(a.historique) ? a.historique : [], whitespace: Array.isArray(a.whitespace) ? a.whitespace : [] },
+    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux: Array.isArray(a.enjeux) ? a.enjeux : [], historique, whitespace: Array.isArray(a.whitespace) ? a.whitespace : [] },
   };
 }
 
@@ -1705,6 +1718,7 @@ const {
   mapBcLinesToSupplierRows: nt360MapBcLines,
   pickObjectives: nt360PickObjectives,
   pickCurrentFy: nt360PickCurrentFy,
+  deriveCopiloteAccounts: nt360DeriveCopiloteAccounts,
 } = require("./domain/nt360");
 
 async function runInternalQuantiSync(db) {
@@ -1792,6 +1806,58 @@ exports.syncInternalQuantiNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "synchroniser les données internes (nt360)");
   const result = await runInternalQuantiSync(firestoreDb());
   logger.info(`syncInternalQuantiNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
+  return result;
+});
+
+/**
+ * runSyncCopiloteAccounts — pré-remplit l'empreinte des comptes du Copilote depuis nt360 (read-only).
+ * ADDITIF : écrit uniquement `nom` + le sous-objet `nt360` (historique/enCours/casTotal/pipeline) par
+ * merge — les champs qualitatifs saisis par le commercial (enjeux, whitespace, tier, contacts…) ne
+ * sont JAMAIS touchés. Clé = slug(client) → déduplique avec les comptes créés à la main.
+ */
+async function runSyncCopiloteAccounts(db) {
+  const src = getFirestore(NT360_DATABASE_ID); // READ-ONLY
+  const [ordersSnap, oppsSnap] = await Promise.all([
+    src.collection("orders").get(),
+    src.collection("opportunities").get(),
+  ]);
+  const derived = nt360DeriveCopiloteAccounts(
+    ordersSnap.docs.map((d) => d.data()),
+    oppsSnap.docs.map((d) => d.data())
+  );
+  let written = 0;
+  for (const acc of derived) {
+    await db.doc(`copiloteAccounts/${acc.slug}`).set(
+      {
+        nom: acc.nom,
+        nt360: {
+          historique: acc.historique,
+          enCours: acc.enCours,
+          casTotal: acc.casTotal,
+          pipelinePondere: acc.pipelinePondere,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+      },
+      { merge: true }
+    );
+    written += 1;
+  }
+  logger.info(`runSyncCopiloteAccounts: ${written} comptes copilote pré-remplis depuis nt360`);
+  return { accounts: written };
+}
+
+exports.syncCopiloteAccounts = onSchedule(
+  { schedule: "45 5 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
+  async () => {
+    await runSyncCopiloteAccounts(firestoreDb());
+  }
+);
+
+/** syncCopiloteAccountsNow — callable (rôles commerciaux + exec) pour forcer le pré-remplissage. */
+exports.syncCopiloteAccountsNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  requireCommercialCaller(request, "synchroniser les comptes du copilote");
+  const result = await runSyncCopiloteAccounts(firestoreDb());
+  logger.info(`syncCopiloteAccountsNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
   return result;
 });
 

@@ -7,6 +7,7 @@ import {
   createCopiloteAccount,
   copiloteGenerate,
   copiloteChat,
+  syncCopiloteAccountsFromNt360,
   type CopiloteAgent,
   type ProspectionResult,
   type CvpResult,
@@ -38,8 +39,22 @@ export function Copilote() {
   const [accountId, setAccountId] = useState<string>("");
   const [tab, setTab] = useState<string>("prospection");
   const [showNew, setShowNew] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const account = useMemo(() => accounts.find((a) => a.id === accountId), [accounts, accountId]);
+
+  const syncFromNt360 = async () => {
+    setSyncing(true); setSyncMsg(null);
+    try {
+      const { accounts: n } = await syncCopiloteAccountsFromNt360();
+      setSyncMsg(`${n} comptes pré-remplis depuis nt360.`);
+    } catch (e) {
+      setSyncMsg(e instanceof Error ? e.message : "Échec de la synchronisation.");
+    } finally { setSyncing(false); }
+  };
+
+  const fmt = (n?: number) => (typeof n === "number" ? new Intl.NumberFormat("fr-FR").format(n) : "—");
 
   return (
     <div>
@@ -55,7 +70,13 @@ export function Copilote() {
           {account && <Badge c={T.steel}>{account.tier || "compte"}</Badge>}
         </div>
         {canWrite && (
-          <button className="pill on" onClick={() => setShowNew((v) => !v)}>+ Nouveau compte</button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {syncMsg && <span style={{ fontSize: 11.5, color: T.faint }}>{syncMsg}</span>}
+            <button className="pill" disabled={syncing} onClick={() => void syncFromNt360()}>
+              {syncing ? "Synchro…" : "⟳ Empreinte nt360"}
+            </button>
+            <button className="pill on" onClick={() => setShowNew((v) => !v)}>+ Nouveau compte</button>
+          </div>
         )}
       </div>
 
@@ -74,6 +95,15 @@ export function Copilote() {
             {account.enjeux.map((e, i) => <Badge key={`e${i}`} c={T.clay}>{e}</Badge>)}
             {account.whitespace.map((w, i) => <Badge key={`w${i}`} c={T.emerald}>Whitespace : {w}</Badge>)}
           </div>
+          {account.nt360 && (
+            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: T.faint }}>Empreinte nt360 :</span>
+              <Badge c={T.gold}>CAS {fmt(account.nt360.casTotal)} XOF</Badge>
+              <Badge c={T.steel}>Pipeline pondéré {fmt(account.nt360.pipelinePondere)} XOF</Badge>
+              {(account.nt360.historique ?? []).map((h, i) => <Badge key={`h${i}`} c={T.emerald}>{h.offre} ✓</Badge>)}
+              {(account.nt360.enCours ?? []).map((e, i) => <Badge key={`ec${i}`} c={T.plum}>{e} (en cours)</Badge>)}
+            </div>
+          )}
         </Card>
       )}
 

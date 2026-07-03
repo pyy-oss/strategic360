@@ -47,6 +47,14 @@ export interface CopiloteAccount {
   tendances: string[];
   reglementation?: string;
   concurrence?: string;
+  /** Empreinte dérivée du pipeline nt360 (read-only) — additive, ne remplace jamais le qualitatif. */
+  nt360?: {
+    historique?: CopiloteHistoriqueItem[];
+    enCours?: string[];
+    casTotal?: number;
+    pipelinePondere?: number;
+    updatedAt?: Timestamp | FieldValue;
+  };
   updatedAt?: Timestamp | FieldValue;
 }
 
@@ -122,5 +130,12 @@ export async function copiloteGenerate<T>(agent: CopiloteAgent, accountId?: stri
 export async function copiloteChat(messages: CopiloteChatMessage[], accountId?: string, ecran?: string): Promise<{ reply: string }> {
   const call = httpsCallable<{ messages: CopiloteChatMessage[]; accountId?: string; ecran?: string }, { reply: string }>(functions, "copiloteChat");
   const { data } = await call({ messages, accountId, ecran });
+  return data;
+}
+
+/** Pré-remplit l'empreinte des comptes depuis nt360 (read-only). Retourne le nombre de comptes traités. */
+export async function syncCopiloteAccountsFromNt360(): Promise<{ accounts: number }> {
+  const call = httpsCallable<void, { accounts: number }>(functions, "syncCopiloteAccountsNow");
+  const { data } = await call();
   return data;
 }
