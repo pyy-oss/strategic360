@@ -217,7 +217,7 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
     const nom = String(client).trim();
     const slug = slugifyClient(nom) || `cpt-${hashName(nom)}`;
     if (!byClient.has(slug)) {
-      byClient.set(slug, { slug, nom, wonBu: new Set(), openBu: new Set(), casTotal: 0, pipelinePondere: 0, wins: 0, opps: [] });
+      byClient.set(slug, { slug, nom, wonBu: new Set(), openBu: new Set(), casTotal: 0, pipelinePondere: 0, wins: 0, opps: [], ams: new Set(), bus: new Set() });
     }
     return byClient.get(slug);
   };
@@ -229,16 +229,21 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
     if (!Number.isFinite(s) && typeof o.stageLabel === "string") s = Number.parseInt(o.stageLabel, 10);
     return s;
   };
+  // Empreinte de rattachement (cloisonnement par commercial) : on collecte les account managers (am)
+  // et les BU réels du compte pour pouvoir, plus tard, filtrer le portefeuille par périmètre.
+  const tagOwner = (a, o) => { if (o.am) a.ams.add(String(o.am).trim()); if (o.bu) a.bus.add(String(o.bu).trim()); };
   for (const o of Array.isArray(nt360Orders) ? nt360Orders : []) {
     if (!o || !o.client) continue;
     const a = get(o.client);
     a.casTotal += num(o.cas);
     if (o.bu) a.wonBu.add(String(o.bu)); // un CAS réalisé = offre déjà vendue
+    tagOwner(a, o);
   }
   for (const o of Array.isArray(nt360Opps) ? nt360Opps : []) {
     if (!o || !o.client) continue;
     const stage = resolveStage(o);
     const a = get(o.client);
+    tagOwner(a, o);
     if (stage === 6) { a.wins += 1; if (o.bu) a.wonBu.add(String(o.bu)); }
     else if (stage >= 1 && stage <= 5) {
       if (o.bu) a.openBu.add(String(o.bu));
@@ -269,7 +274,36 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
       wins: a.wins,
       // Top opportunités en cours par montant (borné pour rester léger côté doc Firestore).
       opportunites: a.opps.sort((x, y) => y.montant - x.montant).slice(0, 8).map((o) => ({ ...o, montant: Math.round(o.montant) })),
+      // Rattachement réel (cloisonnement) : account managers + BU du compte.
+      ams: [...a.ams],
+      bus: [...a.bus],
     }));
+}
+
+/**
+ * copiloteAccountMatchesScope(account, scope) -> bool — un compte est visible par un commercial si
+ * l'UNE des trois sources de rattachement correspond (« mix des 3 ») :
+ *   1. override manuel : son e-mail figure dans account.owners ;
+ *   2. account manager : l'un de ses am (scope.ams) figure dans account.nt360.ams ;
+ *   3. BU/équipe       : l'une de ses BU (scope.bus) figure dans account.nt360.bus.
+ * PUR — comparaison insensible à la casse/aux espaces. `scope = { email, ams:[], bus:[] }`.
+ */
+function copiloteAccountMatchesScope(account, scope) {
+  const a = account || {};
+  const s = scope || {};
+  // Le créateur d'un compte le voit toujours (sinon un commercial créant un compte manuel le perdrait
+  // aussitôt, faute de rattachement am/BU/owner).
+  if (s.uid && a.createdBy && a.createdBy === s.uid) return true;
+  const norm = (v) => String(v == null ? "" : v).trim().toLowerCase();
+  const owners = (Array.isArray(a.owners) ? a.owners : []).map(norm);
+  const email = norm(s.email);
+  if (email && owners.includes(email)) return true;
+  const nt = a.nt360 && typeof a.nt360 === "object" ? a.nt360 : {};
+  const intersects = (accList, scopeList) => {
+    const set = new Set((Array.isArray(accList) ? accList : []).map(norm));
+    return (Array.isArray(scopeList) ? scopeList : []).some((x) => set.has(norm(x)));
+  };
+  return intersects(nt.ams, s.ams) || intersects(nt.bus, s.bus);
 }
 
 module.exports = {
@@ -281,5 +315,6 @@ module.exports = {
   pickObjectives,
   pickCurrentFy,
   deriveCopiloteAccounts,
+  copiloteAccountMatchesScope,
   slugifyClient,
 };
