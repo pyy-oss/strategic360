@@ -82,6 +82,9 @@ async function getRenderBrowser() {
         defaultViewport: { width: 1280, height: 900 },
         executablePath: await chromium.executablePath(),
         headless: true,
+        // Beaucoup de sites .gouv.ci ont un certificat mal configuré (ERR_CERT_COMMON_NAME_INVALID) :
+        // on ignore les erreurs TLS pour pouvoir quand même lire la page (on ne fait que lire du contenu public).
+        acceptInsecureCerts: true,
       });
     })().catch((err) => {
       _browserLaunchFailed = true;
@@ -98,13 +101,18 @@ async function closeRenderBrowser() {
     try { const b = await p; await b.close(); } catch { /* ignore */ }
   }
 }
-/** Rend une page JS et renvoie son HTML final (après exécution du script). Timeout dur 25 s. */
+/** Rend une page JS et renvoie son HTML final (après exécution du script). Timeout dur 30 s.
+ * `domcontentloaded` (et non `networkidle2`) : les SPA gardent des connexions ouvertes en
+ * permanence et n'atteignent jamais l'inactivité réseau → on attend le DOM puis un court délai
+ * pour laisser le JS peupler la page. */
 async function fetchRendered(url) {
   const browser = await getRenderBrowser();
   const page = await browser.newPage();
   try {
     await page.setUserAgent(SOURCE_FETCH_HEADERS["User-Agent"]);
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 25000 });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    // Laisse le JS rendre le contenu (listes d'AO, actualités) après le DOMContentLoaded.
+    await new Promise((r) => setTimeout(r, 3500));
     return await page.content();
   } finally {
     try { await page.close(); } catch { /* ignore */ }
