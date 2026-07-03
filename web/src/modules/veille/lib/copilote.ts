@@ -12,6 +12,7 @@ import {
   setDoc,
   addDoc,
   deleteDoc,
+  getDocs,
   type FieldValue,
   type Timestamp,
 } from "firebase/firestore";
@@ -216,8 +217,19 @@ export async function setCopiloteAccountOwners(accountId: string, owners: string
   await call({ action: "setOwners", accountId, owners });
 }
 
-/** Définit le périmètre (am / BU) d'un commercial. Réservé direction / commercial_dir (gate serveur). */
-export async function setCopiloteScope(uid: string, ams: string[], bus: string[]): Promise<void> {
-  const call = httpsCallable<{ action: string; uid: string; ams: string[]; bus: string[] }, unknown>(functions, "copiloteAdmin");
-  await call({ action: "setScope", uid, ams, bus });
+/** Définit le périmètre (am / BU) d'un commercial, par e-mail. Réservé direction / commercial_dir. */
+export async function setCopiloteScope(email: string, ams: string[], bus: string[]): Promise<void> {
+  const call = httpsCallable<{ action: string; email: string; ams: string[]; bus: string[] }, unknown>(functions, "copiloteAdmin");
+  await call({ action: "setScope", email, ams, bus });
+}
+
+export interface CopiloteProfile { email: string; ams: string[]; bus: string[] }
+
+/** Liste les périmètres définis (copiloteProfiles) — lecture autorisée aux rôles commerciaux. */
+export async function fetchCopiloteProfiles(): Promise<CopiloteProfile[]> {
+  const snap = await getDocs(collection(db, "copiloteProfiles"));
+  return snap.docs.map((d) => {
+    const r = d.data() as Partial<CopiloteProfile>;
+    return { email: r.email || d.id, ams: r.ams ?? [], bus: r.bus ?? [] };
+  });
 }

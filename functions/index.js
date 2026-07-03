@@ -1949,12 +1949,14 @@ exports.listCopiloteAccounts = onCall(CALLABLE_OPTS, async (request) => {
   const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   const unscoped = COPILOTE_UNSCOPED_ROLES.includes(role);
   if (unscoped) return { accounts: all, scoped: false };
-  // Périmètre du commercial : e-mail (token) + am/bu de son profil.
-  const profSnap = await db.doc(`copiloteProfiles/${request.auth.uid}`).get();
-  const prof = profSnap.exists ? profSnap.data() : {};
+  // Périmètre du commercial : e-mail (token/owners) + am/bu de son profil (clé = e-mail : pas de
+  // répertoire d'utilisateurs dans l'app, l'admin définit le périmètre par e-mail, plus simple qu'un uid).
+  const email = (request.auth?.token?.email || "").trim().toLowerCase();
+  const profSnap = email ? await db.doc(`copiloteProfiles/${email}`).get() : null;
+  const prof = profSnap && profSnap.exists ? profSnap.data() : {};
   const scope = {
     uid: request.auth.uid,
-    email: request.auth?.token?.email || "",
+    email,
     ams: Array.isArray(prof.ams) ? prof.ams : [],
     bus: Array.isArray(prof.bus) ? prof.bus : [],
   };
@@ -1986,14 +1988,15 @@ exports.copiloteAdmin = onCall(CALLABLE_OPTS, async (request) => {
   const { action } = request.data || {};
   const db = firestoreDb();
   if (action === "setScope") {
-    const { uid, ams, bus } = request.data || {};
-    if (typeof uid !== "string" || !uid) throw new HttpsError("invalid-argument", "uid (string) requis.");
-    await db.doc(`copiloteProfiles/${uid}`).set(
-      { ams: coerceStrList(ams), bus: coerceStrList(bus), updatedBy: request.auth.uid, updatedAt: FieldValue.serverTimestamp() },
+    const { email, ams, bus } = request.data || {};
+    const key = typeof email === "string" ? email.trim().toLowerCase() : "";
+    if (!key || key.includes("/")) throw new HttpsError("invalid-argument", "email (valide) requis.");
+    await db.doc(`copiloteProfiles/${key}`).set(
+      { email: key, ams: coerceStrList(ams), bus: coerceStrList(bus), updatedBy: request.auth.uid, updatedAt: FieldValue.serverTimestamp() },
       { merge: true }
     );
-    logger.info(`copiloteAdmin setScope: uid=${uid} by=${request.auth.uid}`);
-    return { uid, ams: coerceStrList(ams), bus: coerceStrList(bus) };
+    logger.info(`copiloteAdmin setScope: email=${key} by=${request.auth.uid}`);
+    return { email: key, ams: coerceStrList(ams), bus: coerceStrList(bus) };
   }
   if (action === "setOwners") {
     const { accountId, owners } = request.data || {};
