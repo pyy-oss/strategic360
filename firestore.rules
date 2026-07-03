@@ -97,8 +97,15 @@ service cloud.firestore {
     }
 
     // — Copilote Commercial : comptes (qualitatif édité par les commerciaux) —
+    // Le sous-objet `nt360` (empreinte dérivée du pipeline) est écrit UNIQUEMENT par les Cloud
+    // Functions (Admin SDK, qui outrepasse ces règles). Côté client, un commercial peut lire, créer,
+    // supprimer et éditer le QUALITATIF, mais ne peut pas écrire/écraser `nt360` — sinon une simple
+    // requête client pourrait corrompre les vraies données de pipeline jusqu'à la prochaine synchro.
     match /copiloteAccounts/{id} {
-      allow read, write: if commercial();
+      allow read, delete: if commercial();
+      allow create: if commercial() && !('nt360' in request.resource.data);
+      allow update: if commercial()
+        && !('nt360' in request.resource.data.diff(resource.data).affectedKeys());
     }
 
     // — Agrégats (écrits par Cloud Functions / Admin SDK uniquement) —

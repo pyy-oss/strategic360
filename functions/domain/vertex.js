@@ -144,13 +144,39 @@ function stripToJson(raw) {
   // Enlève une clôture ```json … ``` ou ``` … ```.
   const fence = t.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   if (fence) t = fence[1].trim();
-  // Si du texte entoure le JSON, isole du premier { ou [ au dernier } ou ].
-  if (t && t[0] !== "{" && t[0] !== "[") {
-    const start = t.search(/[[{]/);
-    const end = Math.max(t.lastIndexOf("}"), t.lastIndexOf("]"));
-    if (start !== -1 && end > start) t = t.slice(start, end + 1);
+  // Isole le bloc JSON par un balayage à parenthésage équilibré depuis le premier { ou [ — bien plus
+  // robuste que « premier { … dernier } » qui se faisait piéger par une accolade présente dans une
+  // valeur texte ou dans une phrase ajoutée après le JSON (audit profond 2026-07).
+  const start = t.search(/[[{]/);
+  if (start !== -1) {
+    const end = matchingClose(t, start);
+    t = end !== -1 ? t.slice(start, end + 1) : t.slice(start);
   }
   return t;
+}
+/**
+ * Index du délimiteur fermant équilibré pour le { ou [ situé à startIdx, en respectant les chaînes
+ * JSON et les échappements (une } ou ] à l'intérieur d'une valeur texte ne ferme pas le bloc).
+ */
+function matchingClose(s, startIdx) {
+  const open = s[startIdx];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = startIdx; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === open) depth++;
+    else if (ch === close && --depth === 0) return i;
+  }
+  return -1;
 }
 
 module.exports = { generateJson, getClient, DEFAULT_LOCATION, DEFAULT_MODEL };

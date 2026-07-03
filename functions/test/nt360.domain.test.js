@@ -148,8 +148,8 @@ describe("deriveCopiloteAccounts (empreinte comptes pour le Copilote)", () => {
       { client: "Coris Bank", bu: "FORMATION", cas: 30 },
     ];
     const opps = [
-      { client: "SGCI", bu: "FORMATION", stage: 6, amount: 200 },   // gagné → historique
-      { client: "SGCI", bu: "ICT", stage: 2, amount: 400, weighted: 160 }, // en cours
+      { client: "SGCI", bu: "FORMATION", stage: 6, amount: 200 },   // gagné → historique + win
+      { client: "SGCI", bu: "ICT", stage: 2, amount: 400, weighted: 160, oppId: "OPP-1", stageLabel: "2-Montage", closingDate: "2026-09-30", probability: 40 }, // en cours
       { client: "SGCI", bu: "ICT", stage: 7, amount: 999 },          // perdu → ignoré
     ];
     const accts = deriveCopiloteAccounts(orders, opps);
@@ -160,5 +160,57 @@ describe("deriveCopiloteAccounts (empreinte comptes pour le Copilote)", () => {
     expect(sgci.historique.map((h) => h.offre).sort()).toEqual(["FORMATION", "ICT"]); // ICT via order, FORMATION via opp gagnée
     expect(sgci.enCours).toEqual(["ICT"]);
     expect(accts.find((a) => a.slug === "coris-bank").casTotal).toBe(30);
+  });
+
+  it("expose les affaires gagnées (wins) et les opportunités réelles en cours (chiffrées, triées, bornées à 8)", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const opps = [
+      { client: "SGCI", bu: "FORMATION", stage: 6, amount: 200 }, // gagné
+      { client: "SGCI", bu: "CYBER", stage: 6, amount: 500 },     // gagné
+      { client: "SGCI", bu: "ICT", stage: 3, amount: 400, oppId: "OPP-1", stageLabel: "3-Négociation", closingDate: "2026-09-30", probability: 60 },
+      { client: "SGCI", bu: "WAN", stage: 2, amount: 900, oppId: "OPP-2", stageLabel: "2-Montage" },
+      { client: "SGCI", bu: "ICT", stage: 7, amount: 999 },       // perdu → ignoré
+    ];
+    const sgci = deriveCopiloteAccounts([], opps).find((a) => a.slug === "sgci");
+    expect(sgci.wins).toBe(2);
+    expect(sgci.opportunites).toHaveLength(2);
+    // Triées par montant décroissant.
+    expect(sgci.opportunites[0]).toMatchObject({ nom: "OPP-2", montant: 900, etape: "2-Montage", bu: "WAN" });
+    expect(sgci.opportunites[1]).toMatchObject({ nom: "OPP-1", montant: 400, etape: "3-Négociation", closingDate: "2026-09-30", probability: 60 });
+    // Jamais d'undefined : probability absente → null.
+    expect(sgci.opportunites[0].probability).toBeNull();
+  });
+
+  it("résout le stade via stageLabel quand `stage` numérique est absent (deal sinon perdu du pipeline)", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const opps = [
+      { client: "Orange CI", bu: "WAN", stageLabel: "3-Négociation", amount: 100, weighted: 40 }, // stage absent
+      { client: "Orange CI", bu: "CYBER", stageLabel: "6-Gagné" }, // gagné via label
+    ];
+    const a = deriveCopiloteAccounts([], opps).find((x) => x.slug === "orange-ci");
+    expect(a.pipelinePondere).toBe(40);
+    expect(a.enCours).toEqual(["WAN"]);
+    expect(a.wins).toBe(1);
+  });
+
+  it("weighted null/absent → repli amount*0.5 (Number(null)===0 ne doit pas compter un pipeline nul)", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const opps = [
+      { client: "Coris", bu: "ICT", stage: 3, amount: 200, weighted: null },
+      { client: "Coris", bu: "ICT", stage: 2, amount: 100 }, // weighted absent
+    ];
+    const a = deriveCopiloteAccounts([], opps).find((x) => x.slug === "coris");
+    expect(a.pipelinePondere).toBe(150); // 200*0.5 + 100*0.5
+  });
+
+  it("nom purement non-latin → slug de repli déterministe (CAS non perdu), clients distincts non fusionnés", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const accts = deriveCopiloteAccounts(
+      [{ client: "株式会社", bu: "ICT", cas: 80 }, { client: "会社银行", bu: "ICT", cas: 20 }],
+      []
+    );
+    expect(accts).toHaveLength(2); // pas fusionnés dans une clé ""
+    expect(accts.every((a) => a.slug && a.slug.startsWith("cpt-"))).toBe(true);
+    expect(accts.reduce((s, a) => s + a.casTotal, 0)).toBe(100); // aucun CAS perdu
   });
 });

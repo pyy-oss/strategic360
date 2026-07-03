@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { T } from "../../../design/tokens";
+import React, { useEffect, useMemo, useState } from "react";
+import { T, fmt as fmtC } from "../../../design/tokens";
 import { Eyebrow, Card, Badge } from "../../../design/ui";
 import { useCan } from "../../../lib/rbac";
 import {
@@ -8,6 +8,7 @@ import {
   copiloteGenerate,
   copiloteChat,
   syncCopiloteAccountsFromNt360,
+  slugifyClient,
   type CopiloteAccount,
   type CopiloteAgent,
   type ProspectionResult,
@@ -45,8 +46,32 @@ export function Copilote() {
 
   // Poids commercial = CAS réalisé + pipeline pondéré (empreinte nt360). Sert au tri du portefeuille.
   const poids = (a: CopiloteAccount) => (a.nt360?.casTotal ?? 0) + (a.nt360?.pipelinePondere ?? 0);
-  const sorted = useMemo(() => [...accounts].sort((x, y) => poids(y) - poids(x)), [accounts]);
-  const account = useMemo(() => accounts.find((a) => a.id === accountId), [accounts, accountId]);
+  // Déduplication par slug(nom) : un compte créé à la main (id auto legacy) et son jumeau
+  // synchronisé (id = slug) représentent le MÊME client → on les fusionne pour ne pas dupliquer la
+  // ligne ni gonfler les KPIs. On garde l'id le plus « riche » (celui qui porte du qualitatif).
+  const sorted = useMemo(() => {
+    const byKey = new Map<string, CopiloteAccount>();
+    for (const a of accounts) {
+      const key = slugifyClient(a.nom) || a.id;
+      const prev = byKey.get(key);
+      if (!prev) { byKey.set(key, a); continue; }
+      const richer = (a.enjeux?.length ?? 0) + (a.whitespace?.length ?? 0) + (a.contacts?.length ?? 0);
+      const prevRich = (prev.enjeux?.length ?? 0) + (prev.whitespace?.length ?? 0) + (prev.contacts?.length ?? 0);
+      const base = richer >= prevRich ? a : prev;
+      const other = base === a ? prev : a;
+      // Fusion : qualitatif du plus riche + empreinte nt360 disponible de l'un ou l'autre.
+      byKey.set(key, { ...base, nt360: base.nt360 ?? other.nt360 });
+    }
+    return [...byKey.values()].sort((x, y) => poids(y) - poids(x));
+  }, [accounts]);
+  const account = useMemo(() => sorted.find((a) => a.id === accountId), [sorted, accountId]);
+
+  // Le message de synchro s'efface tout seul (ne reste pas indéfiniment dans l'en-tête).
+  useEffect(() => {
+    if (!syncMsg) return;
+    const t = setTimeout(() => setSyncMsg(null), 6000);
+    return () => clearTimeout(t);
+  }, [syncMsg]);
 
   const syncFromNt360 = async () => {
     setSyncing(true); setSyncMsg(null);
@@ -58,7 +83,9 @@ export function Copilote() {
     } finally { setSyncing(false); }
   };
 
-  const fmt = (n?: number) => (typeof n === "number" ? new Intl.NumberFormat("fr-FR").format(n) : "—");
+  // Précision complète pour la fiche compte (audit/citation) ; fmtC (compact k/M/Md) pour tuiles,
+  // options et listes de deals où la lisibilité prime.
+  const fmtFull = (n?: number) => (typeof n === "number" ? new Intl.NumberFormat("fr-FR").format(n) : "—");
 
   return (
     <div>
@@ -69,7 +96,7 @@ export function Copilote() {
             <option value="">{loading ? "Chargement…" : "— Portefeuille (vue d'ensemble) —"}</option>
             {sorted.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.nom}{a.secteur ? ` · ${a.secteur}` : ""}{poids(a) ? ` — ${fmt(poids(a))} XOF` : ""}
+                {a.nom}{a.secteur ? ` · ${a.secteur}` : ""}{poids(a) ? ` — ${fmtC(poids(a))} XOF` : ""}
               </option>
             ))}
           </select>
@@ -98,14 +125,14 @@ export function Copilote() {
         <Card style={{ marginBottom: 14 }}>
           <Eyebrow color={T.gold}>{account.nom}</Eyebrow>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-            {account.enjeux.map((e, i) => <Badge key={`e${i}`} c={T.clay}>{e}</Badge>)}
-            {account.whitespace.map((w, i) => <Badge key={`w${i}`} c={T.emerald}>Whitespace : {w}</Badge>)}
+            {(account.enjeux ?? []).map((e, i) => <Badge key={`e${i}`} c={T.clay}>{e}</Badge>)}
+            {(account.whitespace ?? []).map((w, i) => <Badge key={`w${i}`} c={T.emerald}>Whitespace : {w}</Badge>)}
           </div>
           {account.nt360 && (
             <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
               <span style={{ fontSize: 11, color: T.faint }}>Empreinte nt360 :</span>
-              <Badge c={T.gold}>CAS {fmt(account.nt360.casTotal)} XOF</Badge>
-              <Badge c={T.steel}>Pipeline pondéré {fmt(account.nt360.pipelinePondere)} XOF</Badge>
+              <Badge c={T.gold}>CAS {fmtC(account.nt360.casTotal ?? 0)} XOF</Badge>
+              <Badge c={T.steel}>Pipeline pondéré {fmtC(account.nt360.pipelinePondere ?? 0)} XOF</Badge>
               {typeof account.nt360.wins === "number" && account.nt360.wins > 0 && <Badge c={T.emerald}>{account.nt360.wins} affaire(s) gagnée(s)</Badge>}
               {(account.nt360.historique ?? []).map((h, i) => <Badge key={`h${i}`} c={T.emerald}>{h.offre} ✓</Badge>)}
               {(account.nt360.enCours ?? []).map((e, i) => <Badge key={`ec${i}`} c={T.plum}>{e} (en cours)</Badge>)}
@@ -116,12 +143,14 @@ export function Copilote() {
               <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 6 }}>Opportunités réelles en cours (pipeline nt360)</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {(account.nt360?.opportunites ?? []).map((o, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", padding: "6px 10px", background: T.panel2, borderRadius: 8, borderLeft: `3px solid ${T.gold}` }}>
+                  <div key={`${o.nom}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", padding: "6px 10px", background: T.panel2, borderRadius: 8, borderLeft: `3px solid ${T.gold}` }}>
                     <span style={{ fontSize: 12.5, color: T.ink }}>
                       {o.nom}{o.bu ? <span style={{ color: T.faint }}> · {o.bu}</span> : null}
                       <span style={{ color: T.steel }}> — {o.etape}</span>
+                      {typeof o.probability === "number" ? <span style={{ color: T.gold }}> · {o.probability}%</span> : null}
+                      {o.closingDate ? <span style={{ color: T.faint }}> · clôture {o.closingDate}</span> : null}
                     </span>
-                    <span style={{ fontSize: 12.5, color: T.gold, fontWeight: 600, whiteSpace: "nowrap" }}>{fmt(o.montant)} XOF</span>
+                    <span style={{ fontSize: 12.5, color: T.gold, fontWeight: 600, whiteSpace: "nowrap" }}>{fmtFull(o.montant)} XOF</span>
                   </div>
                 ))}
               </div>
@@ -130,14 +159,14 @@ export function Copilote() {
         </Card>
       )}
 
-      {!account && !loading && <PortfolioDashboard accounts={sorted} poids={poids} fmt={fmt} onPick={setAccountId} />}
+      {!account && !loading && <PortfolioDashboard accounts={sorted} poids={poids} fmt={fmtC} onPick={setAccountId} />}
 
-      {tab === "prospection" && <ProspectionTab accountId={accountId} />}
-      {tab === "cvp" && <CvpTab accountId={accountId} disabled={!accountId} />}
-      {tab === "triennal" && <TriennalTab accountId={accountId} disabled={!accountId} />}
-      {tab === "planCompte" && <PlanCompteTab accountId={accountId} disabled={!accountId} />}
-      {tab === "redaction" && <RedactionTab accountId={accountId} compte={account?.nom || ""} />}
-      {tab === "chat" && <ChatTab accountId={accountId} />}
+      {tab === "prospection" && <ProspectionTab accountId={accountId} canWrite={canWrite} />}
+      {tab === "cvp" && <CvpTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "triennal" && <TriennalTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "planCompte" && <PlanCompteTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "redaction" && <RedactionTab accountId={accountId} compte={account?.nom || ""} canWrite={canWrite} />}
+      {tab === "chat" && <ChatTab accountId={accountId} canWrite={canWrite} />}
     </div>
   );
 }
@@ -148,9 +177,23 @@ function PortfolioDashboard({
 }: {
   accounts: CopiloteAccount[];
   poids: (a: CopiloteAccount) => number;
-  fmt: (n?: number) => string;
+  fmt: (n: number) => string;
   onPick: (id: string) => void;
 }) {
+  // Mémoïsé : recalculer reduces + flatMap + sort sur ~800 comptes à chaque rendu serait du gaspillage.
+  const { totalCas, totalPipe, totalWins, hotDeals } = useMemo(() => {
+    const totalCas = accounts.reduce((s, a) => s + (a.nt360?.casTotal ?? 0), 0);
+    const totalPipe = accounts.reduce((s, a) => s + (a.nt360?.pipelinePondere ?? 0), 0);
+    const totalWins = accounts.reduce((s, a) => s + (a.nt360?.wins ?? 0), 0);
+    // Deals chauds = opportunités en cours triées par valeur pondérée (montant × probabilité si connue,
+    // sinon montant) — met en avant ce qui est à la fois gros ET probable.
+    const hotDeals = accounts
+      .flatMap((a) => (a.nt360?.opportunites ?? []).map((o) => ({ ...o, compte: a.nom, accountId: a.id })))
+      .sort((x, y) => (y.montant * ((y.probability ?? 100) / 100)) - (x.montant * ((x.probability ?? 100) / 100)))
+      .slice(0, 8);
+    return { totalCas, totalPipe, totalWins, hotDeals };
+  }, [accounts]);
+
   if (accounts.length === 0) {
     return (
       <Card>
@@ -163,15 +206,6 @@ function PortfolioDashboard({
       </Card>
     );
   }
-
-  const totalCas = accounts.reduce((s, a) => s + (a.nt360?.casTotal ?? 0), 0);
-  const totalPipe = accounts.reduce((s, a) => s + (a.nt360?.pipelinePondere ?? 0), 0);
-  const totalWins = accounts.reduce((s, a) => s + (a.nt360?.wins ?? 0), 0);
-  // Deals chauds = toutes les opportunités en cours, à plat, triées par montant.
-  const hotDeals = accounts
-    .flatMap((a) => (a.nt360?.opportunites ?? []).map((o) => ({ ...o, compte: a.nom, accountId: a.id })))
-    .sort((x, y) => y.montant - x.montant)
-    .slice(0, 8);
 
   const kpi = (label: string, value: string, color: string) => (
     <div style={{ flex: "1 1 160px", background: T.panel2, borderRadius: 10, padding: "12px 14px", borderTop: `3px solid ${color}` }}>
@@ -234,38 +268,61 @@ function useAgent<T>(agent: CopiloteAgent, accountId?: string) {
   const [data, setData] = useState<T | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  // Reset quand on change de compte : évite d'afficher le livrable du compte A sous l'en-tête du
+  // compte B (fuite de données inter-comptes très gênante en RDV).
+  useEffect(() => { setData(null); setErr(null); setDone(false); }, [accountId]);
   const run = async (extra?: Record<string, unknown>) => {
+    const forId = accountId; // capture : on ignore la réponse si le compte a changé entre-temps
     setBusy(true); setErr(null);
-    try { setData(await copiloteGenerate<T>(agent, accountId || undefined, extra)); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Échec de la génération."); }
-    finally { setBusy(false); }
+    try {
+      const res = await copiloteGenerate<T>(agent, accountId || undefined, extra);
+      if (forId !== accountId) return; // course : compte changé pendant la génération → on jette
+      setData(res); setDone(true);
+    } catch (e) {
+      if (forId !== accountId) return;
+      setErr(e instanceof Error ? e.message : "Échec de la génération.");
+    } finally {
+      if (forId === accountId) setBusy(false);
+    }
   };
-  return { data, busy, err, run };
+  return { data, busy, err, done, run };
 }
 
-function GenButton({ busy, onClick, label }: { busy: boolean; onClick: () => void; label: string }) {
-  return <button className="pill on" disabled={busy} onClick={onClick}>{busy ? "Génération…" : label}</button>;
+function GenButton({ busy, onClick, label, disabled }: { busy: boolean; onClick: () => void; label: string; disabled?: boolean }) {
+  return <button className="pill on" disabled={busy || disabled} onClick={onClick}>{busy ? "Génération…" : label}</button>;
 }
 function ErrLine({ err }: { err: string | null }) {
   return err ? <div style={{ color: T.clay, fontSize: 12, marginTop: 8 }}>{err}</div> : null;
 }
+/** Affiché quand une génération a abouti mais n'a rien produit (jamais de carte vide sans explication). */
+function EmptyLine({ show }: { show: boolean }) {
+  return show ? <div style={{ fontSize: 12, color: T.faint, marginTop: 10 }}>Aucun résultat — précisez le contexte du compte puis relancez.</div> : null;
+}
+/** Note affichée aux profils lecture seule (le bouton Générer est désactivé pour eux). */
+function ReadOnlyNote({ show }: { show: boolean }) {
+  return show ? <div style={{ fontSize: 12, color: T.faint, marginTop: 8 }}>Profil lecture seule : génération réservée aux commerciaux.</div> : null;
+}
 
-function ProspectionTab({ accountId }: { accountId: string }) {
-  const { data, busy, err, run } = useAgent<ProspectionResult>("prospection", accountId);
+function ProspectionTab({ accountId, canWrite }: { accountId: string; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<ProspectionResult>("prospection", accountId);
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <Eyebrow color={T.emerald}>Comptes cibles (adossés aux signaux de veille)</Eyebrow>
-        <GenButton busy={busy} onClick={() => run()} label="Générer la prospection" />
+        <GenButton busy={busy} disabled={!canWrite} onClick={() => run()} label="Générer la prospection" />
       </div>
+      <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
+      <EmptyLine show={done && !busy && (data?.cibles ?? []).length === 0} />
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
         {(data?.cibles ?? []).map((c, i) => (
-          <div key={i} style={{ padding: "10px 12px", background: T.panel2, borderRadius: 10, borderLeft: `3px solid ${CHALEUR_C[c.chaleur] ?? T.faint}` }}>
+          <div key={`${c.nom}-${i}`} style={{ padding: "10px 12px", background: T.panel2, borderRadius: 10, borderLeft: `3px solid ${CHALEUR_C[c.chaleur] ?? T.faint}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
               <span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>{c.nom}</span>
               <Badge c={CHALEUR_C[c.chaleur] ?? T.faint}>{c.chaleur}</Badge>
             </div>
+            {c.source ? <div style={{ fontSize: 11.5, color: T.faint, marginTop: 3 }}>Source : {c.source}</div> : null}
             <div style={{ fontSize: 12.5, color: T.dim, marginTop: 4 }}><b style={{ color: T.steel }}>Angle :</b> {c.angle}</div>
             <div style={{ fontSize: 12.5, color: T.dim, marginTop: 2 }}><b style={{ color: T.gold }}>Accroche :</b> {c.accroche}</div>
           </div>
@@ -275,16 +332,18 @@ function ProspectionTab({ accountId }: { accountId: string }) {
   );
 }
 
-function CvpTab({ accountId, disabled }: { accountId: string; disabled: boolean }) {
-  const { data, busy, err, run } = useAgent<CvpResult>("cvp", accountId);
+function CvpTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<CvpResult>("cvp", accountId);
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <Eyebrow color={T.emerald}>Proposition de valeur (réutilise le PESTEL de la veille)</Eyebrow>
-        <GenButton busy={busy} onClick={() => run()} label="Générer la CVP" />
+        <GenButton busy={busy} disabled={disabled || !canWrite} onClick={() => run()} label="Générer la CVP" />
       </div>
       {disabled && <div style={{ fontSize: 12, color: T.faint, marginTop: 8 }}>Sélectionne un compte pour une CVP ciblée.</div>}
+      <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
+      <EmptyLine show={done && !busy && !data} />
       {data && (
         <div style={{ marginTop: 12 }}>
           <div style={{ padding: "12px 14px", background: T.panel2, borderRadius: 10, fontSize: 14, color: T.ink, lineHeight: 1.55 }}>{data.message}</div>
@@ -297,17 +356,19 @@ function CvpTab({ accountId, disabled }: { accountId: string; disabled: boolean 
   );
 }
 
-function TriennalTab({ accountId, disabled }: { accountId: string; disabled: boolean }) {
-  const { data, busy, err, run } = useAgent<TriennalResult>("triennal", accountId);
+function TriennalTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<TriennalResult>("triennal", accountId);
   const C = [T.emerald, T.gold, T.clay];
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <Eyebrow color={T.emerald}>Plan de croissance à 3 ans</Eyebrow>
-        <GenButton busy={busy} onClick={() => run()} label="Générer le plan triennal" />
+        <GenButton busy={busy} disabled={disabled || !canWrite} onClick={() => run()} label="Générer le plan triennal" />
       </div>
       {disabled && <div style={{ fontSize: 12, color: T.faint, marginTop: 8 }}>Sélectionne un compte.</div>}
+      <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
+      <EmptyLine show={done && !busy && (data?.roadmap ?? []).length === 0} />
       <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginTop: 12 }}>
         {(data?.roadmap ?? []).map((r, i) => (
           <div key={i} style={{ background: T.panel2, borderRadius: 10, padding: "12px 14px", borderTop: `3px solid ${C[i % 3]}` }}>
@@ -324,16 +385,18 @@ function TriennalTab({ accountId, disabled }: { accountId: string; disabled: boo
   );
 }
 
-function PlanCompteTab({ accountId, disabled }: { accountId: string; disabled: boolean }) {
-  const { data, busy, err, run } = useAgent<PlanCompteResult>("planCompte", accountId);
+function PlanCompteTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<PlanCompteResult>("planCompte", accountId);
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <Eyebrow color={T.emerald}>Plan de compte — actions & risques</Eyebrow>
-        <GenButton busy={busy} onClick={() => run()} label="Générer le plan de compte" />
+        <GenButton busy={busy} disabled={disabled || !canWrite} onClick={() => run()} label="Générer le plan de compte" />
       </div>
       {disabled && <div style={{ fontSize: 12, color: T.faint, marginTop: 8 }}>Sélectionne un compte.</div>}
+      <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
+      <EmptyLine show={done && !busy && !data} />
       {data && (
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 12 }}>
           <div>
@@ -363,8 +426,8 @@ function PlanCompteTab({ accountId, disabled }: { accountId: string; disabled: b
   );
 }
 
-function RedactionTab({ accountId, compte }: { accountId: string; compte: string }) {
-  const { data, busy, err, run } = useAgent<RedactionResult>("redaction", accountId);
+function RedactionTab({ accountId, compte, canWrite }: { accountId: string; compte: string; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<RedactionResult>("redaction", accountId);
   const [form, setForm] = useState({ kind: "Prise de contact", canal: "email", ton: "Direct", contexte: "" });
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
   return (
@@ -388,9 +451,11 @@ function RedactionTab({ accountId, compte }: { accountId: string; compte: string
         <textarea style={{ ...inp, minHeight: 60, resize: "vertical" }} value={form.contexte} onChange={(e) => set("contexte", e.target.value)} />
       </div>
       <div style={{ marginTop: 10 }}>
-        <GenButton busy={busy} onClick={() => run({ ...form, compte })} label="Rédiger" />
+        <GenButton busy={busy} disabled={!canWrite} onClick={() => run({ ...form, compte })} label="Rédiger" />
       </div>
+      <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
+      <EmptyLine show={done && !busy && (data?.variantes ?? []).length === 0} />
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
         {(data?.variantes ?? []).map((v, i) => (
           <div key={i} style={{ background: T.panel2, borderRadius: 10, padding: "12px 14px" }}>
@@ -404,37 +469,44 @@ function RedactionTab({ accountId, compte }: { accountId: string; compte: string
   );
 }
 
-function ChatTab({ accountId }: { accountId: string }) {
+function ChatTab({ accountId, canWrite }: { accountId: string; canWrite: boolean }) {
   const [messages, setMessages] = useState<CopiloteChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Réinitialise la conversation quand on change de compte : pas de contexte croisé entre clients.
+  useEffect(() => { setMessages([]); setErr(null); }, [accountId]);
   const send = async () => {
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text || busy || !canWrite) return;
+    const forId = accountId;
     const next: CopiloteChatMessage[] = [...messages, { role: "user", content: text }];
     setMessages(next); setInput(""); setBusy(true); setErr(null);
     try {
       const { reply } = await copiloteChat(next, accountId || undefined, "Copilote");
+      if (forId !== accountId) return; // compte changé pendant la réponse → on n'écrit pas dans la mauvaise conversation
       setMessages([...next, { role: "assistant", content: reply }]);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Échec.");
-    } finally { setBusy(false); }
+      if (forId === accountId) setErr(e instanceof Error ? e.message : "Échec.");
+    } finally {
+      if (forId === accountId) setBusy(false);
+    }
   };
   return (
     <Card>
       <Eyebrow color={T.emerald}>Copilote conversationnel</Eyebrow>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12, maxHeight: 360, overflowY: "auto" }}>
+      <div role="log" aria-live="polite" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12, maxHeight: 360, overflowY: "auto" }}>
         {messages.length === 0 && <div style={{ fontSize: 12, color: T.faint }}>Pose une question (préparer un RDV, un argumentaire, une objection…).</div>}
         {messages.map((m, i) => (
           <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "80%", background: m.role === "user" ? T.emerald + "22" : T.panel2, border: `1px solid ${T.line}`, borderRadius: 10, padding: "8px 11px", fontSize: 12.5, color: T.ink, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{m.content}</div>
         ))}
         {busy && <div style={{ fontSize: 12, color: T.faint }}>Le copilote réfléchit…</div>}
       </div>
+      <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <input style={inp} value={input} placeholder="Votre message…" onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void send(); }} />
-        <button className="pill on" disabled={busy} onClick={() => void send()}>Envoyer</button>
+        <input style={inp} value={input} placeholder="Votre message…" disabled={!canWrite} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void send(); }} />
+        <button className="pill on" disabled={busy || !canWrite} onClick={() => void send()}>Envoyer</button>
       </div>
     </Card>
   );
@@ -444,11 +516,12 @@ function ChatTab({ accountId }: { accountId: string }) {
 function NewAccountPanel({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
   const [f, setF] = useState({ nom: "", secteur: "", tier: "Clé", enjeux: "", whitespace: "" });
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
   const lines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
   const submit = async () => {
     if (!f.nom.trim()) return;
-    setBusy(true);
+    setBusy(true); setErr(null);
     try {
       const id = await createCopiloteAccount({
         nom: f.nom.trim(), secteur: f.secteur.trim(), tier: f.tier,
@@ -456,6 +529,8 @@ function NewAccountPanel({ onClose, onCreated }: { onClose: () => void; onCreate
         enCours: [], historique: [], contacts: [], preuves: [], tendances: [],
       });
       onCreated(id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Échec de la création du compte.");
     } finally { setBusy(false); }
   };
   return (
@@ -480,6 +555,7 @@ function NewAccountPanel({ onClose, onCreated }: { onClose: () => void; onCreate
       <div style={{ marginTop: 10 }}>
         <button className="pill on" disabled={busy || !f.nom.trim()} onClick={() => void submit()}>{busy ? "Création…" : "Créer le compte"}</button>
       </div>
+      <ErrLine err={err} />
     </Card>
   );
 }
