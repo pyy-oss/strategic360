@@ -299,6 +299,18 @@ Réponds avec le JSON uniquement.`;
  * @param {unknown} raw
  * @returns {{blips: Array<object>} | null}
  */
+// Dérive un quadrant de radar (0=IA & Automatisation, 1=Data & Plateformes, 2=Cloud & Infra,
+// 3=Cyber & Confiance) depuis les mots-clés du blip, quand le modèle a fourni un quadrant invalide.
+// Ordre = du plus spécifique au plus générique ; repli neutre 1 en dernier recours seulement.
+function deriveQuadrant(name, rationale) {
+  const t = `${name || ""} ${rationale || ""}`.toLowerCase();
+  if (/(cyber|edr|xdr|soc|sase|zero.?trust|ransomware|siem|menace|s[ée]curit)/.test(t)) return 3;
+  if (/(cloud|infra|kubernet|conteneur|datacenter|souverain|h[ée]bergement|serveur|r[ée]seau|network)/.test(t)) return 2;
+  if (/(\bia\b|genai|llm|intelligence artificielle|agent|automatis|rpa|copilot|\bml\b|machine learning)/.test(t)) return 0;
+  if (/(data|donn[ée]es|analytics|\bbi\b|plateforme|\bapi\b|open banking|fintech|iot)/.test(t)) return 1;
+  return 1;
+}
+
 function parseTechRadarResponse(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const blipsRaw = Array.isArray(raw.blips) ? raw.blips : [];
@@ -309,9 +321,14 @@ function parseTechRadarResponse(raw) {
     const name = typeof entry.name === "string" ? entry.name.trim() : "";
     if (!name) continue; // name is required — no way to identify/upsert the blip without it
 
+    // Quadrant invalide/absent : au lieu d'atterrir arbitrairement en 1 (« Data & Plateformes »),
+    // on dérive le quadrant des mots-clés du nom+rationale (un EDR mal étiqueté retombe en Cyber, pas
+    // en Data), repli neutre en dernier recours seulement (audit 2026-07).
     let quadrant = Number(entry.quadrant);
-    quadrant = Number.isFinite(quadrant) ? Math.trunc(quadrant) : 1;
-    if (quadrant < 0 || quadrant > 3) quadrant = 1;
+    quadrant = Number.isFinite(quadrant) ? Math.trunc(quadrant) : NaN;
+    if (!Number.isFinite(quadrant) || quadrant < 0 || quadrant > 3) {
+      quadrant = deriveQuadrant(name, entry.rationale);
+    }
 
     blips.push({
       name,

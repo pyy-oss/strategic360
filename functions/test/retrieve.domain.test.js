@@ -51,3 +51,13 @@ describe("retrieve — récupération légère par pertinence", () => {
     expect(pickRelevant([], { terms: ["x"] }, 5)).toEqual([]);
   });
 });
+
+describe("retrieve — frontière de mot (audit 2026-07)", () => {
+  it("un terme ne matche plus en MILIEU de mot (cima ⊄ décimale), mais matche mot entier/préfixe", () => {
+    const interior = relevanceScore({ title: "Analyse décimale des flux" }, { terms: ["cima"], now: NOW });
+    const whole = relevanceScore({ title: "Réforme CIMA assurances" }, { terms: ["cima"], now: NOW });
+    const plural = relevanceScore({ title: "Les assurances régionales" }, { terms: ["assurance"], now: NOW });
+    expect(whole).toBeGreaterThan(interior); // "cima" mot entier compte, pas "décimale"
+    expect(plural).toBeGreaterThan(0); // préfixe (assurance→assurances) reste matché
+  });
+});

@@ -41,6 +41,29 @@ const AGENT_TABS: { k: string; l: string; icon: string }[] = [
 const inp: React.CSSProperties = { width: "100%", padding: "7px 10px", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 8, color: T.ink, fontSize: 12.5 };
 const lbl: React.CSSProperties = { fontSize: 11, color: T.dim, marginBottom: 3, display: "block" };
 
+/** Bouton « Copier » pour les livrables prêts-à-envoyer (Rédaction, CVP) — audit 2026-07.
+ * clipboard.writeText avec repli execCommand pour les contextes non sécurisés. */
+function CopyBtn({ text, label = "Copier" }: { text: string; label?: string }) {
+  const [done, setDone] = useState(false);
+  const copy = async () => {
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else {
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+      }
+      setDone(true);
+      window.setTimeout(() => setDone(false), 1500);
+    } catch { /* silencieux : l'utilisateur peut sélectionner à la main */ }
+  };
+  return (
+    <button className="pill" onClick={copy} title="Copier dans le presse-papiers" style={{ fontSize: 11.5 }}>
+      {done ? "✓ Copié" : `⧉ ${label}`}
+    </button>
+  );
+}
+
 /** Copilote Commercial (add-on) — réutilise le moteur IA serveur + le PESTEL/les signaux de la veille. */
 export function Copilote() {
   const navigate = useNavigate();
@@ -349,11 +372,14 @@ function PortfolioDashboard({
     const totalCas = accounts.reduce((s, a) => s + (a.nt360?.casTotal ?? 0), 0);
     const totalPipe = accounts.reduce((s, a) => s + (a.nt360?.pipelinePondere ?? 0), 0);
     const totalWins = accounts.reduce((s, a) => s + (a.nt360?.wins ?? 0), 0);
-    // Deals chauds = opportunités en cours triées par valeur pondérée (montant × probabilité si connue,
-    // sinon montant) — met en avant ce qui est à la fois gros ET probable.
+    // Deals chauds = opportunités en cours triées par valeur pondérée. Correctif audit 2026-07 : une
+    // probabilité INCONNUE ne vaut plus 100 % (elle faisait passer les deals non qualifiés devant des
+    // deals qualifiés à 90 %) — repli conservateur à 50 %, probabilité connue bornée 0-100.
+    const dealWeight = (o: { montant: number; probability?: number | null }) =>
+      o.montant * (typeof o.probability === "number" ? Math.max(0, Math.min(100, o.probability)) / 100 : 0.5);
     const hotDeals = accounts
       .flatMap((a) => (a.nt360?.opportunites ?? []).map((o) => ({ ...o, compte: a.nom, accountId: a.id })))
-      .sort((x, y) => (y.montant * ((y.probability ?? 100) / 100)) - (x.montant * ((x.probability ?? 100) / 100)))
+      .sort((x, y) => dealWeight(y) - dealWeight(x))
       .slice(0, 8);
     return { totalCas, totalPipe, totalWins, hotDeals };
   }, [accounts]);
@@ -516,6 +542,9 @@ function CvpTab({ accountId, disabled, canWrite }: { accountId: string; disabled
       <EmptyLine show={done && !busy && !data} />
       {data && (
         <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+            <CopyBtn text={[data.message, ...(data.differenciateurs ?? [])].filter(Boolean).join("\n\n")} label="Copier la CVP" />
+          </div>
           <div style={{ padding: "12px 14px", background: T.panel2, borderRadius: 10, fontSize: 14, color: T.ink, lineHeight: 1.55 }}>{data.message}</div>
           <ul style={{ margin: "10px 0 0", paddingLeft: 18, color: T.dim, fontSize: 13, lineHeight: 1.7 }}>
             {data.differenciateurs.map((d, i) => <li key={i}>{d}</li>)}
@@ -663,7 +692,10 @@ function RedactionTab({ accountId, compte, canWrite }: { accountId: string; comp
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
         {(data?.variantes ?? []).map((v, i) => (
           <div key={i} style={{ background: T.panel2, borderRadius: 10, padding: "12px 14px" }}>
-            <Badge c={T.gold}>{v.label}</Badge>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <Badge c={T.gold}>{v.label}</Badge>
+              <CopyBtn text={[v.objet ? `Objet : ${v.objet}` : "", v.corps].filter(Boolean).join("\n\n")} />
+            </div>
             {v.objet && <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, marginTop: 8 }}>Objet : {v.objet}</div>}
             <div style={{ fontSize: 12.5, color: T.dim, whiteSpace: "pre-wrap", marginTop: 6, lineHeight: 1.55 }}>{v.corps}</div>
           </div>

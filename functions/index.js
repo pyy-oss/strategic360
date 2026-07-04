@@ -40,11 +40,12 @@ initializeApp();
  * Subtype label used by the sample "Fil de veille" data (web/src/modules/veille/data.ts) for
  * tenders/AO items. NOTE: as of V2, the "Nouvelle fiche de veille" contribution form
  * (web/src/modules/veille/views/Fil.tsx) does not yet collect a `subtype` field at all, so
- * `tendersOpen` will read 0 for real (form-submitted) items until a later phase adds subtype
- * capture to the form / classifyAI (V7). Kept here so aggregation is correct as soon as that
- * field starts being populated (matches the maquette's `sub: "Appel d'offres"` convention).
+ * `tendersOpen` counts open tenders. The classifier canonicalises every AO subtype to `"tender"`
+ * (classify.js#normalizeSubtype / VALID_SUBTYPES), so the constant MUST be the canonical token —
+ * the old maquette label "Appel d'offres" never matched a classified item and `tendersOpen` read 0
+ * forever (audit 2026-07).
  */
-const TENDER_SUBTYPE = "Appel d'offres";
+const TENDER_SUBTYPE = "tender";
 
 /**
  * Some intelSources (SIGMAP/DGMP, ARMP, etc.) return 403 to Node's default fetch — most likely
@@ -922,13 +923,21 @@ async function computeVeilleSummary(db) {
   const countsByGeo = {};
   const entityCounts = {};
   let tendersOpen = 0;
+  const nowMs = Date.now();
+  // AO réellement candidatable = subtype tender, non archivé, NON périmé (échéance future, pas stale) —
+  // aligne le comptage sur freshness.ts#isPastDue côté client (audit anti-obsolescence 2026-07).
+  const tenderStillOpen = (it) =>
+    it.subtype === TENDER_SUBTYPE &&
+    it.status !== "archived" &&
+    !it.stale &&
+    !(it.dueDate && !Number.isNaN(Date.parse(it.dueDate)) && Date.parse(it.dueDate) < nowMs);
 
   for (const it of items) {
     if (it.axis) countsByAxis[it.axis] = (countsByAxis[it.axis] || 0) + 1;
     if (it.impact) countsByImpact[it.impact] = (countsByImpact[it.impact] || 0) + 1;
     if (it.geo) countsByGeo[it.geo] = (countsByGeo[it.geo] || 0) + 1;
     if (it.ent) entityCounts[it.ent] = (entityCounts[it.ent] || 0) + 1;
-    if (it.subtype === TENDER_SUBTYPE && it.status !== "archived") tendersOpen += 1;
+    if (tenderStillOpen(it)) tendersOpen += 1;
   }
 
   const lightweight = (i) => ({ id: i.id, title: i.title, score: i.priorityScore ?? 0 });

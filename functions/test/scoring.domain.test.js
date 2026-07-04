@@ -330,3 +330,17 @@ describe("rééquilibrage 2026-07 — mouvements d'acteurs et géographie", () =
     expect(alignementFactor({ axis: "clients_prospects", ent: "BCEAO", geo: "ci" })).toBe(1);
   });
 });
+
+describe("proximiteFactor — anti-obsolescence sur le label prox (audit 2026-07)", () => {
+  const now = Date.parse("2026-07-02T00:00:00Z");
+  it("un « imminent » ancien (>180 j, sans échéance future) est déclassé à l'horizon (0.25), pas 1.0", () => {
+    expect(proximiteFactor({ prox: "imminent", date: "2025-01-01" }, now)).toBe(0.25);
+    expect(proximiteFactor({ prox: "court", date: "2024-06-01" }, now)).toBe(0.25);
+  });
+  it("un item marqué stale est déclassé quelle que soit sa date", () => {
+    expect(proximiteFactor({ prox: "imminent", stale: true, date: "2026-07-01" }, now)).toBe(0.25);
+  });
+  it("un « imminent » récent reste à 1.0", () => {
+    expect(proximiteFactor({ prox: "imminent", date: "2026-07-01" }, now)).toBe(1.0);
+  });
+});

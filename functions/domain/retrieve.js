@@ -53,7 +53,10 @@ function relevanceScore(signal, opts = {}) {
   if (terms.length) {
     const hay = " " + normalize([s.title, s.name, s.summary, s.ent, s.client, s.offering, s.soWhat, s.subtype].filter(Boolean).join(" ")) + " ";
     let hits = 0;
-    for (const t of terms) if (hay.includes(" " + t + " ") || hay.includes(t)) hits++;
+    // Ancrage au DÉBUT de mot ("hay" est bordé d'espaces et normalisé) : matche le terme comme mot
+    // entier ou préfixe (banque→banques) mais JAMAIS en milieu de mot (cima ≠ décimale). Le repli
+    // sous-chaîne précédent annulait ce garde-fou de frontière (audit 2026-07).
+    for (const t of terms) if (hay.includes(" " + t)) hits++;
     score += 2 * hits;
   }
 

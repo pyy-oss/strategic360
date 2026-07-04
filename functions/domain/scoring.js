@@ -209,7 +209,17 @@ function proximiteFactor(item, now = Date.now()) {
   }
 
   const fromProx = item ? PROX_TABLE[item.prox] : undefined;
-  if (fromProx !== undefined) return fromProx;
+  if (fromProx !== undefined) {
+    // Anti-obsolescence (audit 2026-07) : le label IA d'imminence ne survit PAS à la péremption
+    // réelle. Un signal marqué `stale` (échéance dépassée) ou publié il y a > 180 j sans échéance
+    // future est déclassé à l'horizon — aligne le score serveur sur freshness.ts#effectiveProx.
+    // (Sans ce garde, `prox` étant toujours renseigné par le classifieur, la décote de fraîcheur
+    // ci-dessous était du code mort et un « imminent » vieux d'un an gardait une proximité de 1.0.)
+    const dMs = item && item.date ? Date.parse(item.date) : NaN;
+    const ageDays = Number.isNaN(dMs) ? null : Math.max((now - dMs) / MS_PER_DAY, 0);
+    const stale = item.stale === true || (!item.dueDate && ageDays !== null && ageDays > 180);
+    return stale ? Math.min(fromProx, PROX_TABLE.horizon) : fromProx;
+  }
 
   const dateMs = item && item.date ? Date.parse(item.date) : NaN;
   if (!Number.isNaN(dateMs)) {
