@@ -19,6 +19,7 @@ import {
   type CvpResult,
   type TriennalResult,
   type PlanCompteResult,
+  type PlanActionResult,
   type RedactionResult,
   type CopiloteChatMessage,
 } from "../lib/copilote";
@@ -31,6 +32,7 @@ const AGENT_TABS: { k: string; l: string; icon: string }[] = [
   { k: "cvp", l: "Proposition de valeur", icon: "💡" },
   { k: "triennal", l: "Plan triennal", icon: "🗺️" },
   { k: "planCompte", l: "Plan de compte", icon: "📋" },
+  { k: "planAction", l: "Plan d'action 90 j", icon: "⚡" },
   { k: "redaction", l: "Rédaction", icon: "✍️" },
   { k: "chat", l: "Chat", icon: "💬" },
 ];
@@ -202,6 +204,7 @@ export function Copilote() {
       {tab === "cvp" && <CvpTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "triennal" && <TriennalTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "planCompte" && <PlanCompteTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "planAction" && <PlanActionTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "redaction" && <RedactionTab accountId={accountId} compte={account?.nom || ""} canWrite={canWrite} />}
       {tab === "chat" && <ChatTab accountId={accountId} canWrite={canWrite} />}
     </div>
@@ -581,6 +584,37 @@ function PlanCompteTab({ accountId, disabled, canWrite }: { accountId: string; d
           </div>
         </div>
       )}
+    </Card>
+  );
+}
+
+const QUAND_C: Record<string, string> = { "0–30 jours": T.clay, "30–60 jours": T.gold, "60–90 jours": T.steel, Continu: T.faint };
+
+function PlanActionTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<PlanActionResult>("planAction", accountId);
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <Eyebrow color={T.emerald}>Plan d'action commercial — 90 prochains jours</Eyebrow>
+        <GenButton busy={busy} disabled={disabled || !canWrite} onClick={() => run()} label="Générer le plan d'action" />
+      </div>
+      <PickHint show={disabled} />
+      <ReadOnlyNote show={!canWrite} />
+      <ErrLine err={err} />
+      <GenSkeleton show={busy} />
+      <EmptyLine show={done && !busy && (data?.plan ?? []).length === 0} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+        {(data?.plan ?? []).map((p, i) => (
+          <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}>
+            <Badge c={QUAND_C[p.quand] ?? T.faint}>{p.quand}</Badge>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{p.action}</div>
+              {p.objet && <div style={{ fontSize: 11.5, color: T.steel, marginTop: 2 }}>↳ {p.objet}</div>}
+              {p.preuve && <div style={{ fontSize: 11.5, color: T.dim, marginTop: 2 }}><b style={{ color: T.emerald }}>Preuve :</b> {p.preuve}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
     </Card>
   );
 }

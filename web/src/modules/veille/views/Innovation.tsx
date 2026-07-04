@@ -341,18 +341,30 @@ export function Innovation() {
       </div>
       <Card>
         <Eyebrow color={T.emerald}>Paris d'innovation — priorisation RICE</Eyebrow>
-        {rice.length === 0 ? (
+        {liveBets.length === 0 ? (
           <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>Portefeuille d'innovation vide.</div>
         ) : (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-            {[...rice]
-              .sort((a, b) => b.rice - a.rice)
+            {[...liveBets]
+              .sort((a, b) => (b.rice ?? 0) - (a.rice ?? 0))
               .map((o, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, padding: "7px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
-                  <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, color: T.emerald, minWidth: 40 }}>{o.rice}</div>
-                  <span style={{ flex: 1, color: T.ink }}>{o.n}</span>
-                  <span style={{ color: T.faint }}>
-                    R{o.reach}·I{o.impact}·C{pct(o.conf)}·E{o.effort}
+                <div key={o.id ?? i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 12.5, padding: "8px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
+                  <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, color: T.emerald, minWidth: 40 }}>{o.rice ?? riceScore({ reach: o.reach, impact: o.impact, confidence: o.confidence, effort: o.effort })}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: T.ink, fontWeight: 600 }}>{o.title}</div>
+                    {/* Mapping actionnable (2026-07) : secteur métier → offre NT → comptes/profils cibles. */}
+                    {(o.sector || o.offre) && (
+                      <div style={{ marginTop: 3, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                        {o.sector && <Badge>{o.sector}</Badge>}
+                        {o.offre && <span style={{ fontSize: 11.5, color: T.steel }}>↳ {o.offre}</span>}
+                      </div>
+                    )}
+                    {Array.isArray(o.comptesCibles) && o.comptesCibles.length > 0 && (
+                      <div style={{ marginTop: 3, fontSize: 11.5, color: T.faint }}>Cibles : {o.comptesCibles.join(" · ")}</div>
+                    )}
+                  </div>
+                  <span style={{ color: T.faint, flexShrink: 0, whiteSpace: "nowrap" }}>
+                    R{o.reach}·I{o.impact}·C{pct(o.confidence)}·E{o.effort}
                   </span>
                 </div>
               ))}

@@ -525,15 +525,27 @@ describe("consolidation radar + paris d'innovation (lisibilité 2026-07)", () =>
     const { parseInnovationBetsResponse } = await import("../domain/enrich.js");
     const parsed = parseInnovationBetsResponse({
       bets: [
-        { title: "Offre SOC managé souverain", reach: 8, impact: 9, confidence: 0.7, effort: 6, stage: "exploration", horizon: "H2" },
+        { title: "Scoring crédit IA", sector: "Banque de détail", offre: "Data/IA managé", comptesCibles: ["Banques UEMOA >200 agences", "  ", 42], reach: 8, impact: 9, confidence: 0.7, effort: 6, stage: "exploration", horizon: "H2" },
         { title: "Conformité CERTINUM as-a-service", reach: 15, impact: -2, confidence: 3, effort: 0.4, stage: "n'importe quoi" },
         { title: "  " },
       ],
     });
     expect(parsed.bets).toHaveLength(2);
     expect(parsed.bets[0].rice).toBeCloseTo(8.4); // (8·9·0.7)/6
-    expect(parsed.bets[1]).toMatchObject({ reach: 10, impact: 1, confidence: 1, effort: 1, stage: "idée" });
+    // Rendu actionnable : secteur → offre → comptes cibles (non-strings écartés).
+    expect(parsed.bets[0]).toMatchObject({ sector: "Banque de détail", offre: "Data/IA managé", comptesCibles: ["Banques UEMOA >200 agences"] });
+    // Pari sans mapping : champs vides/[] (jamais undefined vers Firestore).
+    expect(parsed.bets[1]).toMatchObject({ reach: 10, impact: 1, confidence: 1, effort: 1, stage: "idée", sector: "", offre: "", comptesCibles: [] });
     expect(parseInnovationBetsResponse({ bets: [{ title: "Seul", reach: 5, impact: 5, confidence: 0.5, effort: 5 }] })).toBeNull();
+  });
+
+  it("buildInnovationBetsPrompt : impose secteur→offre→comptes cibles et innovation élargie", async () => {
+    const { buildInnovationBetsPrompt } = await import("../domain/enrich.js");
+    const p = buildInnovationBetsPrompt([{ name: "AO scoring crédit BCEAO", impact: "high" }]);
+    expect(p).toContain('"sector"');
+    expect(p).toContain('"offre"');
+    expect(p).toContain('"comptesCibles"');
+    expect(p).toContain("NE RÉDUIS PAS l'innovation au cloud/cyber");
   });
 });
 

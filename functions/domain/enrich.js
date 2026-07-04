@@ -914,12 +914,18 @@ function buildInnovationBetsPrompt(items, companyContext = COMPANY_CONTEXT) {
 ${companyContext}
 
 Propose des PARIS D'INNOVATION (nouvelles offres/capacités à explorer) dérivés des signaux réels
-ci-dessous, chiffrés selon RICE. Réponds UNIQUEMENT avec un objet JSON valide :
+ci-dessous, chiffrés selon RICE et RENDUS ACTIONNABLES (secteur métier → offre NT → comptes cibles).
+NE RÉDUIS PAS l'innovation au cloud/cyber : couvre aussi IA & automatisation, data/BI, plateformes &
+fintech (open banking, mobile money), IoT/edge, e-gov/GovTech, verticaux (insurtech, agritech, healthtech).
+Réponds UNIQUEMENT avec un objet JSON valide :
 
 {
   "bets": [
     {
-      "title": string,        // intitulé court du pari (ex: "Offre SOC managé souverain")
+      "title": string,        // intitulé court du pari (ex: "Scoring crédit IA pour banques de détail")
+      "sector": string,       // secteur métier client concerné (ex: "Banque de détail", "Assurance", "Secteur public")
+      "offre": string,        // l'offre/capacité NT qui adresse ce pari (intégration, data/IA, sécurité, formation…)
+      "comptesCibles": [string], // 1-3 comptes ou profils cibles : raison sociale UNIQUEMENT si citée dans les signaux, sinon un profil (ex: "Banques de détail UEMOA >200 agences")
       "reach": number,        // 1-10 : combien de clients/segments touchés
       "impact": number,       // 1-10 : impact business si succès
       "confidence": number,   // 0-1 : confiance dans les estimations
@@ -931,7 +937,9 @@ ci-dessous, chiffrés selon RICE. Réponds UNIQUEMENT avec un objet JSON valide 
 }
 
 Contraintes : 3 à 6 paris, chacun justifiable par un signal/fait fourni (réglementation, EOL,
-financement, tendance techno monétisable en CI/UEMOA) ; estimations honnêtes et différenciées.
+financement, tendance techno monétisable en CI/UEMOA) ; estimations honnêtes et différenciées ;
+DIVERSIFIE les secteurs et les domaines d'innovation (pas seulement cloud/cyber). Règle anti-invention :
+ne NOMME une entreprise dans "comptesCibles" que si elle apparaît dans les signaux ; sinon décris un profil.
 
 Signaux de veille :
 ${signalsBlock(items)}
@@ -950,8 +958,14 @@ function parseInnovationBetsResponse(raw) {
       const effort = clamp(b.effort, 1, 10) ?? 5;
       let confidence = Number(b.confidence);
       confidence = Number.isFinite(confidence) ? Math.min(1, Math.max(0, confidence)) : 0.5;
+      const comptesCibles = (Array.isArray(b.comptesCibles) ? b.comptesCibles : [])
+        .filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()).slice(0, 3);
       return {
         title: b.title.trim(),
+        // Rendu actionnable (2026-07) : secteur métier ciblé → offre NT → comptes/profils cibles.
+        sector: typeof b.sector === "string" && b.sector.trim() ? b.sector.trim() : "",
+        offre: typeof b.offre === "string" && b.offre.trim() ? b.offre.trim() : "",
+        comptesCibles,
         reach,
         impact,
         confidence: Math.round(confidence * 100) / 100,

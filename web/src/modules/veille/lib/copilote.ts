@@ -171,7 +171,7 @@ export async function deleteCopiloteAccount(id: string): Promise<void> {
  * Agents IA (callables server-side)
  * ------------------------------------------------------------------------------------------- */
 
-export type CopiloteAgent = "prospection" | "cvp" | "triennal" | "planCompte" | "redaction";
+export type CopiloteAgent = "prospection" | "cvp" | "triennal" | "planCompte" | "planAction" | "redaction";
 
 export interface ProspectionCible { nom: string; source?: string; angle: string; accroche: string; chaleur: "Chaud" | "Tiède" | "Froid" }
 export interface ProspectionResult { cibles: ProspectionCible[] }
@@ -184,6 +184,9 @@ export interface TriennalResult { roadmap: TriennalItem[] }
 export interface PlanCompteAction { libelle: string; horizon: "Court terme" | "Moyen terme" | "Continu" }
 export interface PlanCompteRisque { r: string; m: string; niv: "Élevé" | "Moyen" | "Faible" }
 export interface PlanCompteResult { actions: PlanCompteAction[]; risques: PlanCompteRisque[] }
+
+export interface PlanActionItem { quand: "0–30 jours" | "30–60 jours" | "60–90 jours" | "Continu"; action: string; objet: string; preuve: string }
+export interface PlanActionResult { plan: PlanActionItem[] }
 
 export interface RedactionVariante { label: string; objet: string; corps: string }
 export interface RedactionResult { variantes: RedactionVariante[] }
