@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { T, fmt as fmtC } from "../../../design/tokens";
 import { Eyebrow, Card, Badge, Kpi } from "../../../design/ui";
 import { useCan, useClaims } from "../../../lib/rbac";
@@ -42,6 +43,7 @@ const lbl: React.CSSProperties = { fontSize: 11, color: T.dim, marginBottom: 3, 
 
 /** Copilote Commercial (add-on) — réutilise le moteur IA serveur + le PESTEL/les signaux de la veille. */
 export function Copilote() {
+  const navigate = useNavigate();
   const { accounts, loading, error, scoped, reload } = useCopiloteAccounts();
   const { canWrite } = useCan("veille");
   const { role } = useClaims();
@@ -141,7 +143,15 @@ export function Copilote() {
         <Card style={{ marginBottom: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 20, fontWeight: 700, color: T.ink }}>{account.nom}</div>
-            {account.secteur ? <span style={{ fontSize: 12, color: T.dim }}>{account.secteur}</span> : null}
+            <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+              {account.secteur ? <span style={{ fontSize: 12, color: T.dim }}>{account.secteur}</span> : null}
+              {/* Maillage interne↔externe (Vague C) : du compte (données internes) vers ses signaux de veille. */}
+              {account.nom && (
+                <button className="pill" onClick={() => navigate(`/veille/fil?ent=${encodeURIComponent(account.nom)}`)}>
+                  🔎 Signaux de veille
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Empreinte chiffrée — traitement KPI (tabular-nums, Bricolage) : la valeur saute aux yeux. */}

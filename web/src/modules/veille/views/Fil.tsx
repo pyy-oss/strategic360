@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { T, AX, IMP, STANCE, PROX } from "../../../design/tokens";
 import { Card, Badge } from "../../../design/ui";
 import { useCan } from "../../../lib/rbac";
@@ -174,6 +175,12 @@ export function Fil() {
   const [watchOnly, setWatchOnly] = useState(false);
   const [bizOnly, setBizOnly] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  // Maillage inter-vues (Vague C) : un CTA d'une autre vue (Detection, Concurrence…) ouvre le Fil
+  // pré-filtré sur une entité via ?ent=. On lit le paramètre et on l'expose comme filtre effaçable.
+  const [sp, setSp] = useSearchParams();
+  const entFilter = sp.get("ent") || "";
+  const clearEnt = () => { const n = new URLSearchParams(sp); n.delete("ent"); setSp(n, { replace: true }); };
+  const norm = (v: string) => v.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
   const { items, loading } = useIntelItems();
   const { canWrite } = useCan("veille");
 
@@ -184,6 +191,7 @@ export function Fil() {
         (st === "all" || s.stance === st) &&
         (prx === "all" || effectiveProx(s) === prx) &&
         (!watchOnly || !!s.ent) &&
+        (!entFilter || (s.ent ? norm(s.ent).includes(norm(entFilter)) || norm(entFilter).includes(norm(s.ent)) : false)) &&
         (!bizOnly || BUSINESS_SUBTYPES.has(s.subtype ?? ""))
     )
     // Tri stable : score de priorité desc, puis échéance la plus proche (items sans dueDate en
@@ -226,6 +234,11 @@ export function Fil() {
           <button className={`pill ${bizOnly ? "on" : ""}`} onClick={() => setBizOnly((v) => !v)}>
             💼 Business
           </button>
+          {entFilter && (
+            <button className="pill on" onClick={clearEnt} title="Retirer le filtre entité" style={{ marginLeft: 10 }}>
+              Entité : {entFilter} ✕
+            </button>
+          )}
         </div>
         {canWrite && (
           <button className="pill on" onClick={() => setShowForm((v) => !v)}>

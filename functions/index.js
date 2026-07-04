@@ -25,6 +25,7 @@ const { parseFiche } = require("./parsers/fiche");
 const { computePorterForces, computeBcg, computeCasSummary, computePipeline, computeKris, computeValueAtStake, computePipelineInfluenced, computeGranularite } = require("./domain/quanti");
 const { intelItemId } = require("./domain/ids");
 const { buildClassificationPrompt, parseClassificationResponse } = require("./domain/classify");
+const { dedupeByTitle } = require("./domain/dedupe");
 const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
 const { buildBriefingPdf } = require("./domain/pdf");
 const { generateJson } = require("./domain/vertex");
@@ -557,7 +558,9 @@ function extractWebItems(html, base, max = 8) {
       push(m[1], null);
     }
   }
-  return items.slice(0, max);
+  // Dédoublonnage INTELLIGENT (Vague C) : au-delà de la clé exacte (seen), on écarte les quasi-
+  // doublons de titre (même actu listée sous 2 formulations proches sur la même page).
+  return dedupeByTitle(items).slice(0, max);
 }
 
 /** Détecte une page « coquille » (SPA JS non rendue) : très peu de texte utile → source dégradée
