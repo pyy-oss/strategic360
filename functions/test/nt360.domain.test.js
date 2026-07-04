@@ -7,6 +7,8 @@ import {
   mapBcLinesToSupplierRows,
   pickObjectives,
   pickCurrentFy,
+  deriveBuBenchmark,
+  matchSignalsToAccount,
 } from "../domain/nt360.js";
 import { computeBcg, computeCasSummary, computePipeline, computePorterForces } from "../domain/quanti.js";
 
@@ -273,5 +275,45 @@ describe("copiloteAccountMatchesScope (cloisonnement « mix des 3 »)", () => {
     expect(copiloteAccountMatchesScope(acc, { email: "autre@nt.ci", ams: ["M. Autre"], bus: ["CYBER"] })).toBe(false);
     // compte sans rattachement + périmètre vide → non visible
     expect(copiloteAccountMatchesScope({ nt360: {} }, { email: "", ams: [], bus: [] })).toBe(false);
+  });
+});
+
+describe("deriveBuBenchmark — panier de référence par offre (chiffrage next best offer)", () => {
+  it("médiane + moyenne du CAS cumulé par compte, par offre ; ignore cas ≤ 0 / non chiffrés", () => {
+    const accounts = [
+      { historique: [{ offre: "ICT", cas: 100 }, { offre: "FORMATION", cas: 10 }] },
+      { historique: [{ offre: "ICT", cas: 300 }, { offre: "FORMATION", cas: 0 }] },
+      { historique: [{ offre: "ICT", cas: 200 }, { offre: null, cas: 999 }] },
+    ];
+    const b = deriveBuBenchmark(accounts);
+    expect(b.ICT).toMatchObject({ count: 3, medianCas: 200, avgCas: 200 }); // [100,200,300]
+    expect(b.FORMATION).toMatchObject({ count: 1, medianCas: 10 }); // le cas:0 est écarté
+    expect(b.null).toBeUndefined();
+  });
+  it("médiane paire = moyenne des deux centraux ; entrée vide → {}", () => {
+    const b = deriveBuBenchmark([{ historique: [{ offre: "X", cas: 100 }] }, { historique: [{ offre: "X", cas: 400 }] }]);
+    expect(b.X.medianCas).toBe(250);
+    expect(deriveBuBenchmark([])).toEqual({});
+    expect(deriveBuBenchmark(null)).toEqual({});
+  });
+});
+
+describe("matchSignalsToAccount — déclencheurs de veille rattachés au compte", () => {
+  it("rattache un signal qui nomme le compte, ignore les mots génériques", () => {
+    const signals = [
+      { name: "AO refonte SI à la BRVM — 2 Mds FCFA" },
+      { name: "Nouvelle réglementation bancaire UEMOA" }, // « banque/UEMOA » génériques → pas de faux positif
+      { name: "Ecobank lance un plan cloud" },
+    ];
+    const m = matchSignalsToAccount("BRVM", signals).map((s) => s.name);
+    expect(m).toEqual(["AO refonte SI à la BRVM — 2 Mds FCFA"]);
+    // Un compte générique « Banque » ne rattache rien (jeton trop générique filtré).
+    expect(matchSignalsToAccount("Banque", signals)).toEqual([]);
+  });
+  it("match multi-mots insensible casse/accents ; chaînes acceptées ; vide si pas de jeton", () => {
+    const sigs = ["Société Générale CI signe avec un concurrent", "signal neutre"];
+    expect(matchSignalsToAccount("SGCI/Société Générale CI", sigs)).toHaveLength(1);
+    expect(matchSignalsToAccount("", sigs)).toEqual([]);
+    expect(matchSignalsToAccount("BRVM", null)).toEqual([]);
   });
 });

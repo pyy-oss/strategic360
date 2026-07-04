@@ -354,6 +354,85 @@ function recommendNextOffers(ownedBus, whitespace, affinity) {
 }
 
 /**
+ * deriveBuBenchmark(accounts) -> { [bu]: { count, avgCas, medianCas } } — panier de référence par
+ * offre (BU) sur tout le portefeuille : combien un compte dépense TYPIQUEMENT sur une offre donnée.
+ * Base : le CAS cumulé réalisé par compte sur cette offre (historique enrichi). Sert à CHIFFRER la
+ * « next best offer » (montant d'ancrage dimensionné sur le réel du portefeuille, pas une intuition).
+ * Médiane = valeur robuste aux gros comptes atypiques. PUR (aucun accès Firestore).
+ */
+function deriveBuBenchmark(accounts) {
+  const byBu = new Map(); // bu -> [CAS cumulé par compte (>0)]
+  for (const acc of Array.isArray(accounts) ? accounts : []) {
+    for (const h of Array.isArray(acc.historique) ? acc.historique : []) {
+      if (!h || typeof h !== "object" || !h.offre) continue;
+      const cas = Number(h.cas);
+      if (!Number.isFinite(cas) || cas <= 0) continue;
+      const bu = String(h.offre).trim();
+      if (!bu) continue;
+      if (!byBu.has(bu)) byBu.set(bu, []);
+      byBu.get(bu).push(cas);
+    }
+  }
+  const out = {};
+  for (const [bu, vals] of byBu) {
+    vals.sort((a, b) => a - b);
+    const n = vals.length;
+    const sum = vals.reduce((s, v) => s + v, 0);
+    const mid = Math.floor(n / 2);
+    const median = n % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+    out[bu] = { count: n, avgCas: Math.round(sum / n), medianCas: Math.round(median) };
+  }
+  return out;
+}
+
+// Mots trop génériques pour rattacher un signal à un compte (éviteraient les faux positifs « Banque… »
+// matchant toutes les banques). On ne rattache que sur des jetons distinctifs.
+const SIGNAL_STOPWORDS = new Set([
+  "banque", "bank", "group", "groupe", "assurance", "assurances", "cote", "ivoire", "afrique",
+  "societe", "national", "nationale", "holding", "company", "international", "service", "services",
+  "technologies", "digital", "compagnie", "generale", "first", "west", "ouest", "sarl",
+]);
+function normalizeText(v) {
+  return String(v == null ? "" : v).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, " ").trim();
+}
+/**
+ * Jetons distinctifs d'un nom de compte : par ALIAS (segments séparés par « / » ou « | » — ex.
+ * « SGCI/Société Générale CI »), le nom complet normalisé + les mots ≥4 non génériques. Un alias
+ * réduit à un seul mot générique (« Banque ») est écarté pour ne rattacher AUCUN signal (évite les
+ * faux positifs de masse).
+ */
+function accountMatchTokens(name) {
+  const tokens = new Set();
+  for (const seg of String(name == null ? "" : name).split(/[/|]/)) {
+    const full = normalizeText(seg);
+    if (full.length >= 3 && !(!full.includes(" ") && SIGNAL_STOPWORDS.has(full))) tokens.add(full);
+    for (const w of full.split(/\s+/)) {
+      if (w.length >= 4 && !SIGNAL_STOPWORDS.has(w)) tokens.add(w);
+    }
+  }
+  return [...tokens];
+}
+/**
+ * matchSignalsToAccount(accountName, signals) -> [signal] — rattache au compte les signaux de veille
+ * qui le NOMMENT (déclencheur commercial rattaché au portefeuille : AO, EOL, réglementaire…). Match
+ * par jeton distinctif borné par des séparateurs (pas de sous-chaîne accidentelle). `signals` = objets
+ * ({titre|name|texte|rationale}) ou chaînes ; renvoie les signaux d'origine. PUR.
+ */
+function matchSignalsToAccount(accountName, signals) {
+  const toks = accountMatchTokens(accountName);
+  if (!toks.length) return [];
+  const out = [];
+  for (const s of Array.isArray(signals) ? signals : []) {
+    const text = typeof s === "string" ? s
+      : [s && s.titre, s && s.name, s && s.texte, s && s.rationale, s && s.description].filter(Boolean).join(" ");
+    const hay = ` ${normalizeText(text)} `;
+    if (toks.some((t) => hay.includes(` ${t} `))) out.push(s);
+  }
+  return out;
+}
+
+/**
  * copiloteAccountMatchesScope(account, scope) -> bool — un compte est visible par un commercial si
  * l'UNE des trois sources de rattachement correspond (« mix des 3 ») :
  *   1. override manuel : son e-mail figure dans account.owners ;
@@ -390,6 +469,8 @@ module.exports = {
   deriveCopiloteAccounts,
   deriveBuAffinity,
   recommendNextOffers,
+  deriveBuBenchmark,
+  matchSignalsToAccount,
   copiloteAccountMatchesScope,
   slugifyClient,
 };

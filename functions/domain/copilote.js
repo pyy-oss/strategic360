@@ -35,8 +35,10 @@ const NO_GENERIC =
 const HISTO_DIRECTIVE =
   "EXPLOITE L'HISTORIQUE D'ACHAT (obligatoire) : appuie-toi sur les offres déjà vendues et leurs CAS/années — " +
   "cite la plus grosse ligne et son montant comme référence d'ancrage, repère une ligne ancienne (année la plus " +
-  "éloignée) à faire renouveler, et fais de la NEXT BEST OFFER indiquée la recommandation centrale (dimensionne-la " +
-  "au CAS d'une ligne comparable du compte). Le commercial doit y voir une analyse qu'il n'aurait pas faite seul.";
+  "éloignée) à faire renouveler, et fais de la NEXT BEST OFFER indiquée la recommandation centrale. CHIFFRE-la : " +
+  "dimensionne-la au panier de référence fourni pour cette offre (ou, à défaut, au CAS d'une ligne comparable du " +
+  "compte) et donne ce montant d'ancrage. Si un déclencheur de veille est détecté sur ce compte, sers-t'en comme " +
+  "accroche/timing. Le commercial doit y voir une analyse qu'il n'aurait pas faite seul.";
 
 /* ------------------------------------------------------------------------------------------- *
  * Helpers de coercition (miroir de enrich.js — jamais d'undefined vers Firestore)
@@ -82,10 +84,15 @@ function factBase(c) {
       return `${coerceStr(h.offre)}${cas}${yrs}`;
     });
   const deals = (Array.isArray(c.deals) ? c.deals : []).map((d) => coerceStr(d && d.titre)).filter(Boolean).slice(0, 6);
-  const reco = c.recommendation && c.recommendation.offre
-    ? `— NEXT BEST OFFER (recommandation data-driven, affinité de cross-sell sur le portefeuille NT) : « ${coerceStr(c.recommendation.offre)} »` +
-      `${Number(c.recommendation.csPct) > 0 ? ` — ${c.recommendation.csPct}% des comptes au profil d'achat comparable la détiennent` : ""}. À prioriser dans la recommandation.`
+  const rec = c.recommendation || {};
+  const montant = Number(rec.montantEstime) > 0 ? ` ; panier de référence de cette offre sur le portefeuille ≈ ${xof(rec.montantEstime)} (montant d'ancrage à viser)` : "";
+  const reco = rec.offre
+    ? `— NEXT BEST OFFER (recommandation data-driven, affinité de cross-sell sur le portefeuille NT) : « ${coerceStr(rec.offre)} »` +
+      `${Number(rec.csPct) > 0 ? ` — ${rec.csPct}% des comptes au profil d'achat comparable la détiennent` : ""}${montant}. À prioriser dans la recommandation.`
     : "";
+  // Déclencheurs de veille RATTACHÉS à ce compte (signaux qui le nomment) — timing/accroche commerciale.
+  const signauxCompte = (Array.isArray(c.signauxCompte) ? c.signauxCompte : [])
+    .map((s) => coerceStr(s && (s.titre || s.name))).filter(Boolean).slice(0, 5);
   return [
     `— Compte : ${coerceStr(c.compte, "(non nommé)")}${c.secteur ? ` — secteur ${coerceStr(c.secteur)}` : ""}${c.tier ? `, compte ${coerceStr(c.tier)}` : ""}.`,
     `— ${empreinteChiffree(c)}`,
@@ -93,6 +100,7 @@ function factBase(c) {
     `— Travaux / consultations EN COURS : ${list(c.enCours)}.`,
     `— Whitespace = offres NT JAMAIS vendues à ce compte, classées par affinité de cross-sell décroissante : ${list(c.whitespace)}.`,
     reco,
+    signauxCompte.length ? `— Déclencheurs de veille détectés sur CE compte (à exploiter comme accroche/timing, ne pas inventer au-delà) : ${list(signauxCompte)}.` : "",
     `— Opportunités réelles en cours (à nommer avec leur montant exact) : ${list(deals)}.`,
     (Array.isArray(c.enjeux) && c.enjeux.length) ? `— Enjeux saisis par le commercial : ${list(c.enjeux)}.` : "",
   ].filter(Boolean).join("\n");
@@ -272,6 +280,52 @@ function parsePlanCompteResponse(raw) {
 }
 
 /* ------------------------------------------------------------------------------------------- *
+ * §E-bis — PLAN D'ACTION DATÉ (prochains 90 jours). Transforme l'analyse en séquence exécutable :
+ * quoi faire, quand, sur quelle offre/deal, appuyé sur quel fait réel. Ancré sur la next best offer,
+ * l'historique chiffré et les déclencheurs de veille du compte.
+ * ------------------------------------------------------------------------------------------- */
+const QUANDS = ["0–30 jours", "30–60 jours", "60–90 jours", "Continu"];
+
+function buildPlanActionPrompt(ctx) {
+  const c = ctx || {};
+  return `${NT_ROLE}
+${NO_GENERIC}
+${HISTO_DIRECTIVE}
+
+Bâtis le PLAN D'ACTION COMMERCIAL des 90 prochains jours pour CE compte, à partir de ses faits réels :
+${factBase(c)}
+
+Exigences : une séquence DATÉE et concrète, pas une liste de bonnes intentions. Chaque action doit :
+- porter sur un OBJET nommé (offre déjà vendue à renouveler / offre du whitespace à ouvrir / deal en cours à faire avancer / déclencheur de veille à activer) ;
+- être ancrée sur une PREUVE tirée des faits ci-dessus (un montant réel, une année d'achat, un % d'affinité, un signal) ;
+- être séquencée dans le temps : ouvrir/renouveler tôt (0–30 j), instruire (30–60 j), converger (60–90 j).
+Fais de la NEXT BEST OFFER l'un des fils conducteurs, avec son montant d'ancrage.
+
+Réponds UNIQUEMENT avec un objet JSON valide :
+{
+  "plan": [
+    { "quand": "0–30 jours" | "30–60 jours" | "60–90 jours" | "Continu", "action": string, "objet": string, "preuve": string }
+  ]
+}
+4 à 6 actions, ordonnées dans le temps ; "action" = geste commercial précis (RDV, chiffrage, proposition, COPIL, relance) ;
+"objet" = l'offre/deal/signal nommé visé ; "preuve" = le fait réel du compte qui la justifie (montant/année/affinité/signal). JSON uniquement.`;
+}
+
+function parsePlanActionResponse(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.plan)) return null;
+  const plan = raw.plan
+    .filter((x) => x && typeof x === "object" && coerceStr(x.action))
+    .map((x) => ({
+      quand: coerceEnum(x.quand, QUANDS, "Continu"),
+      action: coerceStr(x.action),
+      objet: coerceStr(x.objet),
+      preuve: coerceStr(x.preuve),
+    }))
+    .slice(0, 6);
+  return plan.length ? { plan } : null;
+}
+
+/* ------------------------------------------------------------------------------------------- *
  * §F — CHAT (multi-turn). Notre moteur ne produit que du JSON → on encapsule la réponse dans
  * { "reply": string } pour rester sur generateJson (aucune nouvelle fonction moteur).
  * ------------------------------------------------------------------------------------------- */
@@ -300,6 +354,8 @@ function buildChatSystem(ctx) {
         pipelinePondere: c.compte.pipelinePondere,
         wins: c.compte.wins,
         deals: c.compte.deals || c.compte.signaux,
+        recommendation: c.compte.recommendation,
+        signauxCompte: c.compte.signauxCompte,
       })}`
     : "Aucun compte précis sélectionné : réponds au niveau méthode/portefeuille, sans inventer de compte.";
   return `${base}\n${compte}`;
@@ -381,6 +437,7 @@ const AGENTS = {
   cvp: { build: buildCvpPrompt, parse: parseCvpResponse },
   triennal: { build: buildTriennalPrompt, parse: parseTriennalResponse },
   planCompte: { build: buildPlanComptePrompt, parse: parsePlanCompteResponse },
+  planAction: { build: buildPlanActionPrompt, parse: parsePlanActionResponse },
   redaction: { build: buildRedactionPrompt, parse: parseRedactionResponse },
 };
 
@@ -391,6 +448,7 @@ module.exports = {
   buildCvpPrompt, parseCvpResponse,
   buildTriennalPrompt, parseTriennalResponse,
   buildPlanComptePrompt, parsePlanCompteResponse,
+  buildPlanActionPrompt, parsePlanActionResponse,
   buildChatSystem, buildChatPrompt, parseChatResponse,
   buildRedactionPrompt, parseRedactionResponse,
 };

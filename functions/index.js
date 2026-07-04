@@ -1653,11 +1653,13 @@ async function assembleCopiloteContext(db, accountId) {
   const deals = (Array.isArray(nt.opportunites) ? nt.opportunites : []).map((o) => ({
     titre: `${o.nom} — ${Number.isFinite(o.montant) ? new Intl.NumberFormat("fr-FR").format(o.montant) + " XOF" : "montant n.c."} (${o.etape})`,
   }));
-  // SIGNAUX = leads de veille GÉNÉRIQUES (non spécifiques au compte) — réservés à la prospection.
-  const signaux = bizSnap.docs
-    .map((d) => d.data())
-    .filter((o) => o && o.name)
-    .slice(0, 10)
+  // SIGNAUX = leads de veille (opportunités business dérivées de la veille). Deux usages distincts :
+  //  - `signaux` : échantillon générique pour la PROSPECTION (comptes cibles) ;
+  //  - `signauxCompte` : ceux qui NOMMENT ce compte → déclencheurs commerciaux rattachés au portefeuille.
+  const bizAll = bizSnap.docs.map((d) => d.data()).filter((o) => o && o.name);
+  const signaux = bizAll.slice(0, 10).map((o) => ({ titre: o.name }));
+  const signauxCompte = (a.nom ? nt360MatchSignalsToAccount(a.nom, bizAll) : [])
+    .slice(0, 5)
     .map((o) => ({ titre: o.name }));
   // WHITESPACE RÉEL = catalogue d'offres NT (agrégé au sync, summaries/copiloteMeta.buCatalog) MOINS
   // les BU que ce compte a déjà touchées (achetées ou en cours). C'est le cross-sell concret et
@@ -1674,7 +1676,12 @@ async function assembleCopiloteContext(db, accountId) {
   // Classement du whitespace par AFFINITÉ de cross-sell (market basket) + « next best offer ».
   const ranked = nt360RecommendNextOffers(ownedBus, whitespace0, affinity);
   const whitespace = ranked.length ? ranked.map((r) => r.offre) : whitespace0;
-  const recommendation = ranked.find((r) => r.csPct > 0) || ranked[0] || null;
+  const recoBase = ranked.find((r) => r.csPct > 0) || ranked[0] || null;
+  // Chiffrage de la next best offer : panier de référence (médiane du portefeuille) pour son offre.
+  const benchmark = meta.buBenchmark && typeof meta.buBenchmark === "object" ? meta.buBenchmark : {};
+  const recommendation = recoBase
+    ? { ...recoBase, montantEstime: Number(benchmark[recoBase.offre]?.medianCas) || 0 }
+    : null;
   const casTotal = Number(nt.casTotal) || 0;
   const pipelinePondere = Number(nt.pipelinePondere) || 0;
   const wins = Number(nt.wins) || 0;
@@ -1694,12 +1701,13 @@ async function assembleCopiloteContext(db, accountId) {
     concurrence: a.concurrence || "",
     pestel,
     signaux, // leads de veille génériques (prospection)
+    signauxCompte, // déclencheurs de veille nommant CE compte (rattachés au portefeuille)
     deals,   // opportunités réelles du compte (CVP/triennal/plan/chat)
-    recommendation, // next best offer data-driven { offre, csPct }
+    recommendation, // next best offer data-driven { offre, csPct, montantEstime }
     casTotal,
     pipelinePondere,
     wins,
-    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation },
+    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte },
   };
 }
 
@@ -1789,6 +1797,8 @@ const {
   deriveCopiloteAccounts: nt360DeriveCopiloteAccounts,
   deriveBuAffinity: nt360DeriveBuAffinity,
   recommendNextOffers: nt360RecommendNextOffers,
+  deriveBuBenchmark: nt360DeriveBuBenchmark,
+  matchSignalsToAccount: nt360MatchSignalsToAccount,
   copiloteAccountMatchesScope: nt360AccountMatchesScope,
 } = require("./domain/nt360");
 
@@ -1934,8 +1944,10 @@ async function runSyncCopiloteAccounts(db) {
   // Affinité de cross-sell (market basket) sur tout le portefeuille : « les comptes qui achètent X
   // achètent aussi Y » → base de la recommandation « next best offer » par compte.
   const affinity = nt360DeriveBuAffinity(derived);
+  // Panier de référence par offre (médiane du CAS cumulé par compte) → CHIFFRE la « next best offer ».
+  const buBenchmark = nt360DeriveBuBenchmark(derived);
   await db.doc("summaries/copiloteMeta").set(
-    { buCatalog, affinity, updatedAt: FieldValue.serverTimestamp() },
+    { buCatalog, affinity, buBenchmark, updatedAt: FieldValue.serverTimestamp() },
     { merge: true }
   );
   logger.info(`runSyncCopiloteAccounts: ${written} comptes copilote pré-remplis depuis nt360 (catalogue ${buCatalog.length} offres)`);

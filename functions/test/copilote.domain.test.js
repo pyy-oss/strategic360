@@ -84,3 +84,49 @@ describe("Copilote — parsers (coercition, jamais d'undefined)", () => {
     expect(mail.variantes[0].objet).toBe("Sujet"); // objet conservé en e-mail
   });
 });
+
+describe("Copilote — chiffrage & déclencheurs de veille dans factBase (via prompts)", () => {
+  it("buildCvpPrompt chiffre la next best offer (montant d'ancrage) et surface les signaux du compte", async () => {
+    const { buildCvpPrompt } = await import("../domain/copilote.js");
+    const p = buildCvpPrompt({
+      compte: "BRVM", whitespace: ["SOC managé"],
+      recommendation: { offre: "SOC managé", csPct: 62, montantEstime: 45000000 },
+      signauxCompte: [{ titre: "AO refonte SI à la BRVM" }],
+      historique: [{ offre: "ICT", cas: 120000000, firstYear: 2021, lastYear: 2024 }],
+    });
+    expect(p).toContain("SOC managé");
+    expect(p).toContain("62%"); // affinité cross-sell
+    expect(p).toMatch(/45\D000\D000\D?XOF/); // montant d'ancrage chiffré (séparateur Intl fr-FR)
+    expect(p).toContain("montant d'ancrage à viser");
+    expect(p).toContain("AO refonte SI à la BRVM"); // déclencheur de veille rattaché
+    expect(p).toMatch(/120\D000\D000\D?XOF réalisés/); // historique chiffré exploité
+  });
+});
+
+describe("Copilote — agent planAction (plan d'action daté 90 j)", () => {
+  it("buildPlanActionPrompt impose une séquence datée ancrée sur les faits", async () => {
+    const { buildPlanActionPrompt } = await import("../domain/copilote.js");
+    const p = buildPlanActionPrompt({ compte: "SGCI", recommendation: { offre: "SOC managé", csPct: 50, montantEstime: 30000000 } });
+    expect(p).toContain("90 prochains jours");
+    expect(p).toContain('"plan"');
+    expect(p).toContain("0–30 jours");
+    expect(p).toContain("INTERDIT"); // directive anti-générique
+    expect(p).toMatch(/30\D000\D000\D?XOF/); // chiffrage next best offer injecté
+  });
+  it("parsePlanActionResponse : quand coercé, actions sans libellé écartées, bornées à 6, null si vide", async () => {
+    const { parsePlanActionResponse } = await import("../domain/copilote.js");
+    const r = parsePlanActionResponse({
+      plan: [
+        { quand: "0–30 jours", action: "RDV cadrage SOC", objet: "SOC managé", preuve: "62% d'affinité" },
+        { quand: "n'importe", action: "Chiffrer l'offre", objet: "SOC managé", preuve: "" }, // quand invalide → Continu
+        { action: "" }, // sans action → écarté
+        ...Array.from({ length: 8 }, (_, i) => ({ quand: "Continu", action: `A${i}`, objet: "x", preuve: "y" })),
+      ],
+    });
+    expect(r.plan.length).toBe(6); // borné
+    expect(r.plan[0]).toMatchObject({ quand: "0–30 jours", action: "RDV cadrage SOC", objet: "SOC managé" });
+    expect(r.plan[1].quand).toBe("Continu"); // coercition enum
+    expect(parsePlanActionResponse({ plan: [] })).toBeNull();
+    expect(parsePlanActionResponse(null)).toBeNull();
+  });
+});

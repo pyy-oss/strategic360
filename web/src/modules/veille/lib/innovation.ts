@@ -78,6 +78,10 @@ export interface InnovationBet {
   owner?: string;
   budget?: number;
   horizon?: string;
+  // Rendu actionnable (2026-07) : secteur métier ciblé → offre NT → comptes/profils cibles (généré par l'IA).
+  sector?: string;
+  offre?: string;
+  comptesCibles?: string[];
 }
 
 export type InnovationBetInput = Omit<InnovationBet, "id" | "rice">;
