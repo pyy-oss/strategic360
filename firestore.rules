@@ -94,9 +94,12 @@ service cloud.firestore {
     }
 
     // Expanded from: match /{c}/{id} where c in ['winLoss','actions','briefings']
+    // Win/Loss : le commercial qui VIT le deal doit pouvoir l'enregistrer (audit 2026-07) — aligné
+    // sur les battlecards (canWrite('veille')) au lieu du gate exec, avec createdBy imposé à la création.
     match /winLoss/{id} {
       allow read: if canRead('veille');
-      allow write: if exec();
+      allow create: if canWrite('veille') && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if canWrite('veille');
     }
     match /actions/{id} {
       allow read: if canRead('veille');

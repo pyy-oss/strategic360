@@ -703,3 +703,17 @@ describe("parseTechRadarResponse — quadrant invalide dérivé des mots-clés (
     expect(parsed.blips[2].quadrant).toBe(2); // cloud & infra
   });
 });
+
+describe("parseInnovationBetsResponse — provenance (audit 2026-07)", () => {
+  it("conserve sourceSignals (entiers ≥1) et rationale, sans rejeter un pari non sourcé", async () => {
+    const { parseInnovationBetsResponse } = await import("../domain/enrich.js");
+    const r = parseInnovationBetsResponse({ bets: [
+      { title: "Scoring crédit IA", reach: 8, impact: 9, confidence: 0.7, effort: 6, sourceSignals: [2, 5, 0, -1, "x"], rationale: "  découle du signal AO BCEAO  " },
+      { title: "Pari sans source", reach: 5, impact: 5, confidence: 0.5, effort: 5 },
+    ] });
+    expect(r.bets[0].sourceSignals).toEqual([2, 5]); // entiers ≥1 uniquement
+    expect(r.bets[0].rationale).toBe("découle du signal AO BCEAO");
+    expect(r.bets[1].sourceSignals).toEqual([]); // non sourcé → conservé, provenance vide
+    expect(r.bets[1].rationale).toBe("");
+  });
+});

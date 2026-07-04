@@ -82,6 +82,9 @@ export interface InnovationBet {
   sector?: string;
   offre?: string;
   comptesCibles?: string[];
+  // Auditabilité (2026-07) : justification + indices des signaux sources qui fondent le pari.
+  rationale?: string;
+  sourceSignals?: number[];
 }
 
 export type InnovationBetInput = Omit<InnovationBet, "id" | "rice">;

@@ -191,7 +191,7 @@ export function Detection() {
                     </button>
                   )}
                   {canWrite && (
-                    <DetectionActionCta title={e.recommendedAction?.trim() || e.title} impact={e.impact} prox={e.eprox as string} />
+                    <DetectionActionCta title={e.recommendedAction?.trim() || e.title} impact={e.impact} prox={e.eprox as string} due={e.dueDate} ent={e.ent} />
                   )}
                 </div>
               </div>
@@ -204,12 +204,14 @@ export function Detection() {
 }
 
 /** CTA « Créer une action » sur une carte de détection — port du geste du Fil (signal → exécution). */
-function DetectionActionCta({ title, impact, prox }: { title: string; impact: string; prox: string }) {
+function DetectionActionCta({ title, impact, prox, due, ent }: { title: string; impact: string; prox: string; due?: string; ent?: string }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const run = async () => {
     setBusy(true);
     try {
+      // Action non orpheline (audit 2026-07) : on reporte l'échéance réelle du signal et on trace
+      // l'entité source pour que l'action reste exploitable dans le plan d'exécution.
       await createAction({
         title,
         impact: impact === "high" ? 5 : impact === "medium" ? 4 : 3,
@@ -217,9 +219,9 @@ function DetectionActionCta({ title, impact, prox }: { title: string; impact: st
         effort: 3,
         ev: 0,
         owner: "—",
-        echeance: "",
+        echeance: due || "",
         statut: "À planifier",
-        source: `Détection : ${title}`,
+        source: `Détection${ent ? ` · ${ent}` : ""} : ${title}`,
       });
       setDone(true);
     } finally {

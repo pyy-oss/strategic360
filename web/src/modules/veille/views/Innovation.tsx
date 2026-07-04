@@ -362,6 +362,15 @@ export function Innovation() {
                     {Array.isArray(o.comptesCibles) && o.comptesCibles.length > 0 && (
                       <div style={{ marginTop: 3, fontSize: 11.5, color: T.faint }}>Cibles : {o.comptesCibles.join(" · ")}</div>
                     )}
+                    {/* Auditabilité (audit 2026-07) : justification + nombre de signaux sources. */}
+                    {o.rationale && (
+                      <div style={{ marginTop: 3, fontSize: 11.5, color: T.dim, fontStyle: "italic" }}>
+                        {o.rationale}
+                        {Array.isArray(o.sourceSignals) && o.sourceSignals.length > 0 && (
+                          <span style={{ color: T.faint }}> · {o.sourceSignals.length} signal(aux) source</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <span style={{ color: T.faint, flexShrink: 0, whiteSpace: "nowrap" }}>
                     R{o.reach}·I{o.impact}·C{pct(o.confidence)}·E{o.effort}

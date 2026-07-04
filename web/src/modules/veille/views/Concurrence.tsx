@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { T, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Badge, Tip } from "../../../design/ui";
-import { useCan, useIsExec } from "../../../lib/rbac";
+import { useCan } from "../../../lib/rbac";
 import { createWinLossEntry, upsertBattlecard, useBattlecards, useWinLoss, winRateByCompetitor, type WinLossResult } from "../lib/execution";
 
 const inputStyle: React.CSSProperties = {
@@ -189,7 +189,6 @@ export function Concurrence() {
   const { battlecards, loading: loadingCards } = useBattlecards();
   const { entries, loading: loadingWl } = useWinLoss();
   const { canWrite } = useCan("veille");
-  const isExec = useIsExec();
   const [showCardForm, setShowCardForm] = useState(false);
   const [showWlForm, setShowWlForm] = useState(false);
   const stats = winRateByCompetitor(entries);
@@ -230,14 +229,14 @@ export function Concurrence() {
             + Nouvelle battlecard
           </button>
         )}
-        {isExec && (
+        {canWrite && (
           <button className="pill on" onClick={() => setShowWlForm((v) => !v)}>
             + Enregistrer un win/loss
           </button>
         )}
       </div>
       {showCardForm && canWrite && <NewBattlecardPanel onClose={() => setShowCardForm(false)} />}
-      {showWlForm && isExec && <NewWinLossPanel onClose={() => setShowWlForm(false)} />}
+      {showWlForm && canWrite && <NewWinLossPanel onClose={() => setShowWlForm(false)} />}
       {!loading && rows.length === 0 && (
         <Card>
           <Eyebrow color={T.clay}>Concurrence</Eyebrow>
