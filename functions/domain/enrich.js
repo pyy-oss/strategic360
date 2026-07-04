@@ -976,7 +976,9 @@ Réponds UNIQUEMENT avec un objet JSON valide :
       "confidence": number,   // 0-1 : confiance dans les estimations
       "effort": number,       // 1-10 : effort de mise en œuvre
       "stage": "idée" | "exploration" | "poc" | "pilote" | "scale",
-      "horizon": string       // ex: "H2" ou "2027"
+      "horizon": string,      // ex: "H2" ou "2027"
+      "sourceSignals": [number], // indices 1-based des signaux ci-dessous qui fondent ce pari
+      "rationale": string     // 1 phrase : pourquoi ce pari découle de ces signaux (auditabilité)
     }
   ]
 }
@@ -1019,6 +1021,10 @@ function parseInnovationBetsResponse(raw) {
         rice: Math.round(((reach * impact * confidence) / effort) * 10) / 10,
         stage: VALID_STAGES.includes(b.stage) ? b.stage : "idée",
         horizon: typeof b.horizon === "string" && b.horizon.trim() ? b.horizon.trim() : "H2",
+        // Auditabilité (audit 2026-07) : provenance conservée SANS rejeter un pari non sourcé
+        // (gardes non-rejetantes, comme les opportunités) — permet de tracer l'ancrage d'un pari.
+        sourceSignals: (Array.isArray(b.sourceSignals) ? b.sourceSignals : []).filter((n) => Number.isInteger(n) && n >= 1),
+        rationale: typeof b.rationale === "string" ? b.rationale.trim() : "",
       };
     });
   return bets.length >= 2 ? { bets } : null;

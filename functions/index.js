@@ -1032,7 +1032,10 @@ async function computeVeilleExecSummary(db) {
   });
 
   const menacesTotal = items.filter((i) => i.stance === "threat").length;
-  const menacesTraitees = items.filter((i) => i.stance === "threat" && i.status === "actioned").length;
+  // « Traitée » = actionnée OU archivée (audit 2026-07) : une menace archivée est résolue/classée,
+  // pas une menace laissée sans réponse — sinon la couverture décisionnelle était sous-estimée.
+  const DONE_THREAT_STATUS = new Set(["actioned", "archived"]);
+  const menacesTraitees = items.filter((i) => i.stance === "threat" && DONE_THREAT_STATUS.has(i.status)).length;
   const opportunites = items.filter((i) => i.stance === "opportunity").length;
   // Placeholder metric: count of high-impact threats not yet actioned/archived, standing in for
   // a chiffered "exposure" figure until summaries/quanti (V4) can value it in FCFA.
@@ -1720,7 +1723,10 @@ async function assembleCopiloteContext(db, accountId) {
     enCours, // saisi + dérivé nt360
     historique, // saisi + dérivé nt360
     contacts: Array.isArray(a.contacts) ? a.contacts : [],
-    preuves: Array.isArray(a.preuves) ? a.preuves : ["BCEAO", "Orange CI", "BRVM"],
+    // Pas de références par défaut fabriquées (audit 2026-07) : un compte sans preuves saisies →
+    // liste vide → le prompt affiche « aucun » et NO_GENERIC fait proposer une action de
+    // qualification (« références à confirmer ») au lieu d'un triplet BCEAO/Orange/BRVM générique.
+    preuves: Array.isArray(a.preuves) ? a.preuves.filter((x) => typeof x === "string" && x.trim()) : [],
     tendances: Array.isArray(a.tendances) ? a.tendances : [],
     reglementation: a.reglementation || "",
     concurrence: a.concurrence || "",

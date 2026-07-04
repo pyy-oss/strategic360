@@ -10,6 +10,9 @@
  * « JSON only » déjà utilisée partout dans ce repo (les parsers coercent/valident, jamais d'undefined).
  */
 
+// Source unique des différenciateurs de marque (audit 2026-07) — partagée avec les cadres (enrich.js).
+const { NT_DIFFERENCIATEURS } = require("./companyContext");
+
 /* ------------------------------------------------------------------------------------------- *
  * Rôle système commun (ANNEXE 02 §A · NT_ROLE)
  * ------------------------------------------------------------------------------------------- */
@@ -178,8 +181,9 @@ ${HISTO_DIRECTIVE}
 Construis la proposition de valeur de Neurones Technologies pour CE compte, en t'appuyant STRICTEMENT sur ses faits réels :
 ${factBase(c)}
 
-Différenciateurs NT mobilisables (à relier chacun à UN enjeu/whitespace/deal NOMMÉ de ce compte, jamais en vrac) :
-proximité locale & souveraineté de la donnée, accréditation PASSI (en cours), modèle managé OPEX, montage en groupement solidaire (chef de file).
+Différenciateurs NT mobilisables (source unique — à relier chacun à UN enjeu/whitespace/deal NOMMÉ de ce compte, jamais en vrac ; Neurones Academy est un levier de cross-sell/ancrage à ne pas oublier) :
+${NT_DIFFERENCIATEURS}.
+ANGLE MÉTIER (lentille innovation) : quand le secteur du compte et son whitespace/ses signaux le permettent, formule la valeur au niveau de la TRANSFORMATION MÉTIER du client (data/IA, RPA, open banking/mobile money & fintech, e-gov/GovTech, IoT/edge, verticaux insurtech/agritech…) et positionne cloud/souveraineté/cybersécurité comme ENABLERS, pas comme finalité — sans inventer de besoin non étayé par les faits.
 Preuves / références NT : ${list(c.preuves)}.${pestel ? `\nAngle de marché (à n'utiliser QUE s'il éclaire un besoin concret de ce compte) : ${pestel}` : ""}
 
 Réponds UNIQUEMENT avec un objet JSON valide :

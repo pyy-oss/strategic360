@@ -156,3 +156,13 @@ describe("Copilote — corrections audit (rédaction ancrée + next best offer h
     expect(warm).toContain("À prioriser dans la recommandation");
   });
 });
+
+describe("Copilote — CVP : différenciateurs source unique + angle métier (audit 2026-07)", () => {
+  it("buildCvpPrompt mobilise NT_DIFFERENCIATEURS (dont Neurones Academy) et l'angle innovation", async () => {
+    const { buildCvpPrompt } = await import("../domain/copilote.js");
+    const p = buildCvpPrompt({ compte: "NSIA", secteur: "Assurance", whitespace: ["Data/IA"] });
+    expect(p).toContain("Neurones Academy"); // Academy n'est plus oubliée de l'argumentaire
+    expect(p).toContain("WALLIX Premier"); // source unique des différenciateurs
+    expect(p).toContain("ANGLE MÉTIER"); // lentille innovation (pas que cloud/cyber)
+  });
+});

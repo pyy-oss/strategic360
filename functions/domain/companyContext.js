@@ -18,4 +18,14 @@ GRILLE DE LECTURE D'UN SIGNAL (le « so-what » attendu) : EOL/pénurie/hausse c
 OBJECTIF COMMERCIAL : maximiser le pipeline d'affaires (objectif de signature ~12 Mds FCFA) sur CI/UEMOA.
 ATTENTION HOMONYMIE : AUCUN lien avec le groupe français coté NEURONES (neurones.net, CA 810 M€), ni Neurones Technologies SA de Genève, ni Neurones IT Asia — tout signal concernant ces homonymes doit être ignoré ou marqué non pertinent.`;
 
-module.exports = { COMPANY_CONTEXT };
+// Source UNIQUE des différenciateurs de marque NT (audit 2026-07) — évite que la CVP (copilote),
+// VRIO et les battlecards portent des listes codées en dur divergentes. Neurones Academy y figure
+// (elle était absente de l'argumentaire commercial alors que c'est une des deux BU).
+const NT_DIFFERENCIATEURS =
+  "proximité locale & souveraineté de la donnée ; agrément PASSI (en cours) ANSSI-CI ; modèle managé " +
+  "OPEX (SOC/NOC récurrent) ; montage en groupement solidaire (chef de file) ; statut WALLIX Premier " +
+  "(PAM) ; Neurones Academy (220+ formations certifiantes — levier de valeur, de cross-sell et " +
+  "d'ancrage compte) ; références bancaires/institutionnelles (BCEAO, BRVM, BAD) ; proximité des " +
+  "régulateurs (ANSSI-CI, ARTCI, AMF-UMOA)";
+
+module.exports = { COMPANY_CONTEXT, NT_DIFFERENCIATEURS };

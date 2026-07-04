@@ -28,7 +28,7 @@ import {
   type FieldValue,
   type Timestamp,
 } from "firebase/firestore";
-import { db } from "../../../lib/firebase";
+import { auth, db } from "../../../lib/firebase";
 
 /* ---------------------------------------------------------------------------------------------
  * strategicThemes
@@ -360,7 +360,8 @@ export function useWinLoss(): { entries: WinLossEntry[]; loading: boolean; error
 }
 
 export async function createWinLossEntry(input: WinLossInput): Promise<string> {
-  const ref = await addDoc(collection(db, "winLoss"), input);
+  // createdBy imposé par les règles (audit 2026-07 : win/loss ouvert aux commerciaux, plus aux seuls exec).
+  const ref = await addDoc(collection(db, "winLoss"), { ...input, createdBy: auth.currentUser?.uid ?? "" });
   return ref.id;
 }
 
