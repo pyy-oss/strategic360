@@ -46,13 +46,20 @@ export default function VeilleApp() {
       <style>{`*{box-sizing:border-box}::selection{background:#C9A24B;color:#0E1613}
       .pill{cursor:pointer;border:1px solid ${T.line};background:${T.panel};color:${T.dim};border-radius:999px;padding:6px 13px;font-size:12.5px;font-weight:600}
       .pill.on{background:${T.gold};border-color:${T.gold};color:#0E1613}
+      .pill:disabled{opacity:.55;cursor:not-allowed}
       .tab{cursor:pointer;border:none;background:none;color:${T.dim};font-size:13.5px;font-weight:600;padding:9px 2px;border-bottom:2px solid transparent;white-space:nowrap}
       .tab.on{color:${T.ink};border-bottom-color:${T.gold}}
       .navwrap::-webkit-scrollbar{height:0}
       .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+      .pill:focus-visible,.tab:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid ${T.gold};outline-offset:2px}
+      @keyframes cop-spin{to{transform:rotate(360deg)}}
+      @keyframes cop-pulse{0%,100%{opacity:.45}50%{opacity:.9}}
+      .cop-spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:cop-spin .7s linear infinite;vertical-align:-1px}
+      .cop-skel{background:${T.panel2};border-radius:8px;animation:cop-pulse 1.2s ease-in-out infinite}
       @media(max-width:1180px){.g3,.g4{grid-template-columns:repeat(2,1fr)!important}}
       @media(max-width:1024px){.g2-stack{grid-template-columns:1fr!important}}
-      @media(max-width:820px){.g2,.g3,.g4,.canvas-grid{grid-template-columns:1fr!important}.gform>*,.canvas-grid>*{grid-column:auto!important}}
+      @media(max-width:820px){.g2,.g3,.g4,.canvas-grid{grid-template-columns:1fr!important}.gform>*,.canvas-grid>*{grid-column:auto!important}
+        .pill{min-height:44px;padding:10px 16px}}
       @media(max-width:640px){.pestel-row{grid-template-columns:1fr!important}.appshell{padding:14px 12px 32px!important}.apptitle{font-size:17px!important}}`}</style>
 
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14, marginBottom: 14 }}>

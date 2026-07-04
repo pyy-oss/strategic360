@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { T, fmt as fmtC } from "../../../design/tokens";
-import { Eyebrow, Card, Badge } from "../../../design/ui";
+import { Eyebrow, Card, Badge, Kpi } from "../../../design/ui";
 import { useCan, useClaims } from "../../../lib/rbac";
 import {
   useCopiloteAccounts,
@@ -26,17 +26,17 @@ import {
 const CHALEUR_C: Record<string, string> = { Chaud: T.clay, Tiède: T.gold, Froid: T.steel };
 const NIV_C: Record<string, string> = { "Élevé": T.clay, Moyen: T.gold, Faible: T.steel };
 
-const AGENT_TABS: { k: string; l: string }[] = [
-  { k: "prospection", l: "Prospection" },
-  { k: "cvp", l: "Proposition de valeur" },
-  { k: "triennal", l: "Plan triennal" },
-  { k: "planCompte", l: "Plan de compte" },
-  { k: "redaction", l: "Rédaction" },
-  { k: "chat", l: "Chat" },
+const AGENT_TABS: { k: string; l: string; icon: string }[] = [
+  { k: "prospection", l: "Prospection", icon: "🎯" },
+  { k: "cvp", l: "Proposition de valeur", icon: "💡" },
+  { k: "triennal", l: "Plan triennal", icon: "🗺️" },
+  { k: "planCompte", l: "Plan de compte", icon: "📋" },
+  { k: "redaction", l: "Rédaction", icon: "✍️" },
+  { k: "chat", l: "Chat", icon: "💬" },
 ];
 
 const inp: React.CSSProperties = { width: "100%", padding: "7px 10px", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 8, color: T.ink, fontSize: 12.5 };
-const lbl: React.CSSProperties = { fontSize: 11, color: T.faint, marginBottom: 3, display: "block" };
+const lbl: React.CSSProperties = { fontSize: 11, color: T.dim, marginBottom: 3, display: "block" };
 
 /** Copilote Commercial (add-on) — réutilise le moteur IA serveur + le PESTEL/les signaux de la veille. */
 export function Copilote() {
@@ -91,36 +91,27 @@ export function Copilote() {
     } finally { setSyncing(false); }
   };
 
-  // Précision complète pour la fiche compte (audit/citation) ; fmtC (compact k/M/Md) pour tuiles,
-  // options et listes de deals où la lisibilité prime.
-  const fmtFull = (n?: number) => (typeof n === "number" ? new Intl.NumberFormat("fr-FR").format(n) : "—");
-
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11.5, color: T.faint }}>Compte :</span>
-          <select style={{ ...inp, width: "auto", minWidth: 220 }} value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-            <option value="">{loading ? "Chargement…" : "— Portefeuille (vue d'ensemble) —"}</option>
-            {sorted.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.nom}{a.secteur ? ` · ${a.secteur}` : ""}{poids(a) ? ` — ${fmtC(poids(a))} XOF` : ""}
-              </option>
-            ))}
-          </select>
+      {/* Barre de contexte compte — sticky : le compte pilote tout l'écran, il reste visible pendant
+          qu'on lit un livrable (utile en RDV sur mobile). */}
+      <div style={{ position: "sticky", top: 0, zIndex: 5, background: T.bg, paddingBottom: 10, marginBottom: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
+          <AccountCombobox accounts={sorted} value={accountId} loading={loading} onChange={setAccountId} poids={poids} />
           {account && <Badge c={T.steel}>{account.tier || "compte"}</Badge>}
           {scoped && <Badge c={T.plum}>Mon périmètre</Badge>}
         </div>
         {canWrite && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            {syncMsg && <span style={{ fontSize: 11.5, color: T.faint }}>{syncMsg}</span>}
-            <button className="pill" disabled={syncing} onClick={() => void syncFromNt360()}>
-              {syncing ? "Synchro…" : "⟳ Empreinte nt360"}
+            <button className={`pill ${accounts.length === 0 && !loading ? "on" : ""}`} disabled={syncing} onClick={() => void syncFromNt360()} title="Pré-remplir le portefeuille et l'empreinte réelle depuis la base nt360">
+              {syncing ? <><span className="cop-spin" /> Synchro…</> : "⟳ Empreinte nt360"}
             </button>
-            {isAdmin && <button className="pill" onClick={() => setShowPerim((v) => !v)}>Périmètres</button>}
-            <button className="pill on" onClick={() => setShowNew((v) => !v)}>+ Nouveau compte</button>
+            {isAdmin && <button className="pill" onClick={() => setShowPerim((v) => !v)} title="Définir le périmètre des commerciaux (comptes visibles)">Périmètres</button>}
+            <button className={`pill ${accounts.length === 0 && !loading ? "" : "on"}`} onClick={() => setShowNew((v) => !v)}>+ Nouveau compte</button>
           </div>
         )}
+        {/* Slot réservé (hauteur fixe) : le message de synchro n'écarte plus les boutons en apparaissant. */}
+        {syncMsg && <div style={{ flexBasis: "100%", fontSize: 11.5, color: T.dim }}>{syncMsg}</div>}
       </div>
 
       {error && (
@@ -138,56 +129,73 @@ export function Copilote() {
 
       <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 14 }}>
         {AGENT_TABS.map((t) => (
-          <button key={t.k} className={`pill ${tab === t.k ? "on" : ""}`} onClick={() => setTab(t.k)}>{t.l}</button>
+          <button key={t.k} className={`pill ${tab === t.k ? "on" : ""}`} onClick={() => setTab(t.k)} aria-pressed={tab === t.k}>
+            <span aria-hidden style={{ marginRight: 5 }}>{t.icon}</span>{t.l}
+          </button>
         ))}
       </div>
 
       {account && (
         <Card style={{ marginBottom: 14 }}>
-          <Eyebrow color={T.gold}>{account.nom}</Eyebrow>
-          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-            {(account.enjeux ?? []).map((e, i) => <Badge key={`e${i}`} c={T.clay}>{e}</Badge>)}
-            {(account.whitespace ?? []).map((w, i) => <Badge key={`w${i}`} c={T.emerald}>Whitespace : {w}</Badge>)}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 20, fontWeight: 700, color: T.ink }}>{account.nom}</div>
+            {account.secteur ? <span style={{ fontSize: 12, color: T.dim }}>{account.secteur}</span> : null}
           </div>
+
+          {/* Empreinte chiffrée — traitement KPI (tabular-nums, Bricolage) : la valeur saute aux yeux. */}
           {account.nt360 && (
-            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: 11, color: T.faint }}>Empreinte nt360 :</span>
-              <Badge c={T.gold}>CAS {fmtC(account.nt360.casTotal ?? 0)} XOF</Badge>
-              <Badge c={T.steel}>Pipeline pondéré {fmtC(account.nt360.pipelinePondere ?? 0)} XOF</Badge>
-              {typeof account.nt360.wins === "number" && account.nt360.wins > 0 && <Badge c={T.emerald}>{account.nt360.wins} affaire(s) gagnée(s)</Badge>}
-              {(account.nt360.historique ?? []).map((h, i) => <Badge key={`h${i}`} c={T.emerald}>{h.offre} ✓</Badge>)}
-              {(account.nt360.enCours ?? []).map((e, i) => <Badge key={`ec${i}`} c={T.plum}>{e} (en cours)</Badge>)}
+            <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 12 }}>
+              <Money label="CAS réalisé" value={account.nt360.casTotal ?? 0} accent={T.emerald} />
+              <Money label="Pipeline pondéré" value={account.nt360.pipelinePondere ?? 0} accent={T.gold} />
+              {typeof account.nt360.wins === "number" && account.nt360.wins > 0 && (
+                <div><Eyebrow>Affaires gagnées</Eyebrow><div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 24, fontWeight: 700, color: T.plum, marginTop: 6 }}>{account.nt360.wins}</div></div>
+              )}
             </div>
           )}
+
+          {((account.enjeux ?? []).length > 0 || (account.whitespace ?? []).length > 0) && (
+            <div style={{ marginTop: 14 }}>
+              <Eyebrow>Enjeux &amp; espaces à conquérir</Eyebrow>
+              <div style={{ display: "flex", gap: 6, marginTop: 7, flexWrap: "wrap" }}>
+                {(account.enjeux ?? []).map((e, i) => <Badge key={`e${i}`} c={T.steel}>{e}</Badge>)}
+                {(account.whitespace ?? []).map((w, i) => <Badge key={`w${i}`} c={T.emerald}>↗ {w}</Badge>)}
+              </div>
+            </div>
+          )}
+
+          {((account.nt360?.historique ?? []).length > 0 || (account.nt360?.enCours ?? []).length > 0) && (
+            <div style={{ marginTop: 14 }}>
+              <Eyebrow>Offres · vendues &amp; en cours</Eyebrow>
+              <div style={{ display: "flex", gap: 6, marginTop: 7, flexWrap: "wrap" }}>
+                {(account.nt360?.historique ?? []).map((h, i) => <Badge key={`h${i}`} c={T.emerald}>{h.offre} ✓</Badge>)}
+                {(account.nt360?.enCours ?? []).map((e, i) => <Badge key={`ec${i}`} c={T.plum}>{e} · en cours</Badge>)}
+              </div>
+            </div>
+          )}
+
           {(account.nt360?.opportunites ?? []).length > 0 && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 6 }}>Opportunités réelles en cours (pipeline nt360)</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ marginTop: 14 }}>
+              <Eyebrow>Opportunités réelles en cours</Eyebrow>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 7 }}>
                 {(account.nt360?.opportunites ?? []).map((o, i) => (
-                  <div key={`${o.nom}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", padding: "6px 10px", background: T.panel2, borderRadius: 8, borderLeft: `3px solid ${T.gold}` }}>
-                    <span style={{ fontSize: 12.5, color: T.ink }}>
-                      {o.nom}{o.bu ? <span style={{ color: T.faint }}> · {o.bu}</span> : null}
-                      <span style={{ color: T.steel }}> — {o.etape}</span>
-                      {typeof o.probability === "number" ? <span style={{ color: T.gold }}> · {o.probability}%</span> : null}
-                      {o.closingDate ? <span style={{ color: T.faint }}> · clôture {o.closingDate}</span> : null}
-                    </span>
-                    <span style={{ fontSize: 12.5, color: T.gold, fontWeight: 600, whiteSpace: "nowrap" }}>{fmtFull(o.montant)} XOF</span>
-                  </div>
+                  <DealRow key={`${o.nom}-${i}`} nom={o.nom} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
                 ))}
               </div>
             </div>
           )}
+
           {(account.nt360?.ams?.length || account.nt360?.bus?.length) ? (
-            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: 11, color: T.faint }}>Rattachement :</span>
+            <div style={{ display: "flex", gap: 6, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: T.dim }}>Rattachement :</span>
               {(account.nt360?.ams ?? []).map((am, i) => <Badge key={`am${i}`} c={T.steel}>AM {am}</Badge>)}
-              {(account.nt360?.bus ?? []).map((bu, i) => <Badge key={`bu${i}`} c={T.faint}>{bu}</Badge>)}
+              {(account.nt360?.bus ?? []).map((bu, i) => <Badge key={`bu${i}`} c={T.dim}>{bu}</Badge>)}
             </div>
           ) : null}
           <OwnersEditor account={account} isAdmin={isAdmin} onSaved={reload} />
         </Card>
       )}
 
+      {loading && <PortfolioSkeleton />}
       {!account && !loading && <PortfolioDashboard accounts={sorted} poids={poids} fmt={fmtC} onPick={setAccountId} />}
 
       {tab === "prospection" && <ProspectionTab accountId={accountId} canWrite={canWrite} />}
@@ -196,6 +204,120 @@ export function Copilote() {
       {tab === "planCompte" && <PlanCompteTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "redaction" && <RedactionTab accountId={accountId} compte={account?.nom || ""} canWrite={canWrite} />}
       {tab === "chat" && <ChatTab accountId={accountId} canWrite={canWrite} />}
+    </div>
+  );
+}
+
+/* -------- Combobox compte : recherche typeahead (remplace le <select> à ~800 options) -------- */
+function AccountCombobox({
+  accounts, value, loading, onChange, poids,
+}: {
+  accounts: CopiloteAccount[];
+  value: string;
+  loading: boolean;
+  onChange: (id: string) => void;
+  poids: (a: CopiloteAccount) => number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const selected = accounts.find((a) => a.id === value);
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const base = needle ? accounts.filter((a) => a.nom.toLowerCase().includes(needle) || (a.secteur || "").toLowerCase().includes(needle)) : accounts;
+    return base.slice(0, 40);
+  }, [accounts, q]);
+  const pick = (id: string) => { onChange(id); setOpen(false); setQ(""); };
+  return (
+    <div style={{ position: "relative", minWidth: 240 }}>
+      <input
+        aria-label="Rechercher un compte commercial"
+        style={{ ...inp, minWidth: 240, cursor: "text" }}
+        placeholder={loading ? "Chargement du portefeuille…" : "🔎 Rechercher un compte…"}
+        value={open ? q : (selected ? selected.nom : "")}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onKeyDown={(e) => { if (e.key === "Enter" && filtered[0]) pick(filtered[0].id); if (e.key === "Escape") setOpen(false); }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && (
+        <div role="listbox" style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 20, maxHeight: 320, overflowY: "auto", background: T.panel, border: `1px solid ${T.line}`, borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,.4)" }}>
+          <button onMouseDown={(e) => e.preventDefault()} onClick={() => pick("")}
+            style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", background: value === "" ? T.panel2 : "transparent", border: "none", color: T.dim, fontSize: 12.5, cursor: "pointer" }}>
+            — Portefeuille (vue d'ensemble) —
+          </button>
+          {filtered.map((a) => (
+            <button key={a.id} role="option" aria-selected={a.id === value} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(a.id)}
+              style={{ display: "flex", justifyContent: "space-between", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", background: a.id === value ? T.panel2 : "transparent", border: "none", borderTop: `1px solid ${T.line}`, cursor: "pointer" }}>
+              <span style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nom}{a.secteur ? <span style={{ color: T.dim }}> · {a.secteur}</span> : null}</span>
+              {poids(a) ? <span style={{ fontSize: 12, color: T.gold, fontWeight: 600, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{fmtC(poids(a))}</span> : null}
+            </button>
+          ))}
+          {filtered.length === 0 && <div style={{ padding: "12px", fontSize: 12, color: T.dim }}>Aucun compte trouvé.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* -------- Valeur monétaire au traitement KPI (Bricolage + tabular-nums, compact) -------- */
+function Money({ label, value, accent }: { label: string; value: number; accent?: string }) {
+  return (
+    <div>
+      <Eyebrow>{label}</Eyebrow>
+      <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 24, fontWeight: 700, color: accent || T.ink, marginTop: 6, fontVariantNumeric: "tabular-nums", lineHeight: 1.05 }}>
+        {fmtC(value)} <span style={{ fontSize: 13, color: T.dim, fontWeight: 600 }}>XOF</span>
+      </div>
+    </div>
+  );
+}
+
+/* -------- Ligne opportunité : montant + jauge de probabilité (met en avant ce qui est jouable) -------- */
+function DealRow({ nom, bu, etape, montant, probability, closingDate }: { nom: string; bu?: string; etape: string; montant: number; probability?: number | null; closingDate?: string }) {
+  const p = typeof probability === "number" ? Math.max(0, Math.min(100, probability)) : null;
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", padding: "8px 11px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${T.gold}` }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {nom}{bu ? <span style={{ color: T.dim }}> · {bu}</span> : null} <span style={{ color: T.steel }}>— {etape}</span>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
+          {p !== null && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 44, height: 5, borderRadius: 999, background: T.line, overflow: "hidden" }}>
+                <span style={{ display: "block", width: `${p}%`, height: "100%", background: p >= 60 ? T.emerald : p >= 30 ? T.gold : T.clay }} />
+              </span>
+              <span style={{ fontSize: 11, color: T.dim, fontVariantNumeric: "tabular-nums" }}>{p}%</span>
+            </span>
+          )}
+          {closingDate ? <span style={{ fontSize: 11, color: T.dim }}>clôture {closingDate}</span> : null}
+        </div>
+      </div>
+      <span style={{ fontSize: 13, color: T.gold, fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", fontFamily: "'Bricolage Grotesque',sans-serif" }}>{fmtC(montant)} XOF</span>
+    </div>
+  );
+}
+
+/* -------- Squelette de chargement du portefeuille (évite le clignotement blanc) -------- */
+function PortfolioSkeleton() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <Card>
+        <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i}><div className="cop-skel" style={{ height: 12, width: "60%" }} /><div className="cop-skel" style={{ height: 26, width: "80%", marginTop: 8 }} /></div>
+          ))}
+        </div>
+      </Card>
+      <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        {Array.from({ length: 2 }).map((_, c) => (
+          <Card key={c}>
+            <div className="cop-skel" style={{ height: 12, width: "45%" }} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+              {Array.from({ length: 5 }).map((_, i) => <div key={i} className="cop-skel" style={{ height: 40 }} />)}
+            </div>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
@@ -236,22 +358,15 @@ function PortfolioDashboard({
     );
   }
 
-  const kpi = (label: string, value: string, color: string) => (
-    <div style={{ flex: "1 1 160px", background: T.panel2, borderRadius: 10, padding: "12px 14px", borderTop: `3px solid ${color}` }}>
-      <div style={{ fontSize: 11, color: T.faint }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: T.ink, marginTop: 4 }}>{value}</div>
-    </div>
-  );
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <Card>
         <Eyebrow color={T.gold}>Portefeuille commercial — vue d'ensemble</Eyebrow>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
-          {kpi("Comptes actifs", String(accounts.length), T.steel)}
-          {kpi("CAS réalisé (XOF)", fmt(totalCas), T.emerald)}
-          {kpi("Pipeline pondéré (XOF)", fmt(totalPipe), T.gold)}
-          {kpi("Affaires gagnées", String(totalWins), T.plum)}
+        <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginTop: 12 }}>
+          <Kpi label="Comptes actifs" value={accounts.length} accent={T.steel} />
+          <Kpi label="CAS réalisé" value={<>{fmt(totalCas)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></>} accent={T.emerald} />
+          <Kpi label="Pipeline pondéré" value={<>{fmt(totalPipe)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></>} accent={T.gold} />
+          <Kpi label="Affaires gagnées" value={totalWins} accent={T.plum} />
         </div>
       </Card>
 
@@ -261,9 +376,9 @@ function PortfolioDashboard({
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
             {accounts.slice(0, 8).map((a) => (
               <button key={a.id} onClick={() => onPick(a.id)}
-                style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", padding: "8px 10px", background: T.panel2, borderRadius: 8, border: `1px solid ${T.line}`, cursor: "pointer", textAlign: "left" }}>
-                <span style={{ fontSize: 12.5, color: T.ink }}>{a.nom}{a.secteur ? <span style={{ color: T.faint }}> · {a.secteur}</span> : null}</span>
-                <span style={{ fontSize: 12.5, color: T.gold, fontWeight: 600, whiteSpace: "nowrap" }}>{fmt(poids(a))} XOF</span>
+                style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "9px 11px", background: T.panel2, borderRadius: 9, border: `1px solid ${T.line}`, cursor: "pointer", textAlign: "left", minHeight: 44 }}>
+                <span style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nom}{a.secteur ? <span style={{ color: T.dim }}> · {a.secteur}</span> : null}</span>
+                <span style={{ fontSize: 12.5, color: T.gold, fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", fontFamily: "'Bricolage Grotesque',sans-serif" }}>{fmt(poids(a))} XOF</span>
               </button>
             ))}
           </div>
@@ -272,16 +387,12 @@ function PortfolioDashboard({
         <Card>
           <Eyebrow color={T.gold}>Deals chauds à jouer</Eyebrow>
           {hotDeals.length === 0 ? (
-            <div style={{ fontSize: 12, color: T.faint, marginTop: 10 }}>Aucune opportunité en cours détectée dans le pipeline.</div>
+            <div style={{ fontSize: 12, color: T.dim, marginTop: 10 }}>Aucune opportunité en cours détectée dans le pipeline.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
               {hotDeals.map((o, i) => (
-                <button key={i} onClick={() => onPick(o.accountId)}
-                  style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", padding: "8px 10px", background: T.panel2, borderRadius: 8, borderLeft: `3px solid ${T.gold}`, cursor: "pointer", textAlign: "left" }}>
-                  <span style={{ fontSize: 12, color: T.ink }}>
-                    <b>{o.compte}</b> · {o.nom}<span style={{ color: T.steel }}> — {o.etape}</span>
-                  </span>
-                  <span style={{ fontSize: 12.5, color: T.gold, fontWeight: 600, whiteSpace: "nowrap" }}>{fmt(o.montant)} XOF</span>
+                <button key={i} onClick={() => onPick(o.accountId)} style={{ display: "block", width: "100%", padding: 0, background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+                  <DealRow nom={`${o.compte} · ${o.nom}`} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
                 </button>
               ))}
             </div>
@@ -319,18 +430,33 @@ function useAgent<T>(agent: CopiloteAgent, accountId?: string) {
 }
 
 function GenButton({ busy, onClick, label, disabled }: { busy: boolean; onClick: () => void; label: string; disabled?: boolean }) {
-  return <button className="pill on" disabled={busy || disabled} onClick={onClick}>{busy ? "Génération…" : label}</button>;
+  return <button className="pill on" disabled={busy || disabled} onClick={onClick}>{busy ? <><span className="cop-spin" /> Génération…</> : label}</button>;
 }
 function ErrLine({ err }: { err: string | null }) {
   return err ? <div style={{ color: T.clay, fontSize: 12, marginTop: 8 }}>{err}</div> : null;
 }
 /** Affiché quand une génération a abouti mais n'a rien produit (jamais de carte vide sans explication). */
 function EmptyLine({ show }: { show: boolean }) {
-  return show ? <div style={{ fontSize: 12, color: T.faint, marginTop: 10 }}>Aucun résultat — précisez le contexte du compte puis relancez.</div> : null;
+  return show ? <div style={{ fontSize: 12, color: T.dim, marginTop: 10 }}>Aucun résultat — précisez le contexte du compte puis relancez.</div> : null;
 }
 /** Note affichée aux profils lecture seule (le bouton Générer est désactivé pour eux). */
 function ReadOnlyNote({ show }: { show: boolean }) {
-  return show ? <div style={{ fontSize: 12, color: T.faint, marginTop: 8 }}>Profil lecture seule : génération réservée aux commerciaux.</div> : null;
+  return show ? <div style={{ fontSize: 12, color: T.dim, marginTop: 8 }}>Profil lecture seule : génération réservée aux commerciaux.</div> : null;
+}
+/** Squelette animé pendant une génération IA (10-30 s) : la carte ne reste plus visuellement inerte. */
+function GenSkeleton({ show, lines = 3 }: { show: boolean; lines?: number }) {
+  if (!show) return null;
+  return (
+    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+      {Array.from({ length: lines }).map((_, i) => (
+        <div key={i} className="cop-skel" style={{ height: 44, width: `${100 - i * 6}%` }} />
+      ))}
+    </div>
+  );
+}
+/** Message « sélectionnez un compte » homogène (vous), contraste correct. */
+function PickHint({ show, text = "Sélectionnez un compte." }: { show: boolean; text?: string }) {
+  return show ? <div style={{ fontSize: 12, color: T.dim, marginTop: 8 }}>{text}</div> : null;
 }
 
 function ProspectionTab({ accountId, canWrite }: { accountId: string; canWrite: boolean }) {
@@ -343,6 +469,7 @@ function ProspectionTab({ accountId, canWrite }: { accountId: string; canWrite: 
       </div>
       <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
+      <GenSkeleton show={busy} />
       <EmptyLine show={done && !busy && (data?.cibles ?? []).length === 0} />
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
         {(data?.cibles ?? []).map((c, i) => (
@@ -366,12 +493,13 @@ function CvpTab({ accountId, disabled, canWrite }: { accountId: string; disabled
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <Eyebrow color={T.emerald}>Proposition de valeur (réutilise le PESTEL de la veille)</Eyebrow>
-        <GenButton busy={busy} disabled={disabled || !canWrite} onClick={() => run()} label="Générer la CVP" />
+        <Eyebrow color={T.emerald}>Proposition de valeur — ancrée sur le compte</Eyebrow>
+        <GenButton busy={busy} disabled={disabled || !canWrite} onClick={() => run()} label="Générer la proposition" />
       </div>
-      {disabled && <div style={{ fontSize: 12, color: T.faint, marginTop: 8 }}>Sélectionne un compte pour une CVP ciblée.</div>}
+      <PickHint show={disabled} text="Sélectionnez un compte pour une proposition ciblée." />
       <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
+      <GenSkeleton show={busy} lines={2} />
       <EmptyLine show={done && !busy && !data} />
       {data && (
         <div style={{ marginTop: 12 }}>
@@ -394,9 +522,10 @@ function TriennalTab({ accountId, disabled, canWrite }: { accountId: string; dis
         <Eyebrow color={T.emerald}>Plan de croissance à 3 ans</Eyebrow>
         <GenButton busy={busy} disabled={disabled || !canWrite} onClick={() => run()} label="Générer le plan triennal" />
       </div>
-      {disabled && <div style={{ fontSize: 12, color: T.faint, marginTop: 8 }}>Sélectionne un compte.</div>}
+      <PickHint show={disabled} />
       <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
+      <GenSkeleton show={busy} />
       <EmptyLine show={done && !busy && (data?.roadmap ?? []).length === 0} />
       <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginTop: 12 }}>
         {(data?.roadmap ?? []).map((r, i) => (
@@ -422,9 +551,10 @@ function PlanCompteTab({ accountId, disabled, canWrite }: { accountId: string; d
         <Eyebrow color={T.emerald}>Plan de compte — actions & risques</Eyebrow>
         <GenButton busy={busy} disabled={disabled || !canWrite} onClick={() => run()} label="Générer le plan de compte" />
       </div>
-      {disabled && <div style={{ fontSize: 12, color: T.faint, marginTop: 8 }}>Sélectionne un compte.</div>}
+      <PickHint show={disabled} />
       <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
+      <GenSkeleton show={busy} />
       <EmptyLine show={done && !busy && !data} />
       {data && (
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 12 }}>
@@ -484,6 +614,7 @@ function RedactionTab({ accountId, compte, canWrite }: { accountId: string; comp
       </div>
       <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
+      <GenSkeleton show={busy} lines={2} />
       <EmptyLine show={done && !busy && (data?.variantes ?? []).length === 0} />
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
         {(data?.variantes ?? []).map((v, i) => (
@@ -503,8 +634,11 @@ function ChatTab({ accountId, canWrite }: { accountId: string; canWrite: boolean
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const logRef = React.useRef<HTMLDivElement>(null);
   // Réinitialise la conversation quand on change de compte : pas de contexte croisé entre clients.
   useEffect(() => { setMessages([]); setErr(null); }, [accountId]);
+  // Défilement auto vers le dernier message (sinon la réponse arrive « sous la ligne de flottaison »).
+  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [messages, busy]);
   const send = async () => {
     const text = input.trim();
     if (!text || busy || !canWrite) return;
@@ -524,12 +658,12 @@ function ChatTab({ accountId, canWrite }: { accountId: string; canWrite: boolean
   return (
     <Card>
       <Eyebrow color={T.emerald}>Copilote conversationnel</Eyebrow>
-      <div role="log" aria-live="polite" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12, maxHeight: 360, overflowY: "auto" }}>
-        {messages.length === 0 && <div style={{ fontSize: 12, color: T.faint }}>Pose une question (préparer un RDV, un argumentaire, une objection…).</div>}
+      <div ref={logRef} role="log" aria-live="polite" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12, maxHeight: 360, overflowY: "auto" }}>
+        {messages.length === 0 && <div style={{ fontSize: 12, color: T.dim }}>Posez une question : préparer un RDV, bâtir un argumentaire, traiter une objection…</div>}
         {messages.map((m, i) => (
           <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "80%", background: m.role === "user" ? T.emerald + "22" : T.panel2, border: `1px solid ${T.line}`, borderRadius: 10, padding: "8px 11px", fontSize: 12.5, color: T.ink, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{m.content}</div>
         ))}
-        {busy && <div style={{ fontSize: 12, color: T.faint }}>Le copilote réfléchit…</div>}
+        {busy && <div style={{ fontSize: 12, color: T.dim }}><span className="cop-spin" /> Le copilote réfléchit…</div>}
       </div>
       <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
