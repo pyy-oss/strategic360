@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { T, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Badge, Tip } from "../../../design/ui";
@@ -184,6 +185,7 @@ function NewWinLossPanel({ onClose }: { onClose: () => void }) {
  * mirroring the Security Rules.
  */
 export function Concurrence() {
+  const navigate = useNavigate();
   const { battlecards, loading: loadingCards } = useBattlecards();
   const { entries, loading: loadingWl } = useWinLoss();
   const { canWrite } = useCan("veille");
@@ -308,6 +310,12 @@ export function Concurrence() {
                       <b style={{ color: T.faint }}>Mouvements récents :</b> {c.recentMoves.join("; ")}
                     </div>
                   )}
+                </div>
+                {/* Maillage inter-vues (Vague C) : la carte concurrent relie au fil filtré sur lui. */}
+                <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button className="pill" onClick={() => navigate(`/veille/fil?ent=${encodeURIComponent(c.competitor)}`)}>
+                    🔎 Signaux « {c.competitor} »
+                  </button>
                 </div>
               </Card>
             ))}

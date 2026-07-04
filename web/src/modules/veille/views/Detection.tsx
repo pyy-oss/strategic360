@@ -1,7 +1,10 @@
 import React, { useState } from "react";
-import { T, ECAT, PROX, IMP, STANCE } from "../../../design/tokens";
+import { T, AX, ECAT, PROX, IMP, STANCE } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
+import { useNavigate } from "react-router-dom";
 import { useIntelItems, useSources, withDetectionFields, type IntelSource } from "../lib/intel";
+import { createAction } from "../lib/execution";
+import { useCan } from "../../../lib/rbac";
 import { effectiveProx, isPastDue } from "../lib/freshness";
 
 /** "Radar de détection" — ported from `Detection` in the maquette; data source swapped to
@@ -14,6 +17,8 @@ import { effectiveProx, isPastDue } from "../lib/freshness";
 export function Detection() {
   const [cat, setCat] = useState("all");
   const { items } = useIntelItems();
+  const navigate = useNavigate();
+  const { canWrite } = useCan("veille");
   const now = Date.now();
   // Anti-obsolescence : on POSITIONNE sur l'imminence EFFECTIVE (dérivée des vraies dates), pas sur
   // le label IA brut — un item périmé retombe à « horizon » (bord du radar) au lieu du centre.
@@ -149,6 +154,10 @@ export function Detection() {
               <div style={{ flex: 1, minWidth: 220 }}>
                 <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap", alignItems: "center" }}>
                   <Badge c={ECAT[e.cat as string].c}>{ECAT[e.cat as string].l}</Badge>
+                  {/* Cohérence de taxonomie (Vague C) : on montre aussi l'AXE précis (même libellé
+                      que dans le Fil) pour qu'un même signal ne lise pas « Concurrents » ici et
+                      « Acteurs & marché » là sans lien visible. */}
+                  {e.axis && AX[e.axis] && <Badge c={AX[e.axis].c}>{AX[e.axis].l}</Badge>}
                   <span style={{ fontSize: 11.5, color: T.gold, fontWeight: 600 }}>{e.subtype}</span>
                   {e.neuf && <Badge c={T.emerald}>Nouveau</Badge>}
                 </div>
@@ -173,12 +182,55 @@ export function Detection() {
                     <b style={{ color: T.gold }}>Action :</b> {e.recommendedAction}
                   </div>
                 )}
+                {/* Maillage inter-vues (Vague C) : la carte n'est plus un mur en lecture seule —
+                    on relie l'événement au fil (signaux de l'entité) et à l'exécution (action). */}
+                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                  {e.ent && (
+                    <button className="pill" onClick={() => navigate(`/veille/fil?ent=${encodeURIComponent(e.ent as string)}`)}>
+                      🔎 Signaux « {e.ent} »
+                    </button>
+                  )}
+                  {canWrite && (
+                    <DetectionActionCta title={e.recommendedAction?.trim() || e.title} impact={e.impact} prox={e.eprox as string} />
+                  )}
+                </div>
               </div>
             </div>
           </Card>
         ))}
       </div>
     </div>
+  );
+}
+
+/** CTA « Créer une action » sur une carte de détection — port du geste du Fil (signal → exécution). */
+function DetectionActionCta({ title, impact, prox }: { title: string; impact: string; prox: string }) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      await createAction({
+        title,
+        impact: impact === "high" ? 5 : impact === "medium" ? 4 : 3,
+        urgence: prox === "imminent" ? 5 : prox === "court" ? 4 : 3,
+        effort: 3,
+        ev: 0,
+        owner: "—",
+        echeance: "",
+        statut: "À planifier",
+        source: `Détection : ${title}`,
+      });
+      setDone(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (done) return <span style={{ fontSize: 11.5, color: T.emerald }}>✓ Action créée</span>;
+  return (
+    <button className="pill" onClick={run} disabled={busy}>
+      {busy ? "…" : "➕ Créer une action"}
+    </button>
   );
 }
 
