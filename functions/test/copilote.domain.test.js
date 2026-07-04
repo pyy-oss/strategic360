@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
 
 describe("Copilote — prompt builders (reuse contexte veille)", () => {
-  it("buildCvpPrompt injecte le PESTEL fourni sans le régénérer", async () => {
+  it("buildCvpPrompt ancre sur les faits du compte (anti-générique) et garde le PESTEL en simple angle", async () => {
     const { buildCvpPrompt } = await import("../domain/copilote.js");
-    const p = buildCvpPrompt({ compte: "SGCI", secteur: "Banque", enjeux: ["conformité PASSI"], whitespace: ["SOC managé"], pestel: [{ axe: "Légal", texte: "décret 2021-917 audits triennaux" }], preuves: ["BCEAO"] });
+    const p = buildCvpPrompt({ compte: "SGCI", secteur: "Banque", enjeux: ["conformité PASSI"], whitespace: ["SOC managé"], deals: [{ titre: "OPP-1 — 50 000 000 XOF (Négociation)" }], casTotal: 120000000, pestel: [{ axe: "Légal", texte: "décret 2021-917 audits triennaux" }], preuves: ["BCEAO"] });
     expect(p).toContain("SGCI");
-    expect(p).toContain("décret 2021-917");
-    expect(p).toContain("à EXPLOITER, pas à réécrire");
+    expect(p).toContain("SOC managé"); // whitespace réel injecté
+    expect(p).toContain("OPP-1 — 50 000 000 XOF"); // deal réel nommé
+    expect(p).toContain("INTERDIT"); // directive anti-générique
     expect(p).toContain('"differenciateurs"');
   });
   it("buildRedactionPrompt applique canal/ton et interdit l'invention", async () => {

@@ -1615,10 +1615,11 @@ exports.enrichNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
 
 /** Assemble le contexte d'un compte pour les agents, en réutilisant l'existant de la veille. */
 async function assembleCopiloteContext(db, accountId) {
-  const [acctSnap, pestelSnap, bizSnap] = await Promise.all([
+  const [acctSnap, pestelSnap, bizSnap, metaSnap] = await Promise.all([
     accountId ? db.doc(`copiloteAccounts/${accountId}`).get() : Promise.resolve(null),
     db.doc("frameworks/pestel").get(),
     db.collection("bizOpportunities").get(),
+    db.doc("summaries/copiloteMeta").get(),
   ]);
   const a = acctSnap && acctSnap.exists ? acctSnap.data() : {};
   // Empreinte dérivée de nt360 (additive, jamais destructive) : on fusionne l'historique/les
@@ -1647,23 +1648,38 @@ async function assembleCopiloteContext(db, accountId) {
   const pestel = (pestelSnap.exists ? pestelSnap.data()?.content?.factors || [] : [])
     .filter((x) => x && typeof x === "object" && x.d)
     .map((x) => ({ axe: x.f, texte: x.d }));
-  // Signaux : d'abord les VRAIES opportunités en cours du compte (pipeline nt360), puis les leads
-  // de veille. Donne aux agents (plan de compte, prospection) de la matière chiffrée et réelle.
-  const dealSignaux = (Array.isArray(nt.opportunites) ? nt.opportunites : []).map((o) => ({
+  // DEALS = opportunités RÉELLES du compte (pipeline nt360), avec montant nommé — matière spécifique.
+  const deals = (Array.isArray(nt.opportunites) ? nt.opportunites : []).map((o) => ({
     titre: `${o.nom} — ${Number.isFinite(o.montant) ? new Intl.NumberFormat("fr-FR").format(o.montant) + " XOF" : "montant n.c."} (${o.etape})`,
   }));
-  const veilleSignaux = bizSnap.docs
+  // SIGNAUX = leads de veille GÉNÉRIQUES (non spécifiques au compte) — réservés à la prospection.
+  const signaux = bizSnap.docs
     .map((d) => d.data())
     .filter((o) => o && o.name)
-    .slice(0, 8)
+    .slice(0, 10)
     .map((o) => ({ titre: o.name }));
-  const signaux = [...dealSignaux, ...veilleSignaux].slice(0, 14);
+  // WHITESPACE RÉEL = catalogue d'offres NT (agrégé au sync, summaries/copiloteMeta.buCatalog) MOINS
+  // les BU que ce compte a déjà touchées (achetées ou en cours). C'est le cross-sell concret et
+  // spécifique — remplace le whitespace vide qui faisait produire des livrables génériques.
+  const buCatalog = (metaSnap.exists && Array.isArray(metaSnap.data()?.buCatalog)) ? metaSnap.data().buCatalog : [];
+  const touched = new Set([
+    ...(Array.isArray(nt.bus) ? nt.bus : []),
+    ...historique.map((h) => h.offre),
+    ...enCours,
+  ].filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim().toLowerCase()));
+  const derivedWhitespace = buCatalog.filter((bu) => typeof bu === "string" && bu.trim() && !touched.has(bu.trim().toLowerCase()));
+  const humanWhitespace = Array.isArray(a.whitespace) ? a.whitespace.filter((x) => typeof x === "string" && x.trim()) : [];
+  const whitespace = [...new Set([...humanWhitespace, ...derivedWhitespace])];
+  const casTotal = Number(nt.casTotal) || 0;
+  const pipelinePondere = Number(nt.pipelinePondere) || 0;
+  const wins = Number(nt.wins) || 0;
+  const enjeux = Array.isArray(a.enjeux) ? a.enjeux : [];
   return {
     compte: a.nom || "",
     secteur: a.secteur || "",
     tier: a.tier || "",
-    enjeux: Array.isArray(a.enjeux) ? a.enjeux : [],
-    whitespace: Array.isArray(a.whitespace) ? a.whitespace : [],
+    enjeux,
+    whitespace,
     enCours, // saisi + dérivé nt360
     historique, // saisi + dérivé nt360
     contacts: Array.isArray(a.contacts) ? a.contacts : [],
@@ -1672,13 +1688,12 @@ async function assembleCopiloteContext(db, accountId) {
     reglementation: a.reglementation || "",
     concurrence: a.concurrence || "",
     pestel,
-    signaux,
-    // Empreinte CHIFFRÉE réelle (pipeline nt360) — matière non inventable pour CVP/triennal/plan de
-    // compte. CAS total = historique cumulé réalisé avec ce compte ; pipeline pondéré = deals ouverts.
-    casTotal: Number(nt.casTotal) || 0,
-    pipelinePondere: Number(nt.pipelinePondere) || 0,
-    wins: Number(nt.wins) || 0,
-    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux: Array.isArray(a.enjeux) ? a.enjeux : [], historique, whitespace: Array.isArray(a.whitespace) ? a.whitespace : [], casTotal: Number(nt.casTotal) || 0, pipelinePondere: Number(nt.pipelinePondere) || 0, wins: Number(nt.wins) || 0, signaux },
+    signaux, // leads de veille génériques (prospection)
+    deals,   // opportunités réelles du compte (CVP/triennal/plan/chat)
+    casTotal,
+    pipelinePondere,
+    wins,
+    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals },
   };
 }
 
@@ -1905,8 +1920,12 @@ async function runSyncCopiloteAccounts(db) {
     await batch.commit();
     written += slice.length;
   }
-  logger.info(`runSyncCopiloteAccounts: ${written} comptes copilote pré-remplis depuis nt360`);
-  return { accounts: written };
+  // Catalogue d'offres NT = union de toutes les BU réelles observées dans le pipeline. Sert au calcul
+  // du whitespace RÉEL par compte (catalogue − BU déjà touchées) → livrables IA spécifiques, non génériques.
+  const buCatalog = [...new Set(derived.flatMap((acc) => Array.isArray(acc.bus) ? acc.bus : []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()))].sort();
+  await db.doc("summaries/copiloteMeta").set({ buCatalog, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  logger.info(`runSyncCopiloteAccounts: ${written} comptes copilote pré-remplis depuis nt360 (catalogue ${buCatalog.length} offres)`);
+  return { accounts: written, buCatalog: buCatalog.length };
 }
 
 exports.syncCopiloteAccounts = onSchedule(
