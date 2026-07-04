@@ -6,6 +6,7 @@ import { useIntelItems, useSources, withDetectionFields, type IntelSource } from
 import { createAction } from "../lib/execution";
 import { useCan } from "../../../lib/rbac";
 import { effectiveProx, isPastDue } from "../lib/freshness";
+import { usePaged, Pager } from "../components/Pager";
 
 /** "Radar de détection" — ported from `Detection` in the maquette; data source swapped to
  * Firestore `intelItems` (V2). Rendering (sonar SVG, quadrants, badges) is unchanged.
@@ -45,6 +46,7 @@ export function Detection() {
     return P[a.eprox as string] - P[b.eprox as string] || I[a.impact] - I[b.impact];
   });
   const neuf = EVENTS.filter((e) => e.neuf).length;
+  const paged = usePaged(rows, 25, cat);
   return (
     <div>
       <div style={{ fontSize: 12, color: T.plum, marginBottom: 14, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 12px" }}>
@@ -148,7 +150,7 @@ export function Detection() {
         <div style={{ fontSize: 12.5, color: T.faint, marginBottom: 10 }}>Aucun événement de détection saisi pour l'instant.</div>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {rows.map((e) => (
+        {paged.pageItems.map((e) => (
           <Card key={e.id} style={{ borderLeft: `3px solid ${STANCE[e.stance].c}` }}>
             <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 220 }}>
@@ -199,6 +201,7 @@ export function Detection() {
           </Card>
         ))}
       </div>
+      <Pager {...paged} />
     </div>
   );
 }
