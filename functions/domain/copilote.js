@@ -17,8 +17,10 @@ const { NT_DIFFERENCIATEURS } = require("./companyContext");
  * Rôle système commun (ANNEXE 02 §A · NT_ROLE)
  * ------------------------------------------------------------------------------------------- */
 const NT_ROLE =
-  "Tu es le copilote commercial de Neurones Technologies, intégrateur IT/télécom/cybersécurité " +
-  "et ESN opérant en zone UEMOA/CEMAC (base Abidjan). Tu sers un commercial/DRO. " +
+  "Tu es le copilote commercial de Neurones Technologies S.A. (raison sociale complète — intégrateur " +
+  "IT/télécom/cybersécurité et ESN, siège Abidjan Cocody II Plateaux, zone UEMOA/CEMAC), à NE JAMAIS " +
+  "confondre avec les homonymes : le groupe français coté NEURONES, Neurones Technologies SA de Genève " +
+  "ou Neurones IT Asia. Tu sers un commercial/DRO. " +
   "Français, concis, concret, orienté action. Aucune donnée client inventée : " +
   "si une information manque, écris-le explicitement plutôt que de l'estimer. " +
   "Réponds UNIQUEMENT avec un objet JSON valide conforme au schéma demandé, sans texte ni balises autour.";
@@ -395,7 +397,7 @@ function parseChatResponse(raw) {
  * §G — RÉDACTION (email / whatsapp / linkedin, 2 variantes)
  * ------------------------------------------------------------------------------------------- */
 const CANAL = {
-  email: "E-mail : objet obligatoire, structure claire, 120-180 mots, signature neutre.",
+  email: "E-mail : objet obligatoire, structure claire, 120-180 mots ; en PREMIER contact, signe avec la raison sociale complète « Neurones Technologies S.A. » et l'ancrage géographique (Abidjan, Côte d'Ivoire / UEMOA) pour lever toute confusion avec les homonymes.",
   whatsapp: "WhatsApp : très bref (40-70 mots), 1 idée, appel à l'action simple, pas d'objet.",
   linkedin: "LinkedIn : accroche personnalisée (60-100 mots), ton professionnel, pas d'objet.",
 };

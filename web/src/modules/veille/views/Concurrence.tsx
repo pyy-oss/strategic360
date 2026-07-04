@@ -36,15 +36,14 @@ function NewBattlecardPanel({ onClose }: { onClose: () => void }) {
     setSubmitting(true);
     setErr(null);
     try {
+      // On N'ÉCRASE PLUS theirLikelyMoves / objectionHandling / recentMoves (souvent générés par l'IA
+      // et clés en RFP) : on les omet → merge:true préserve les valeurs existantes (audit 2026-07).
       await upsertBattlecard({
         competitor: form.competitor.trim(),
         positioning: form.positioning.trim() || undefined,
         strengths: splitLines(form.strengths),
         weaknesses: splitLines(form.weaknesses),
         ourWinThemes: splitLines(form.ourWinThemes),
-        theirLikelyMoves: [],
-        objectionHandling: [],
-        recentMoves: [],
       });
       onClose();
     } catch (e2) {

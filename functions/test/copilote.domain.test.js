@@ -166,3 +166,14 @@ describe("Copilote — CVP : différenciateurs source unique + angle métier (au
     expect(p).toContain("ANGLE MÉTIER"); // lentille innovation (pas que cloud/cyber)
   });
 });
+
+describe("Copilote — désambiguïsation de marque dans les contenus sortants (audit 2026-07)", () => {
+  it("NT_ROLE nomme la raison sociale complète et écarte les homonymes ; l'e-mail signe identifiant", async () => {
+    const { NT_ROLE, buildRedactionPrompt } = await import("../domain/copilote.js");
+    expect(NT_ROLE).toContain("Neurones Technologies S.A.");
+    expect(NT_ROLE).toContain("NEURONES"); // homonyme français explicitement écarté
+    const mail = buildRedactionPrompt({ compte: "BCEAO", canal: "email", ton: "Direct", kind: "prise de contact", casTotal: 1 });
+    expect(mail).toContain("raison sociale complète");
+    expect(mail).toContain("Abidjan");
+  });
+});
