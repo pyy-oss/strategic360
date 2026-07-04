@@ -1,0 +1,54 @@
+name: Grant public invoker to new Copilote callables (fix)
+
+# One-shot IAM fix: the newly-created 2nd-gen callables listCopiloteAccounts / copiloteAdmin were
+# deployed WITHOUT the allUsers run.invoker binding that Firebase HTTPS callables require (auth is
+# enforced inside the function via requireCommercialCaller, not at the Cloud Run IAM layer). Without
+# it, Cloud Run rejects the request ("not authenticated / empty Authorization header") and the
+# client sees a generic "internal". This grants the same binding the working callables already have.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tapez "grant" pour confirmer'
+        required: true
+
+jobs:
+  grant-invoker:
+    name: Grant allUsers run.invoker
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Refuse to run without explicit confirmation
+        if: ${{ github.event.inputs.confirm != 'grant' }}
+        run: |
+          echo "Le champ 'confirm' doit valoir exactement 'grant'. Annulé."
+          exit 1
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
+
+      - name: Grant allUsers run.invoker on the new Copilote callables
+        run: |
+          set -e
+          for svc in listcopiloteaccounts copiloteadmin; do
+            echo "===== $svc ====="
+            gcloud run services add-iam-policy-binding "$svc" \
+              --region=europe-west1 \
+              --project=propulse-business-87f7a \
+              --member=allUsers \
+              --role=roles/run.invoker \
+              2>&1
+          done
+
+      - name: Show resulting IAM policy (verification)
+        run: |
+          for svc in listcopiloteaccounts copiloteadmin; do
+            echo "===== $svc policy ====="
+            gcloud run services get-iam-policy "$svc" \
+              --region=europe-west1 \
+              --project=propulse-business-87f7a \
+              2>&1 || true
+          done
