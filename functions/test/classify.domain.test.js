@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildClassificationPrompt, parseClassificationResponse } from "../domain/classify.js";
+import { buildClassificationPrompt, parseClassificationResponse, deriveProxFromDueDate } from "../domain/classify.js";
 import { intelItemId } from "../domain/ids.js";
 
 describe("buildClassificationPrompt", () => {
@@ -222,5 +222,50 @@ describe("intelItemId (server-side, functions/domain/ids.js)", () => {
     const id3 = intelItemId({ title: "Signal sans URL", date: "2026-07-03" });
     expect(id1).toBe(id2);
     expect(id1).not.toBe(id3);
+  });
+});
+
+describe("anti-obsolescence — repères temporels & dérivation d'imminence", () => {
+  const NOW = Date.parse("2026-07-02T00:00:00Z");
+
+  it("buildClassificationPrompt injecte la date du jour + la date de publication et la règle passé≠imminent", () => {
+    const p = buildClassificationPrompt("texte", [], "CTX", { today: "2026-07-02", pubDate: "2025-08-01" });
+    expect(p).toContain("date du jour = 2026-07-02");
+    expect(p).toContain("date de publication de la source = 2025-08-01");
+    expect(p).toContain("DÉJÀ PASSÉ");
+    expect(p).toContain("une échéance dépassée = \"horizon\"");
+  });
+
+  it("deriveProxFromDueDate : passé → horizon+past ; buckets imminent/court/moyen/horizon", () => {
+    expect(deriveProxFromDueDate("2025-07-02", NOW)).toEqual({ prox: "horizon", past: true }); // il y a un an
+    expect(deriveProxFromDueDate("2026-07-10", NOW)).toEqual({ prox: "imminent", past: false }); // 8 j
+    expect(deriveProxFromDueDate("2026-08-15", NOW)).toEqual({ prox: "court", past: false }); // ~44 j
+    expect(deriveProxFromDueDate("2026-11-01", NOW)).toEqual({ prox: "moyen", past: false }); // ~122 j
+    expect(deriveProxFromDueDate("2028-01-01", NOW)).toEqual({ prox: "horizon", past: false }); // >1 an
+    expect(deriveProxFromDueDate("pas une date", NOW)).toBeNull();
+  });
+
+  it("parseClassificationResponse : une échéance dépassée force prox=horizon et marque stale", () => {
+    const r = parseClassificationResponse(
+      { title: "Élection passée", summary: "scrutin tenu", prox: "imminent", stance: "opportunity", dueDate: "2025-07-02" },
+      { now: NOW }
+    );
+    expect(r.prox).toBe("horizon"); // le label IA « imminent » est écrasé par la date réelle
+    expect(r.stale).toBe(true);
+  });
+
+  it("parseClassificationResponse : une échéance future dérive prox et ne marque pas stale", () => {
+    const r = parseClassificationResponse(
+      { title: "AO à venir", summary: "dépôt", prox: "moyen", dueDate: "2026-07-09" },
+      { now: NOW }
+    );
+    expect(r.prox).toBe("imminent"); // 7 j → imminent, prime sur le label IA « moyen »
+    expect(r.stale).toBeUndefined();
+  });
+
+  it("sans dueDate exploitable : garde le label IA (pas de stale)", () => {
+    const r = parseClassificationResponse({ title: "Sig", summary: "s", prox: "court" }, { now: NOW });
+    expect(r.prox).toBe("court");
+    expect(r.stale).toBeUndefined();
   });
 });

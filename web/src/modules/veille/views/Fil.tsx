@@ -4,6 +4,7 @@ import { Card, Badge } from "../../../design/ui";
 import { useCan } from "../../../lib/rbac";
 import { DETECTION_SUBTYPE_LABELS, createIntelItem, updateIntelItem, useIntelItems, type IntelAxis, type IntelImpact, type IntelStance, type IntelItem, type IntelStatus } from "../lib/intel";
 import { createAction } from "../lib/execution";
+import { effectiveProx, isPastDue } from "../lib/freshness";
 import { useIsExec } from "../../../lib/rbac";
 
 const AXIS_KEYS = Object.keys(AX) as IntelAxis[];
@@ -181,7 +182,7 @@ export function Fil() {
       (s) =>
         (ax === "all" || s.axis === ax) &&
         (st === "all" || s.stance === st) &&
-        (prx === "all" || s.prox === prx) &&
+        (prx === "all" || effectiveProx(s) === prx) &&
         (!watchOnly || !!s.ent) &&
         (!bizOnly || BUSINESS_SUBTYPES.has(s.subtype ?? ""))
     )
@@ -257,10 +258,14 @@ export function Fil() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, color: T.ink, fontWeight: 600 }}>{s.title}</div>
                 <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-                  {s.prox === "imminent" ? (
+                  {/* Anti-obsolescence : un item périmé n'affiche jamais « 🔥 Imminent » ; il porte
+                      un badge « Échéance passée » et son imminence effective retombe à horizon. */}
+                  {isPastDue(s) ? (
+                    <Badge c={T.faint}>Échéance passée</Badge>
+                  ) : effectiveProx(s) === "imminent" ? (
                     <Badge c={T.clay}>🔥 Imminent</Badge>
                   ) : (
-                    s.prox && <Badge c={T.faint}>{PROX[s.prox]?.l ?? s.prox}</Badge>
+                    effectiveProx(s) && <Badge c={T.faint}>{PROX[effectiveProx(s) as string]?.l ?? s.prox}</Badge>
                   )}
                   <Badge c={AX[s.axis]?.c}>{AX[s.axis]?.l ?? s.axis}</Badge>
                   {s.subtype && <Badge c={T.plum}>{DETECTION_SUBTYPE_LABELS[s.subtype] ?? s.subtype}</Badge>}
@@ -332,7 +337,7 @@ function SignalLifecycle({ s }: { s: IntelItem }) {
       await createAction({
         title: s.recommendedAction?.trim() || s.title,
         impact: s.impact === "high" ? 5 : s.impact === "medium" ? 4 : 3,
-        urgence: s.prox === "imminent" ? 5 : s.prox === "court" ? 4 : 3,
+        urgence: isPastDue(s) ? 2 : effectiveProx(s) === "imminent" ? 5 : effectiveProx(s) === "court" ? 4 : 3,
         effort: 3,
         ev: 0,
         owner: owner.trim() || "—",

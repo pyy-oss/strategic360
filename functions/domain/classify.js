@@ -101,14 +101,26 @@ const AXIS_TO_DETECTION_CAT = {
  *   the model so it can disambiguate entities and sharpen soWhat/recommendedAction (Action 4.5).
  * @returns {string}
  */
-function buildClassificationPrompt(rawText, watchlistEntities, companyContext = COMPANY_CONTEXT) {
+function buildClassificationPrompt(rawText, watchlistEntities, companyContext = COMPANY_CONTEXT, opts = {}) {
   const watchlist = Array.isArray(watchlistEntities) ? watchlistEntities : [];
   const watchlistLines = watchlist.length
     ? watchlist.map((e) => `- ${e.name}${e.type ? ` (${e.type})` : ""}${e.note ? ` — ${e.note}` : ""}`).join("\n")
     : "(watchlist vide — aucune entité connue à rapprocher)";
+  // Ancrage temporel (anti-obsolescence 2026-07) : la date du jour et la date de publication de la
+  // source permettent au modèle de juger si un événement est passé ou à venir — sans elles, un
+  // scrutin d'il y a un an était classé « imminent » / opportunité.
+  const today = typeof opts.today === "string" && opts.today ? opts.today : new Date().toISOString().slice(0, 10);
+  const pub = typeof opts.pubDate === "string" && opts.pubDate ? opts.pubDate : null;
+  const temporalBlock =
+    `\nREPÈRES TEMPORELS : date du jour = ${today}${pub ? ` ; date de publication de la source = ${pub}` : ""}. ` +
+    `Juge l'imminence et le statut (passé / en cours / à venir) par rapport à la DATE DU JOUR, pas au ton du texte. ` +
+    `Un événement, un scrutin ou une échéance DÉJÀ PASSÉ n'est ni « imminent » ni une opportunité à venir : classe-le ` +
+    `prox "horizon", ne lui donne un stance "opportunity" QUE s'il ouvre un effet futur explicite et daté (ex. mandat ` +
+    `qui démarre, budget voté à exécuter), et dis-le dans le soWhat.`;
 
   return `Tu es un analyste de veille stratégique ET de développement commercial pour l'entreprise suivante :
 ${companyContext}
+${temporalBlock}
 
 RÈGLE DE FILTRAGE — HOMONYMIE : si le texte concerne le groupe français coté NEURONES (neurones.net), Neurones Technologies SA (Genève) ou Neurones IT Asia, ce N'EST PAS notre entreprise — ne le rattache à aucune entité de la watchlist, classe impact "low", stance "neutral", et signale-le dans le summary, sauf lien explicite avec la Côte d'Ivoire/UEMOA.
 
@@ -170,7 +182,7 @@ Consignes impératives :
 - "soWhat" : impact concret citant la BU, le client ou le concurrent concerné (jamais de généralité).
 - "recommendedAction" : UNE action commerciale/opérationnelle précise, datée et nominative
   (ex: "Proposer à la BRVM un audit de conformité aux instructions SI AMF-UMOA de mars 2024").
-- "prox" : imminent = < 1 mois, court = < 3 mois, moyen = 3-12 mois, horizon = > 12 mois.
+- "prox" : imminent = < 1 mois, court = < 3 mois, moyen = 3-12 mois, horizon = > 12 mois — TOUJOURS calculé depuis la date du jour ; une échéance dépassée = "horizon".
 - Dans "businessAngle", n'inventer AUCUN montant ni échéance : null si le texte n'en cite pas.
 
 Watchlist des entités suivies (partenaires, concurrents, clients, prospects) :
@@ -182,6 +194,24 @@ ${rawText}
 """
 
 Réponds avec le JSON uniquement.`;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * deriveProxFromDueDate(dueDate, now) -> { prox, past } | null — dérive l'imminence d'une ÉCHÉANCE
+ * RÉELLE (date ISO) de façon déterministe, en la comparant à `now`. C'est le grounding temporel qui
+ * remplace le label IA quand une vraie date existe : une échéance dépassée devient "horizon" + past.
+ * PUR. Renvoie null si la date est inexploitable.
+ */
+function deriveProxFromDueDate(dueDate, now = Date.now()) {
+  const t = Date.parse(dueDate);
+  if (Number.isNaN(t)) return null;
+  const days = (t - now) / DAY_MS;
+  if (days < 0) return { prox: "horizon", past: true };
+  if (days < 30) return { prox: "imminent", past: false };
+  if (days < 90) return { prox: "court", past: false };
+  if (days < 365) return { prox: "moyen", past: false };
+  return { prox: "horizon", past: false };
 }
 
 function coerceEnum(value, allowed, fallback) {
@@ -274,6 +304,11 @@ function parseClassificationResponse(rawJsonResponse, context) {
         : undefined,
     budgetIdentified: r.budgetIdentified === true,
     date: coerceString(r.date, ctx.defaultDate || today),
+    // Grounding temporel (anti-obsolescence) : quand une échéance RÉELLE existe, `prox` est dérivé
+    // de cette date (déterministe, non falsifiable par le ton du texte) et une échéance dépassée
+    // marque l'item `stale:true` — le rendu et le scoring pourront le déclasser au lieu de le
+    // présenter comme imminent. Sans dueDate exploitable, on garde le label IA (déjà mieux ancré
+    // grâce aux repères temporels du prompt).
     sourceName: ctx.sourceName || undefined,
     url: ctx.url || undefined,
     sourceRating: ctx.defaultSourceRating || "C3", // "moyennement fiable / probable" — conservative
@@ -281,6 +316,15 @@ function parseClassificationResponse(rawJsonResponse, context) {
     // Non-negotiable human review gate — see function doc comment above.
     status: "new",
   };
+
+  // Dérivation de l'imminence depuis l'échéance réelle (prime sur le label IA) + drapeau `stale`.
+  if (item.dueDate) {
+    const d = deriveProxFromDueDate(item.dueDate, ctx.now || Date.now());
+    if (d) {
+      item.prox = d.prox;
+      if (d.past) item.stale = true;
+    }
+  }
 
   // Firestore rejects `undefined` values outright ("Cannot use undefined as a Firestore value" —
   // hit in production on 2026-07-02 when Gemini legitimately returned entity:null for a signal
@@ -296,6 +340,7 @@ function parseClassificationResponse(rawJsonResponse, context) {
 module.exports = {
   buildClassificationPrompt,
   parseClassificationResponse,
+  deriveProxFromDueDate,
   VALID_AXES,
   VALID_IMPACTS,
   VALID_STANCES,

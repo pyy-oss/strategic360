@@ -186,8 +186,9 @@ const PROX_TABLE = { imminent: 1.0, court: 0.75, moyen: 0.5, horizon: 0.25 };
  * `proximite` factor (Action 5.1) — urgency/imminence. Chaîne de priorité :
  *   1. `dueDate` (échéance réelle : limite de dépôt AO, deadline conformité, date EOL) —
  *      décote sur les jours restants : 1.0 à ≤7 jours, décroissance linéaire jusqu'à 0.3
- *      à ≥90 jours ; les échéances dépassées sont clampées côté "imminent" (1.0) plutôt
- *      que pénalisées.
+ *      à ≥90 jours. Une échéance DÉPASSÉE (date passée) n'est PLUS imminente : elle est
+ *      pénalisée à 0.15 (anti-obsolescence 2026-07 — auparavant clampée à 1.0, ce qui faisait
+ *      remonter en tête un AO déjà clos ou un scrutin passé présenté comme « imminent »).
  *   2. Enum `prox` du classifieur via PROX_TABLE (imminent 1.0, court 0.75, moyen 0.5,
  *      horizon 0.25) — auparavant jamais lu.
  *   3. Fallback décote sur la fraîcheur de `date` (date de publication) : la fraîcheur
@@ -199,7 +200,8 @@ const PROX_TABLE = { imminent: 1.0, court: 0.75, moyen: 0.5, horizon: 0.25 };
 function proximiteFactor(item, now = Date.now()) {
   const dueMs = item && item.dueDate ? Date.parse(item.dueDate) : NaN;
   if (!Number.isNaN(dueMs)) {
-    const days = Math.max((dueMs - now) / MS_PER_DAY, 0);
+    const days = (dueMs - now) / MS_PER_DAY;
+    if (days < 0) return 0.15; // échéance dépassée = périmée, pas imminente (fix anti-obsolescence)
     if (days <= 7) return 1.0;
     if (days >= 90) return 0.3;
     const t = (days - 7) / (90 - 7);

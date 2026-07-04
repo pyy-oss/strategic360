@@ -138,8 +138,9 @@ describe("proximiteFactor (Action 5.1 — dueDate → prox enum → date freshne
   it("returns 1.0 when dueDate is within 7 days", () => {
     expect(proximiteFactor({ dueDate: "2026-07-05" }, now)).toBe(1.0);
   });
-  it("clamps overdue dueDates to 1.0 rather than penalizing", () => {
-    expect(proximiteFactor({ dueDate: "2026-06-01" }, now)).toBe(1.0);
+  it("penalizes overdue dueDates to 0.15 (anti-obsolescence — no longer clamped to 1.0)", () => {
+    expect(proximiteFactor({ dueDate: "2026-06-01" }, now)).toBe(0.15); // échéance dépassée = périmée
+    expect(proximiteFactor({ dueDate: "2025-07-02" }, now)).toBe(0.15); // il y a un an
   });
   it("returns 0.3 when dueDate is 90+ days out", () => {
     expect(proximiteFactor({ dueDate: "2026-12-01" }, now)).toBe(0.3);

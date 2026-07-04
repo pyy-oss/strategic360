@@ -87,6 +87,18 @@ async function generateJson(prompt, schema) {
   const ai = getClient();
   const modelName = process.env.GEMINI_MODEL || DEFAULT_MODEL;
 
+  // Ancrage temporel (anti-obsolescence, 2026-07) : AUCUN prompt ne recevait la date du jour, si
+  // bien qu'un événement passé (ex. une élection d'il y a un an) pouvait être présenté comme
+  // « imminent » / opportunité à venir. On préfixe chaque appel par la date courante et la règle
+  // passé≠imminent — grounding transverse, à coût nul, pour tous les générateurs (classify/enrich/
+  // copilote/briefing). Les builders restent purs ; l'injection vit ici, au point de passage unique.
+  const today = new Date().toISOString().slice(0, 10);
+  const dated =
+    `[Contexte temporel] Date du jour : ${today}. Tout événement, échéance, scrutin ou annonce ` +
+    `dont la date est ANTÉRIEURE à aujourd'hui est un fait PASSÉ : ne le présente jamais comme ` +
+    `« imminent », « à venir » ou comme une opportunité future, sauf s'il produit un effet futur ` +
+    `explicite et daté. Calcule tous les délais/échéances par rapport à cette date.\n\n${prompt}`;
+
   // maxOutputTokens 8192 (was 2048): on 2026-07-02 the weekly briefing generation came back with
   // EMPTY response text in production — gemini-3.5-flash spends part of the output budget on
   // internal reasoning, and a longer JSON (Minto briefing) can exhaust 2048 before any text is
@@ -112,7 +124,7 @@ async function generateJson(prompt, schema) {
   let lastErr = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const response = await ai.models.generateContent({ model: modelName, contents: prompt, config });
+      const response = await ai.models.generateContent({ model: modelName, contents: dated, config });
       text = extractText(response);
       if (text.trim()) break;
       lastErr = new Error("empty response text");

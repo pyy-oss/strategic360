@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { T, ECAT, PROX, IMP, STANCE } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { useIntelItems, useSources, withDetectionFields, type IntelSource } from "../lib/intel";
+import { effectiveProx, isPastDue } from "../lib/freshness";
 
 /** "Radar de détection" — ported from `Detection` in the maquette; data source swapped to
  * Firestore `intelItems` (V2). Rendering (sonar SVG, quadrants, badges) is unchanged.
@@ -13,7 +14,13 @@ import { useIntelItems, useSources, withDetectionFields, type IntelSource } from
 export function Detection() {
   const [cat, setCat] = useState("all");
   const { items } = useIntelItems();
-  const EVENTS = items.map(withDetectionFields).filter((e) => e.cat && ECAT[e.cat] && e.prox && PROX[e.prox]);
+  const now = Date.now();
+  // Anti-obsolescence : on POSITIONNE sur l'imminence EFFECTIVE (dérivée des vraies dates), pas sur
+  // le label IA brut — un item périmé retombe à « horizon » (bord du radar) au lieu du centre.
+  const EVENTS = items
+    .map(withDetectionFields)
+    .filter((e) => e.cat && ECAT[e.cat] && e.prox && PROX[e.prox])
+    .map((e) => ({ ...e, eprox: effectiveProx(e, now) ?? e.prox }));
   const CX = 170,
     CY = 170,
     RR = 150;
@@ -24,13 +31,13 @@ export function Detection() {
     const i = idxIn[q]++;
     const cnt = EVENTS.filter((x) => ECAT[x.cat as string].q === q).length;
     const ang = ((q * 90 + (90 / (cnt + 1)) * (i + 1)) * Math.PI) / 180;
-    const rad = PROX[e.prox as string].r * RR;
+    const rad = PROX[e.eprox as string].r * RR;
     return { ...e, x: CX + rad * Math.cos(ang), y: CY - rad * Math.sin(ang), size: e.impact === "high" ? 7 : e.impact === "medium" ? 5.2 : 4 };
   });
   const rows = EVENTS.filter((e) => cat === "all" || e.cat === cat).sort((a, b) => {
     const P: Record<string, number> = { imminent: 0, court: 1, moyen: 2, horizon: 3 };
     const I: Record<string, number> = { high: 0, medium: 1, low: 2 };
-    return P[a.prox as string] - P[b.prox as string] || I[a.impact] - I[b.impact];
+    return P[a.eprox as string] - P[b.eprox as string] || I[a.impact] - I[b.impact];
   });
   const neuf = EVENTS.filter((e) => e.neuf).length;
   return (
@@ -147,7 +154,8 @@ export function Detection() {
                 </div>
                 <div style={{ fontSize: 14, color: T.ink, fontWeight: 600 }}>{e.title}</div>
                 <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-                  <Badge c={PROX[e.prox as string].r < 0.4 ? T.clay : T.faint}>{PROX[e.prox as string].l}</Badge>
+                  <Badge c={PROX[e.eprox as string].r < 0.4 ? T.clay : T.faint}>{PROX[e.eprox as string].l}</Badge>
+                  {isPastDue(e, now) && <Badge c={T.faint}>Échéance passée</Badge>}
                   <Badge c={IMP[e.impact].c}>Impact {IMP[e.impact].l}</Badge>
                   <Badge c={STANCE[e.stance].c}>{STANCE[e.stance].l}</Badge>
                   <Badge c={T.faint}>
