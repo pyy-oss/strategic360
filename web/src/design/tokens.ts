@@ -94,7 +94,10 @@ export const PROX: Record<string, ProxMeta> = {
   horizon: { l: "Horizon", r: 0.94 },
 };
 
-export const QUAD_TECH = ["Cybersécurité", "Cloud & Infra", "Data & IA", "Réseau"];
+// Quadrants du radar techno — recadrés (2026-07) autour des forces qui transforment les MÉTIERS des
+// clients (pas seulement l'infra IT) : l'IA et les plateformes/data métier passent au premier plan ;
+// cyber & cloud ne sont que 2 briques sur 4. L'ordre = index quadrant 0-3 (aligné enrich.js).
+export const QUAD_TECH = ["IA & Automatisation", "Data & Plateformes métier", "Cloud & Infrastructures", "Cybersécurité & Confiance"];
 
 export const AMBITION_LABEL = "CAS annualisé — trajectoire 3 ans (illustratif)";
 

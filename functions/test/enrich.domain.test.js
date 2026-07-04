@@ -54,8 +54,9 @@ describe("prompt builders", () => {
 
   it("buildTechRadarPrompt embeds quadrant semantics and ring enum", () => {
     const prompt = buildTechRadarPrompt(SIGNALS);
-    expect(prompt).toContain("0=Cybersécurité");
-    expect(prompt).toContain("3=Réseau");
+    expect(prompt).toContain("0=IA & Automatisation");
+    expect(prompt).toContain("3=Cybersécurité & Confiance");
+    expect(prompt).toContain("VISION ÉLARGIE DE L'INNOVATION"); // ne pas réduire à cyber+cloud
     expect(prompt).toContain('"adopter" | "essayer" | "evaluer" | "suspendre"');
     expect(prompt).toContain("Orange CI lance une offre SOC managé");
   });
@@ -517,7 +518,7 @@ describe("consolidation radar + paris d'innovation (lisibilité 2026-07)", () =>
     expect(prompt).toContain("REMPLACE cette liste");
     expect(prompt).toContain("- Patching Cisco Unified CM");
     expect(prompt).toContain("JAMAIS une");
-    expect(prompt).toContain("5 à 10 blips");
+    expect(prompt).toContain("6 à 10 blips");
   });
 
   it("parseInnovationBetsResponse : clamp RICE, stage coercé, null si <2 paris", async () => {

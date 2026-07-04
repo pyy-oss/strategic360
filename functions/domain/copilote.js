@@ -30,6 +30,14 @@ const NO_GENERIC =
   "passe-partout applicables à n'importe quelle entreprise, jargon creux. Si la matière manque sur ce " +
   "compte, dis-le franchement et propose une action de QUALIFICATION plutôt que d'inventer ou de meubler.";
 
+// Valeur ajoutée COMMERCIALE (retour terrain « zéro valeur ajoutée, historique mal exploité ») :
+// impose d'exploiter l'historique chiffré et de bâtir sur la next-best-offer data-driven.
+const HISTO_DIRECTIVE =
+  "EXPLOITE L'HISTORIQUE D'ACHAT (obligatoire) : appuie-toi sur les offres déjà vendues et leurs CAS/années — " +
+  "cite la plus grosse ligne et son montant comme référence d'ancrage, repère une ligne ancienne (année la plus " +
+  "éloignée) à faire renouveler, et fais de la NEXT BEST OFFER indiquée la recommandation centrale (dimensionne-la " +
+  "au CAS d'une ligne comparable du compte). Le commercial doit y voir une analyse qu'il n'aurait pas faite seul.";
+
 /* ------------------------------------------------------------------------------------------- *
  * Helpers de coercition (miroir de enrich.js — jamais d'undefined vers Firestore)
  * ------------------------------------------------------------------------------------------- */
@@ -65,16 +73,26 @@ function empreinteChiffree(c) {
  * RÉELLES du compte (pas les leads de veille génériques).
  */
 function factBase(c) {
+  // Historique EXPLOITABLE : chaque offre vendue avec son CAS réalisé et sa plage d'années (récence).
   const vendues = (Array.isArray(c.historique) ? c.historique : [])
     .filter((h) => h && h.offre)
-    .map((h) => coerceStr(h.offre));
+    .map((h) => {
+      const cas = Number(h.cas) > 0 ? ` — ${xof(h.cas)} réalisés` : "";
+      const yrs = h.firstYear ? ` [${h.firstYear === h.lastYear ? h.firstYear : `${h.firstYear}–${h.lastYear}`}]` : "";
+      return `${coerceStr(h.offre)}${cas}${yrs}`;
+    });
   const deals = (Array.isArray(c.deals) ? c.deals : []).map((d) => coerceStr(d && d.titre)).filter(Boolean).slice(0, 6);
+  const reco = c.recommendation && c.recommendation.offre
+    ? `— NEXT BEST OFFER (recommandation data-driven, affinité de cross-sell sur le portefeuille NT) : « ${coerceStr(c.recommendation.offre)} »` +
+      `${Number(c.recommendation.csPct) > 0 ? ` — ${c.recommendation.csPct}% des comptes au profil d'achat comparable la détiennent` : ""}. À prioriser dans la recommandation.`
+    : "";
   return [
     `— Compte : ${coerceStr(c.compte, "(non nommé)")}${c.secteur ? ` — secteur ${coerceStr(c.secteur)}` : ""}${c.tier ? `, compte ${coerceStr(c.tier)}` : ""}.`,
     `— ${empreinteChiffree(c)}`,
-    `— Offres NT DÉJÀ vendues à ce compte : ${list(vendues)}.`,
+    `— Offres NT DÉJÀ vendues (offre — CAS réalisé [années]) : ${list(vendues)}.`,
     `— Travaux / consultations EN COURS : ${list(c.enCours)}.`,
-    `— Whitespace = offres NT JAMAIS vendues à ce compte (cible cross-sell prioritaire) : ${list(c.whitespace)}.`,
+    `— Whitespace = offres NT JAMAIS vendues à ce compte, classées par affinité de cross-sell décroissante : ${list(c.whitespace)}.`,
+    reco,
     `— Opportunités réelles en cours (à nommer avec leur montant exact) : ${list(deals)}.`,
     (Array.isArray(c.enjeux) && c.enjeux.length) ? `— Enjeux saisis par le commercial : ${list(c.enjeux)}.` : "",
   ].filter(Boolean).join("\n");
@@ -143,6 +161,7 @@ function buildCvpPrompt(ctx) {
     .join("");
   return `${NT_ROLE}
 ${NO_GENERIC}
+${HISTO_DIRECTIVE}
 
 Construis la proposition de valeur de Neurones Technologies pour CE compte, en t'appuyant STRICTEMENT sur ses faits réels :
 ${factBase(c)}
@@ -176,6 +195,7 @@ function buildTriennalPrompt(ctx) {
   const c = ctx || {};
   return `${NT_ROLE}
 ${NO_GENERIC}
+${HISTO_DIRECTIVE}
 
 Bâtis un plan de croissance à 3 ans pour CE compte, à partir de ses faits réels :
 ${factBase(c)}
@@ -221,6 +241,7 @@ function buildPlanComptePrompt(ctx) {
     .map((x) => `${coerceStr(x.role)} (${coerceStr(x.posture, "?")})`);
   return `${NT_ROLE}
 ${NO_GENERIC}
+${HISTO_DIRECTIVE}
 
 Rédige le cœur d'un plan de compte pour CE compte, à partir de ses faits réels :
 ${factBase(c)}

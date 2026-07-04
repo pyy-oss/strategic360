@@ -18,8 +18,9 @@
  *   "Menaces": string[] }` — exactly those 4 French keys.
  * - PESTEL content: `{ factors: [{ f, imp, tr, d }] }` where `f` is one of the 6 exact French
  *   factor names, `imp` ∈ [0,1], `tr` ∈ "↑"|"→"|"↓".
- * - Tech radar blips: quadrant 0=Cybersécurité, 1=Cloud & Infra, 2=Data & IA, 3=Réseau;
- *   ring ∈ "adopter"|"essayer"|"evaluer"|"suspendre".
+ * - Tech radar blips: quadrant 0=IA & Automatisation, 1=Data & Plateformes métier,
+ *   2=Cloud & Infrastructures, 3=Cybersécurité & Confiance (recadré 2026-07 — l'innovation ne se
+ *   réduit pas à cyber+cloud) ; ring ∈ "adopter"|"essayer"|"evaluer"|"suspendre".
  */
 
 const SWOT_KEYS = ["Forces", "Faiblesses", "Opportunités", "Menaces"];
@@ -233,7 +234,7 @@ pas de texte hors JSON) respectant STRICTEMENT ce schéma :
   "blips": [
     {
       "name": string,        // nom court de la technologie/pratique
-      "quadrant": 0 | 1 | 2 | 3,  // 0=Cybersécurité, 1=Cloud & Infra, 2=Data & IA, 3=Réseau
+      "quadrant": 0 | 1 | 2 | 3,  // 0=IA & Automatisation, 1=Data & Plateformes métier, 2=Cloud & Infrastructures, 3=Cybersécurité & Confiance
       "ring": "adopter" | "essayer" | "evaluer" | "suspendre",
       "momentum": "↑" | "→" | "↓",
       "rationale": string    // justification courte, ancrée dans les signaux fournis
@@ -248,13 +249,22 @@ Consignes impératives :
 - "ring" reflète la recommandation pour cette entreprise (adopter = en production ;
   essayer = pilote ; evaluer = à étudier ; suspendre = éviter/désinvestir).
 
+VISION ÉLARGIE DE L'INNOVATION (impératif — ne PAS réduire la tech à cyber+cloud) : l'innovation
+qui crée de la DEMANDE chez les clients de NT dépasse largement l'infrastructure. Couvre les forces
+qui transforment leurs MÉTIERS et que NT peut adresser : IA générative & agents métier, automatisation
+(RPA/BPA), data & analytics/BI, plateformes & API (open banking, mobile money/fintech, e-commerce/omnicanal),
+IoT & edge (industrie, logistique, énergie/smart grid, villes), identité numérique & e-gov, ainsi que
+les enablers cloud et cybersécurité. Les quadrants 0 (IA & Automatisation) et 1 (Data & Plateformes métier)
+doivent être RÉELLEMENT représentés, pas seulement 2 (Cloud) et 3 (Cyber).
+
 Contraintes impératives :
-- Chaque blip est une TECHNOLOGIE ou famille de technologies/pratiques (ex: "SASE", "SD-WAN",
-  "Zero Trust", "Cloud souverain", "EDR/XDR managé", "IA générative d'entreprise") — JAMAIS une
-  action ou tâche ("patching X", "mise à jour Y", "audit Z" sont INTERDITS comme blips).
+- Chaque blip est une TECHNOLOGIE ou famille de technologies/pratiques (ex: "IA générative d'entreprise",
+  "Agents IA métier", "RPA/automatisation", "Open banking / API", "Mobile money & fintech", "Analytics/BI",
+  "IoT industriel", "Cloud souverain", "SASE", "EDR/XDR managé") — JAMAIS une action ou tâche
+  ("patching X", "mise à jour Y", "audit Z" sont INTERDITS comme blips).
 - Nom court : 4 mots maximum, pas de doublons ni de quasi-doublons.
-- 5 à 10 blips au TOTAL, répartis sur les quadrants quand les signaux le justifient (pas tout
-  en cybersécurité).
+- 6 à 10 blips au TOTAL, ÉQUILIBRÉS sur les 4 quadrants (au moins un blip en IA & Automatisation et un
+  en Data & Plateformes métier) — surtout PAS tout en cybersécurité/cloud.
 - "rationale" : justification courte ancrée dans les signaux.
 
 Signaux de veille technologique :

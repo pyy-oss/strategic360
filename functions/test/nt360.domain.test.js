@@ -214,6 +214,18 @@ describe("deriveCopiloteAccounts (empreinte comptes pour le Copilote)", () => {
     expect(accts.reduce((s, a) => s + a.casTotal, 0)).toBe(100); // aucun CAS perdu
   });
 
+  it("historique enrichi : CAS réalisé + plage d'années par offre, trié par CAS décroissant", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const orders = [
+      { client: "SGCI", bu: "ICT", cas: 100, yearPo: 2023 },
+      { client: "SGCI", bu: "ICT", cas: 200, yearPo: 2025 },
+      { client: "SGCI", bu: "FORMATION", cas: 20, yearPo: 2022 },
+    ];
+    const sgci = deriveCopiloteAccounts(orders, []).find((a) => a.slug === "sgci");
+    expect(sgci.historique[0]).toMatchObject({ offre: "ICT", cas: 300, orders: 2, firstYear: 2023, lastYear: 2025 });
+    expect(sgci.historique[1]).toMatchObject({ offre: "FORMATION", cas: 20, firstYear: 2022, lastYear: 2022 });
+  });
+
   it("collecte les account managers (am) et BU réels du compte (rattachement/cloisonnement)", async () => {
     const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
     const a = deriveCopiloteAccounts(
@@ -222,6 +234,28 @@ describe("deriveCopiloteAccounts (empreinte comptes pour le Copilote)", () => {
     ).find((x) => x.slug === "sgci");
     expect(a.ams.sort()).toEqual(["K. Diallo", "M. Traoré"]);
     expect(a.bus.sort()).toEqual(["CYBER", "ICT"]);
+  });
+});
+
+describe("deriveBuAffinity + recommendNextOffers (next best offer data-driven)", () => {
+  it("classe le whitespace par affinité de cross-sell (les comptes qui ont X ont souvent Y)", async () => {
+    const { deriveBuAffinity, recommendNextOffers } = await import("../domain/nt360.js");
+    // Portefeuille : ICT co-occurre fortement avec CYBER (2 comptes sur 2), moins avec FORMATION.
+    const accounts = [
+      { bus: ["ICT", "CYBER"] },
+      { bus: ["ICT", "CYBER"] },
+      { bus: ["ICT", "FORMATION"] },
+    ];
+    const aff = deriveBuAffinity(accounts);
+    // Compte qui n'a que ICT ; whitespace = CYBER, FORMATION.
+    const ranked = recommendNextOffers(["ICT"], ["FORMATION", "CYBER"], aff);
+    expect(ranked[0].offre).toBe("CYBER"); // P(CYBER|ICT)=2/3 > P(FORMATION|ICT)=1/3
+    expect(ranked[0].csPct).toBeGreaterThan(ranked[1].csPct);
+  });
+  it("périmètre vide / affinité absente → scores nuls, pas d'exception", async () => {
+    const { recommendNextOffers } = await import("../domain/nt360.js");
+    const ranked = recommendNextOffers([], ["X", "Y"], {});
+    expect(ranked.every((r) => r.csPct === 0)).toBe(true);
   });
 });
 
