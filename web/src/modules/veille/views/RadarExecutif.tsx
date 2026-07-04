@@ -46,10 +46,10 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
       <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 14 }}>
         <Card>
           <Kpi
-            label="Pipeline influencé par la veille"
+            label="Pipeline sur comptes suivis"
             value={exec && exec.pipelineInfluenced != null ? fmt(exec.pipelineInfluenced) : "—"}
             accent={T.emerald}
-            sub="opportunités issues de signaux"
+            sub="montant brut · comptes en veille / watchlist"
           />
         </Card>
         <Card>

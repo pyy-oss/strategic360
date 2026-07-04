@@ -271,7 +271,11 @@ export interface Battlecard {
   generatedBy?: "ai" | "human";
 }
 
-export type BattlecardInput = Omit<Battlecard, "id">;
+// Les trois champs les plus exploitables en RFP (coups probables, réponses aux objections, mouvements
+// récents) sont souvent produits par l'IA : on les rend OPTIONNELS à l'édition humaine pour pouvoir les
+// OMETTRE du payload et préserver les valeurs IA via merge (au lieu de les écraser à []) — audit 2026-07.
+export type BattlecardInput = Omit<Battlecard, "id" | "theirLikelyMoves" | "objectionHandling" | "recentMoves"> &
+  Partial<Pick<Battlecard, "theirLikelyMoves" | "objectionHandling" | "recentMoves">>;
 
 export function useBattlecards(): { battlecards: Battlecard[]; loading: boolean; error: Error | null } {
   const [battlecards, setBattlecards] = useState<Battlecard[]>([]);

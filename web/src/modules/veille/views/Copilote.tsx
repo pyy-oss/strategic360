@@ -443,26 +443,38 @@ function PortfolioDashboard({
 }
 
 /* -------- Générateur générique (bouton + état) -------- */
+// Cache de session des livrables générés, clé = `${agent}:${accountId}` (audit 2026-07 : sans cache,
+// chaque retour sur un onglet relançait une génération IA de 10-30 s). La clé INCLUT l'accountId :
+// aucune fuite inter-comptes possible. Portée session (vidé au reload) ; la persistance Firestore
+// inter-sessions reste une amélioration ultérieure.
+const AGENT_CACHE = new Map<string, unknown>();
+
 function useAgent<T>(agent: CopiloteAgent, accountId?: string) {
-  const [data, setData] = useState<T | null>(null);
+  const cacheKey = `${agent}:${accountId || ""}`;
+  const [data, setData] = useState<T | null>((AGENT_CACHE.get(cacheKey) as T) ?? null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-  // Reset quand on change de compte : évite d'afficher le livrable du compte A sous l'en-tête du
-  // compte B (fuite de données inter-comptes très gênante en RDV).
-  useEffect(() => { setData(null); setErr(null); setDone(false); }, [accountId]);
+  const [done, setDone] = useState(Boolean(AGENT_CACHE.get(cacheKey)));
+  // Changement de compte/agent : on réhydrate depuis le cache (livrable déjà généré ré-affiché
+  // instantanément) au lieu de repartir vide — tout en garantissant que le livrable montré
+  // correspond au compte courant (la clé de cache porte l'accountId).
+  useEffect(() => {
+    const cached = AGENT_CACHE.get(cacheKey) as T | undefined;
+    setData(cached ?? null); setErr(null); setDone(Boolean(cached));
+  }, [cacheKey]);
   const run = async (extra?: Record<string, unknown>) => {
-    const forId = accountId; // capture : on ignore la réponse si le compte a changé entre-temps
+    const forKey = cacheKey; // capture : on ignore la réponse si le compte a changé entre-temps
     setBusy(true); setErr(null);
     try {
       const res = await copiloteGenerate<T>(agent, accountId || undefined, extra);
-      if (forId !== accountId) return; // course : compte changé pendant la génération → on jette
+      if (forKey !== `${agent}:${accountId || ""}`) return; // course : compte changé → on jette
+      AGENT_CACHE.set(forKey, res);
       setData(res); setDone(true);
     } catch (e) {
-      if (forId !== accountId) return;
+      if (forKey !== `${agent}:${accountId || ""}`) return;
       setErr(e instanceof Error ? e.message : "Échec de la génération.");
     } finally {
-      if (forId === accountId) setBusy(false);
+      if (forKey === `${agent}:${accountId || ""}`) setBusy(false);
     }
   };
   return { data, busy, err, done, run };
@@ -500,6 +512,7 @@ function PickHint({ show, text = "Sélectionnez un compte." }: { show: boolean; 
 
 function ProspectionTab({ accountId, canWrite }: { accountId: string; canWrite: boolean }) {
   const { data, busy, err, done, run } = useAgent<ProspectionResult>("prospection", accountId);
+  const navigate = useNavigate();
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
@@ -520,6 +533,12 @@ function ProspectionTab({ accountId, canWrite }: { accountId: string; canWrite: 
             {c.source ? <div style={{ fontSize: 11.5, color: T.faint, marginTop: 3 }}>Source : {c.source}</div> : null}
             <div style={{ fontSize: 12.5, color: T.dim, marginTop: 4 }}><b style={{ color: T.steel }}>Angle :</b> {c.angle}</div>
             <div style={{ fontSize: 12.5, color: T.dim, marginTop: 2 }}><b style={{ color: T.gold }}>Accroche :</b> {c.accroche}</div>
+            {/* Maillage (audit 2026-07) : une cible sourcée n'est plus un cul-de-sac → ses signaux. */}
+            {c.source && (
+              <div style={{ marginTop: 8 }}>
+                <button className="pill" onClick={() => navigate(`/veille/fil?ent=${encodeURIComponent(c.nom)}`)} style={{ fontSize: 11.5 }}>🔎 Signaux</button>
+              </div>
+            )}
           </div>
         ))}
       </div>

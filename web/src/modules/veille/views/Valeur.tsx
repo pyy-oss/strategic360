@@ -22,18 +22,26 @@ export function Valeur() {
   const vas = (liveVas ?? []).map((v) => ({ ...v, ev: Math.round(v.p * v.impact) })).sort((a, b) => Math.abs(b.ev) - Math.abs(a.ev));
   const evOpp = vas.filter((v) => v.type === "opp").reduce((s, v) => s + v.ev, 0);
   const evThreat = vas.filter((v) => (v.type as string) === "threat").reduce((s, v) => s + v.ev, 0);
+  // Le value-at-stake interne (nt360) ne porte aujourd'hui que des opportunités : les tuiles
+  // « menaces » et « net » sont structurellement à 0 (audit 2026-07). On ne les affiche que si des
+  // menaces valorisées existent réellement — sinon une seule tuile honnête, pas deux tuiles mortes.
+  const hasThreat = vas.some((v) => (v.type as string) === "threat");
   return (
     <div>
-      <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 14 }}>
+      <div className="g3" style={{ display: "grid", gridTemplateColumns: hasThreat ? "repeat(3,1fr)" : "1fr", gap: 14, marginBottom: 14 }}>
         <Card>
           <Kpi label="Valeur attendue — opportunités" value={liveVas ? fmt(evOpp) : "—"} accent={T.emerald} sub="Σ (proba × impact)" />
         </Card>
-        <Card>
-          <Kpi label="Valeur à risque — menaces" value={liveVas ? fmt(evThreat) : "—"} accent={T.clay} sub="Σ (proba × impact)" />
-        </Card>
-        <Card>
-          <Kpi label="Valeur nette en jeu" value={liveVas ? fmt(evOpp + evThreat) : "—"} accent={T.gold} sub="net at stake" />
-        </Card>
+        {hasThreat && (
+          <Card>
+            <Kpi label="Valeur à risque — menaces" value={fmt(evThreat)} accent={T.clay} sub="Σ (proba × impact)" />
+          </Card>
+        )}
+        {hasThreat && (
+          <Card>
+            <Kpi label="Valeur nette en jeu" value={fmt(evOpp + evThreat)} accent={T.gold} sub="net at stake" />
+          </Card>
+        )}
       </div>
       <Card style={{ marginBottom: 14 }}>
         <Eyebrow color={T.gold}>Pont de création de valeur — {AMBITION_LABEL}</Eyebrow>
