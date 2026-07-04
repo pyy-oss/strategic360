@@ -95,6 +95,25 @@ jobs:
           --non-interactive
           --force
 
+      # Firebase ne pose PAS toujours le binding allUsers/run.invoker sur un callable 2nd-gen
+      # NOUVELLEMENT créé (selon les permissions IAM du compte de service au moment de la création).
+      # Sans lui, Cloud Run rejette la requête AVANT la fonction (« not authenticated / empty
+      # Authorization header ») et le client voit un « internal » — alors que l'auth Firebase est en
+      # réalité vérifiée DANS la fonction (requireCommercialCaller/…). On garantit donc ce binding,
+      # de façon idempotente, sur les SEULS callables (onCall) du Copilote — jamais sur les fonctions
+      # planifiées/déclencheurs (qui, elles, ne doivent pas être publiquement invocables).
+      - name: Ensure public invoker on Copilote callables (idempotent)
+        continue-on-error: true
+        run: |
+          for svc in listcopiloteaccounts copiloteadmin copilotegenerate copilotechat synccopiloteaccountsnow; do
+            gcloud run services add-iam-policy-binding "$svc" \
+              --region=europe-west1 \
+              --project=propulse-business-87f7a \
+              --member=allUsers \
+              --role=roles/run.invoker \
+              2>&1 || echo "::warning::binding run.invoker impossible pour $svc"
+          done
+
       - name: Deploy (storage rules)
         id: deploy_storage
         continue-on-error: true
