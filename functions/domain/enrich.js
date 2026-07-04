@@ -264,8 +264,11 @@ Consignes impératives :
 - Entre 5 et 12 blips, chacun distinct.
 - Chaque blip doit être justifié par un signal fourni (rationale citant son numéro) ou par le
   contexte entreprise ; n'invente pas une technologie qu'aucun signal n'évoque.
-- "ring" reflète la recommandation pour cette entreprise (adopter = en production ;
-  essayer = pilote ; evaluer = à étudier ; suspendre = éviter/désinvestir).
+- "ring" reflète la posture GO-TO-MARKET de NT en tant qu'INTÉGRATEUR (pas l'adoption IT interne) :
+  adopter = POUSSER commercialement (offre mûre, à vendre activement aux clients) ;
+  essayer = PILOTER (monter un POC/pilote client, offre en amorçage) ;
+  evaluer = QUALIFIER (surveiller le marché, cadrer la demande avant d'investir) ;
+  suspendre = ÉVITER (hors trajectoire ou non rentable en zone UEMOA).
 
 VISION ÉLARGIE DE L'INNOVATION (impératif — ne PAS réduire la tech à cyber+cloud) : l'innovation
 qui crée de la DEMANDE chez les clients de NT dépasse largement l'infrastructure. Couvre les forces

@@ -49,11 +49,14 @@ export interface RingMeta {
   r: number;
 }
 
+// Anneaux du Tech Radar — lecture GO-TO-MARKET d'intégrateur (audit 2026-07) plutôt qu'adoption IT
+// interne : « ce qu'on pousse commercialement » → « ce qu'on évite ». Les CLÉS restent
+// adopter/essayer/evaluer/suspendre (stockées en base, contrat IA) — seuls les libellés changent.
 export const RING: Record<string, RingMeta> = {
-  adopter: { l: "Adopter", c: "#46C08A", r: 0.28 },
-  essayer: { l: "Essayer", c: "#6E9DC0", r: 0.5 },
-  evaluer: { l: "Évaluer", c: "#C9A24B", r: 0.72 },
-  suspendre: { l: "Suspendre", c: "#D9694C", r: 0.92 },
+  adopter: { l: "Pousser", c: "#46C08A", r: 0.28 },
+  essayer: { l: "Piloter", c: "#6E9DC0", r: 0.5 },
+  evaluer: { l: "Qualifier", c: "#C9A24B", r: 0.72 },
+  suspendre: { l: "Éviter", c: "#D9694C", r: 0.92 },
 };
 
 export const QCOL: Record<string, string> = {
