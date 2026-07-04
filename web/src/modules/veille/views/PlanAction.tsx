@@ -1,9 +1,11 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, ReferenceLine, Cell } from "recharts";
 import { T, PROX } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge, Tip } from "../../../design/ui";
 import { quadrant } from "../data";
 import { useIsExec } from "../../../lib/rbac";
+import { slugifyClient } from "../lib/copilote";
 import { actionPriority, createAction, useActions, type ActionStatus } from "../lib/execution";
 import { updateBizOpportunity, useBizOpportunities, type BizOpportunityProbability, type BizOpportunityStatus } from "../lib/intel";
 
@@ -23,6 +25,7 @@ const OPP_STATUS_META: Record<BizOpportunityStatus, { l: string; c: string }> = 
  * IA hebdomadaire (plan d'audit §6.1/§6.2). Qualification humaine réservée aux exécutifs. */
 function BizOpportunitiesSection({ isExec }: { isExec: boolean }) {
   const { opportunities, loading } = useBizOpportunities();
+  const navigate = useNavigate();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [owners, setOwners] = useState<Record<string, string>>({});
 
@@ -87,6 +90,17 @@ function BizOpportunitiesSection({ isExec }: { isExec: boolean }) {
                 </Badge>
                 <Badge c={PROBA_META[o.probability]?.c}>{PROBA_META[o.probability]?.l ?? o.probability}</Badge>
               </div>
+              {/* Unification des référentiels (audit 2026-07) : relie l'opportunité IA au compte RÉEL
+                  du portefeuille (pipeline nt360) via un deep-link Copilote présélectionné. */}
+              {o.client && (
+                <div style={{ marginTop: 6 }}>
+                  <button className="pill" style={{ fontSize: 11.5 }}
+                    onClick={() => navigate(`/veille/copilote?account=${encodeURIComponent(slugifyClient(o.client))}`)}
+                    title="Ouvrir ce compte dans le Copilote (pipeline réel nt360)">
+                    ↗ Ouvrir « {o.client} » dans le Copilote
+                  </button>
+                </div>
+              )}
               <div style={{ marginTop: 8, fontSize: 12.5, color: T.dim }}>
                 <b style={{ color: T.steel }}>Offre :</b> {o.offering}
               </div>

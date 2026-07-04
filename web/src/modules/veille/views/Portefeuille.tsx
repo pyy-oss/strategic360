@@ -64,13 +64,16 @@ export function Portefeuille() {
       {c === "ge9" && ge9.length > 0 && (
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-            <Eyebrow color={T.emerald}>Matrice GE-McKinsey — attractivité (IA, signaux) × position (CAS internes + IA)</Eyebrow>
+            <Eyebrow color={T.emerald}>Matrice GE-McKinsey — attractivité (IA, signaux) × position NT (proxy CA interne)</Eyebrow>
             <Badge c={T.emerald}>Généré par l'IA — taille = poids du segment</Badge>
           </div>
+          {/* Honnêteté d'axe (audit 2026-07) : faute de données de PARTS DE MARCHÉ, l'axe « position »
+              est un PROXY = part du CA interne NT (vs sa plus grosse BU), pas une position face aux
+              concurrents. Le libellé le dit pour ne pas laisser croire à une part de marché mesurée. */}
           <div style={{ height: 340, marginTop: 10 }}>
             <ResponsiveContainer width="100%" height="100%">
               <ScatterChart margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
-                <XAxis type="number" dataKey="pos" domain={[0, 100]} reversed tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Position concurrentielle", position: "insideBottom", offset: -8, fill: T.dim, fontSize: 11 }} />
+                <XAxis type="number" dataKey="pos" domain={[0, 100]} reversed tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Position NT (proxy CA interne, pas part de marché)", position: "insideBottom", offset: -8, fill: T.dim, fontSize: 11 }} />
                 <YAxis type="number" dataKey="attr" domain={[0, 100]} tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Attractivité du marché", angle: -90, position: "insideLeft", fill: T.dim, fontSize: 11 }} />
                 <ZAxis type="number" dataKey="size" range={[300, 2200]} />
                 <ReferenceLine x={33} stroke={T.line} />

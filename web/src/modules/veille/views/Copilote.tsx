@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { T, fmt as fmtC } from "../../../design/tokens";
 import { Eyebrow, Card, Badge, Kpi } from "../../../design/ui";
 import { useCan, useClaims } from "../../../lib/rbac";
@@ -67,11 +67,15 @@ function CopyBtn({ text, label = "Copier" }: { text: string; label?: string }) {
 /** Copilote Commercial (add-on) — réutilise le moteur IA serveur + le PESTEL/les signaux de la veille. */
 export function Copilote() {
   const navigate = useNavigate();
+  const [sp] = useSearchParams();
   const { accounts, loading, error, scoped, reload } = useCopiloteAccounts();
   const { canWrite } = useCan("veille");
   const { role } = useClaims();
   const isAdmin = role === "direction" || role === "commercial_dir"; // peut attribuer les comptes
-  const [accountId, setAccountId] = useState<string>("");
+  // Deep-link (audit 2026-07 — unification des référentiels) : ?account=<slug> présélectionne le
+  // compte (ex. depuis une opportunité IA du Plan d'action), reliant l'opportunité externe au
+  // portefeuille réel. Sans correspondance, on retombe sur le tableau de bord (inoffensif).
+  const [accountId, setAccountId] = useState<string>(sp.get("account") || "");
   const [tab, setTab] = useState<string>("prospection");
   const [showNew, setShowNew] = useState(false);
   const [showPerim, setShowPerim] = useState(false);
@@ -411,13 +415,20 @@ function PortfolioDashboard({
 
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <Card>
-          <Eyebrow color={T.emerald}>Top comptes par poids commercial</Eyebrow>
+          {/* Composition explicite (audit 2026-07) : le « poids » agrège CA RÉALISÉ (passé) + pipeline
+              pondéré (futur) — deux natures différentes. On le libelle comme tel et on montre le détail
+              (vert = réalisé, or = pipeline) pour ne pas masquer le mélange derrière un seul chiffre. */}
+          <Eyebrow color={T.emerald}>Top comptes — CA réalisé + pipeline pondéré</Eyebrow>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
             {accounts.slice(0, 8).map((a) => (
               <button key={a.id} onClick={() => onPick(a.id)}
                 style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "9px 11px", background: T.panel2, borderRadius: 9, border: `1px solid ${T.line}`, cursor: "pointer", textAlign: "left", minHeight: 44 }}>
                 <span style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nom}{a.secteur ? <span style={{ color: T.dim }}> · {a.secteur}</span> : null}</span>
-                <span style={{ fontSize: 12.5, color: T.gold, fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", fontFamily: "'Bricolage Grotesque',sans-serif" }}>{fmt(poids(a))} XOF</span>
+                <span style={{ fontSize: 11, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
+                  <span style={{ color: T.emerald, fontWeight: 700 }}>{fmt(a.nt360?.casTotal ?? 0)}</span>
+                  <span style={{ color: T.faint }}> + </span>
+                  <span style={{ color: T.gold, fontWeight: 700 }}>{fmt(a.nt360?.pipelinePondere ?? 0)}</span>
+                </span>
               </button>
             ))}
           </div>
