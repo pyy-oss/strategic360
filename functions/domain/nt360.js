@@ -217,7 +217,7 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
     const nom = String(client).trim();
     const slug = slugifyClient(nom) || `cpt-${hashName(nom)}`;
     if (!byClient.has(slug)) {
-      byClient.set(slug, { slug, nom, wonBu: new Set(), openBu: new Set(), casTotal: 0, pipelinePondere: 0, wins: 0, opps: [], ams: new Set(), bus: new Set() });
+      byClient.set(slug, { slug, nom, wonBu: new Set(), openBu: new Set(), casTotal: 0, pipelinePondere: 0, wins: 0, opps: [], ams: new Set(), bus: new Set(), buStats: new Map() });
     }
     return byClient.get(slug);
   };
@@ -236,7 +236,17 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
     if (!o || !o.client) continue;
     const a = get(o.client);
     a.casTotal += num(o.cas);
-    if (o.bu) a.wonBu.add(String(o.bu)); // un CAS réalisé = offre déjà vendue
+    if (o.bu) {
+      const bu = String(o.bu).trim();
+      a.wonBu.add(bu); // un CAS réalisé = offre déjà vendue
+      // Historique EXPLOITABLE : CAS réalisé par offre + amplitude d'années (récence/cadence).
+      if (!a.buStats.has(bu)) a.buStats.set(bu, { cas: 0, years: new Set(), orders: 0 });
+      const st = a.buStats.get(bu);
+      st.cas += num(o.cas);
+      st.orders += 1;
+      const yr = Number(o.yearPo);
+      if (Number.isFinite(yr) && yr > 2000) st.years.add(yr);
+    }
     tagOwner(a, o);
   }
   for (const o of Array.isArray(nt360Opps) ? nt360Opps : []) {
@@ -267,7 +277,24 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
     .map((a) => ({
       slug: a.slug,
       nom: a.nom,
-      historique: [...a.wonBu].map((bu) => ({ offre: bu, statut: "Gagné" })),
+      // Historique enrichi : chaque offre déjà vendue porte son CAS réalisé cumulé + la plage
+      // d'années (récence/cadence), trié par CAS décroissant → l'IA peut citer les plus grosses
+      // lignes, la récence, et raisonner renouvellement/cross-sell. Les BU issues d'opps gagnées
+      // sans commande chiffrée (buStats absent) restent listées avec statut Gagné.
+      historique: [...a.wonBu]
+        .map((bu) => {
+          const st = a.buStats.get(bu);
+          const years = st ? [...st.years].sort() : [];
+          return {
+            offre: bu,
+            statut: "Gagné",
+            cas: st ? Math.round(st.cas) : 0,
+            orders: st ? st.orders : 0,
+            firstYear: years.length ? years[0] : null,
+            lastYear: years.length ? years[years.length - 1] : null,
+          };
+        })
+        .sort((x, y) => y.cas - x.cas),
       enCours: [...a.openBu],
       casTotal: Math.round(a.casTotal),
       pipelinePondere: Math.round(a.pipelinePondere),
@@ -278,6 +305,52 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
       ams: [...a.ams],
       bus: [...a.bus],
     }));
+}
+
+/**
+ * deriveBuAffinity(accounts) -> { cooc, buCount } — matrice de co-occurrence des offres (BU) sur
+ * l'ensemble du portefeuille : combien de comptes achètent l'offre A ET l'offre B. Base d'un vrai
+ * moteur de cross-sell « les comptes qui achètent X achètent aussi Y » (market basket). PUR.
+ */
+function deriveBuAffinity(accounts) {
+  const cooc = {};
+  const buCount = {};
+  for (const acc of Array.isArray(accounts) ? accounts : []) {
+    const bus = [...new Set((Array.isArray(acc.bus) ? acc.bus : []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()))];
+    for (const a of bus) {
+      buCount[a] = (buCount[a] || 0) + 1;
+      for (const b of bus) {
+        if (a === b) continue;
+        cooc[a] = cooc[a] || {};
+        cooc[a][b] = (cooc[a][b] || 0) + 1;
+      }
+    }
+  }
+  return { cooc, buCount };
+}
+
+/**
+ * recommendNextOffers(ownedBus, whitespace, affinity) -> [{ offre, score, csPct }] trié — pour un
+ * compte, classe les offres du whitespace par affinité moyenne P(offre | offres déjà détenues)
+ * sur le portefeuille. Donne la « next best offer » DATA-DRIVEN (pas une intuition). PUR.
+ */
+function recommendNextOffers(ownedBus, whitespace, affinity) {
+  const cooc = (affinity && affinity.cooc) || {};
+  const buCount = (affinity && affinity.buCount) || {};
+  const owned = (Array.isArray(ownedBus) ? ownedBus : []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim());
+  const scored = (Array.isArray(whitespace) ? whitespace : [])
+    .filter((x) => typeof x === "string" && x.trim())
+    .map((cand) => {
+      let sum = 0, n = 0;
+      for (const o of owned) {
+        const denom = buCount[o] || 0;
+        if (denom > 0) { sum += ((cooc[o] && cooc[o][cand.trim()]) || 0) / denom; n++; }
+      }
+      const score = n ? sum / n : 0;
+      return { offre: cand.trim(), score, csPct: Math.round(score * 100) };
+    })
+    .sort((x, y) => y.score - x.score);
+  return scored;
 }
 
 /**
@@ -315,6 +388,8 @@ module.exports = {
   pickObjectives,
   pickCurrentFy,
   deriveCopiloteAccounts,
+  deriveBuAffinity,
+  recommendNextOffers,
   copiloteAccountMatchesScope,
   slugifyClient,
 };

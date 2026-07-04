@@ -1630,7 +1630,8 @@ async function assembleCopiloteContext(db, accountId) {
   const histoSeen = new Set();
   // Garde `h && typeof === object` : un doc édité à la main peut contenir null / une string dans
   // historique — sans ce garde `h.offre` levait une exception → « internal » sur ce compte.
-  const historique = [...humanHisto, ...derivedHisto].filter((h) => {
+  // Dérivé D'ABORD : les entrées enrichies (CAS/années) priment sur une saisie manuelle pauvre.
+  const historique = [...derivedHisto, ...humanHisto].filter((h) => {
     if (!h || typeof h !== "object" || !h.offre) return false;
     const k = `${String(h.offre).toLowerCase()}|${String(h.statut || "").toLowerCase()}`;
     if (histoSeen.has(k)) return false;
@@ -1661,15 +1662,19 @@ async function assembleCopiloteContext(db, accountId) {
   // WHITESPACE RÉEL = catalogue d'offres NT (agrégé au sync, summaries/copiloteMeta.buCatalog) MOINS
   // les BU que ce compte a déjà touchées (achetées ou en cours). C'est le cross-sell concret et
   // spécifique — remplace le whitespace vide qui faisait produire des livrables génériques.
-  const buCatalog = (metaSnap.exists && Array.isArray(metaSnap.data()?.buCatalog)) ? metaSnap.data().buCatalog : [];
-  const touched = new Set([
-    ...(Array.isArray(nt.bus) ? nt.bus : []),
-    ...historique.map((h) => h.offre),
-    ...enCours,
-  ].filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim().toLowerCase()));
+  const meta = metaSnap.exists ? metaSnap.data() : {};
+  const buCatalog = Array.isArray(meta.buCatalog) ? meta.buCatalog : [];
+  const affinity = meta.affinity && typeof meta.affinity === "object" ? meta.affinity : {};
+  const ownedBus = [...(Array.isArray(nt.bus) ? nt.bus : []), ...historique.map((h) => h.offre), ...enCours]
+    .filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim());
+  const touched = new Set(ownedBus.map((x) => x.toLowerCase()));
   const derivedWhitespace = buCatalog.filter((bu) => typeof bu === "string" && bu.trim() && !touched.has(bu.trim().toLowerCase()));
   const humanWhitespace = Array.isArray(a.whitespace) ? a.whitespace.filter((x) => typeof x === "string" && x.trim()) : [];
-  const whitespace = [...new Set([...humanWhitespace, ...derivedWhitespace])];
+  const whitespace0 = [...new Set([...humanWhitespace, ...derivedWhitespace])];
+  // Classement du whitespace par AFFINITÉ de cross-sell (market basket) + « next best offer ».
+  const ranked = nt360RecommendNextOffers(ownedBus, whitespace0, affinity);
+  const whitespace = ranked.length ? ranked.map((r) => r.offre) : whitespace0;
+  const recommendation = ranked.find((r) => r.csPct > 0) || ranked[0] || null;
   const casTotal = Number(nt.casTotal) || 0;
   const pipelinePondere = Number(nt.pipelinePondere) || 0;
   const wins = Number(nt.wins) || 0;
@@ -1690,10 +1695,11 @@ async function assembleCopiloteContext(db, accountId) {
     pestel,
     signaux, // leads de veille génériques (prospection)
     deals,   // opportunités réelles du compte (CVP/triennal/plan/chat)
+    recommendation, // next best offer data-driven { offre, csPct }
     casTotal,
     pipelinePondere,
     wins,
-    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals },
+    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation },
   };
 }
 
@@ -1781,6 +1787,8 @@ const {
   pickObjectives: nt360PickObjectives,
   pickCurrentFy: nt360PickCurrentFy,
   deriveCopiloteAccounts: nt360DeriveCopiloteAccounts,
+  deriveBuAffinity: nt360DeriveBuAffinity,
+  recommendNextOffers: nt360RecommendNextOffers,
   copiloteAccountMatchesScope: nt360AccountMatchesScope,
 } = require("./domain/nt360");
 
@@ -1923,7 +1931,13 @@ async function runSyncCopiloteAccounts(db) {
   // Catalogue d'offres NT = union de toutes les BU réelles observées dans le pipeline. Sert au calcul
   // du whitespace RÉEL par compte (catalogue − BU déjà touchées) → livrables IA spécifiques, non génériques.
   const buCatalog = [...new Set(derived.flatMap((acc) => Array.isArray(acc.bus) ? acc.bus : []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()))].sort();
-  await db.doc("summaries/copiloteMeta").set({ buCatalog, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  // Affinité de cross-sell (market basket) sur tout le portefeuille : « les comptes qui achètent X
+  // achètent aussi Y » → base de la recommandation « next best offer » par compte.
+  const affinity = nt360DeriveBuAffinity(derived);
+  await db.doc("summaries/copiloteMeta").set(
+    { buCatalog, affinity, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true }
+  );
   logger.info(`runSyncCopiloteAccounts: ${written} comptes copilote pré-remplis depuis nt360 (catalogue ${buCatalog.length} offres)`);
   return { accounts: written, buCatalog: buCatalog.length };
 }
