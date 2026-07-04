@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { usePaged, Pager } from "../components/Pager";
 import { T, AX, IMP, STANCE, PROX } from "../../../design/tokens";
 import { Card, Badge } from "../../../design/ui";
 import { useCan } from "../../../lib/rbac";
@@ -203,6 +204,9 @@ export function Fil() {
         (b.date ?? "").localeCompare(a.date ?? "")
     );
 
+  // Pagination : le fil peut atteindre des centaines de signaux (retour à la page 1 si un filtre change).
+  const paged = usePaged(rows, 25, `${ax}|${st}|${prx}|${watchOnly}|${bizOnly}|${entFilter}`);
+
   return (
     <div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, alignItems: "center", justifyContent: "space-between" }}>
@@ -259,7 +263,7 @@ export function Fil() {
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {rows.map((s) => (
+        {paged.pageItems.map((s) => (
           <Card key={s.id} style={{ borderLeft: `3px solid ${STANCE[s.stance].c}` }}>
             <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
               <div style={{ textAlign: "center", minWidth: 44 }}>
@@ -310,6 +314,7 @@ export function Fil() {
           </Card>
         ))}
       </div>
+      <Pager {...paged} />
     </div>
   );
 }

@@ -717,3 +717,13 @@ describe("parseInnovationBetsResponse — provenance (audit 2026-07)", () => {
     expect(r.bets[1].rationale).toBe("");
   });
 });
+
+describe("anti-obsession cyber — directive d'équilibre sectoriel (2026-07)", () => {
+  it("GROUNDING impose l'équilibre sectoriel dans les générateurs de cadres et d'opportunités", async () => {
+    const { buildSwotPestelPrompt, buildOpportunitiesPrompt } = await import("../domain/enrich.js");
+    for (const p of [buildSwotPestelPrompt([]), buildOpportunitiesPrompt([])]) {
+      expect(p).toContain("ÉQUILIBRE SECTORIEL");
+      expect(p).toContain("ne la sur-");
+    }
+  });
+});

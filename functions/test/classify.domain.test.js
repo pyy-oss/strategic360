@@ -269,3 +269,12 @@ describe("anti-obsolescence — repères temporels & dérivation d'imminence", (
     expect(r.stale).toBeUndefined();
   });
 });
+
+describe("anti-obsession cyber — équilibre sectoriel (2026-07)", () => {
+  it("l'axe technologique ne ramène plus tout à la cybersécurité", () => {
+    const p = buildClassificationPrompt("texte", []);
+    expect(p).toContain("NE PAS tout ramener à la cybersécurité");
+    expect(p).toContain("open banking");
+    expect(p).toContain("ENABLERS");
+  });
+});

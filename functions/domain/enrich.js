@@ -132,7 +132,12 @@ const GROUNDING =
   "N'invoque PAS de « faits connus du marché » ni de connaissances générales non sourcées. Quand un " +
   "élément s'appuie sur un signal, cite son numéro entre crochets (ex. [3]). Si la matière manque, " +
   "écris-le explicitement (« à qualifier », « non observé dans les signaux ») plutôt que de l'inventer, " +
-  "de l'estimer au hasard ou de le déduire — l'incertitude doit être visible, jamais déguisée en certitude.";
+  "de l'estimer au hasard ou de le déduire — l'incertitude doit être visible, jamais déguisée en certitude. " +
+  "ÉQUILIBRE SECTORIEL (impératif) : la cybersécurité n'est qu'UN domaine parmi d'autres — ne la sur-" +
+  "représente PAS. Donne un poids proportionnel à l'IA/automatisation, la data & les plateformes métier, " +
+  "la fintech/open banking/mobile money, l'e-gov, l'IoT/edge et les verticaux (insurtech, agritech, " +
+  "healthtech) ; cloud et cyber sont des ENABLERS, pas la finalité — sauf si les signaux fournis " +
+  "justifient réellement une prédominance cyber.";
 
 /**
  * Builds the Gemini prompt producing the SWOT + PESTEL strategic synthesis from real signals.
@@ -439,7 +444,7 @@ texte hors JSON) respectant STRICTEMENT ce schéma :
       "name": string,               // ex: "Audit conformité SI AMF-UMOA — BRVM"
       "client": string,             // compte cible nommé
       "bu": "ICT" | "FORMATION",
-      "offering": string,           // ex: "SOC managé", "mise en conformité RGSSI", "refresh FortiGate série E"
+      "offering": string,           // offre NT, TOUS domaines (pas seulement cyber) : ex "scoring crédit IA", "plateforme data/BI", "intégration open banking/API", "IoT logistique", "SOC managé", "refresh réseau", "Academy — parcours certifiant"
       "estAmount": string | null,   // UNIQUEMENT si un chiffre figure dans un signal
       "deadline": string | null,
       "horizon": "imminent" | "court" | "moyen" | "horizon",
@@ -450,6 +455,8 @@ texte hors JSON) respectant STRICTEMENT ce schéma :
     }
   ]
 }
+
+${GROUNDING}
 
 Consignes impératives :
 - Rédige tout en français.

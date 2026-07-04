@@ -165,10 +165,16 @@ AXES DE GUET PRIORITAIRES (à détecter activement dans le texte) :
 - EXPANSION DE GROUPES régionaux ou internationaux (ouverture de pays, rachat, croissance,
   nouveau siège, datacenter, levée de fonds) → subtype "expansion" ; opportunité si client
   potentiel, menace si concurrent/désintermédiation.
-- ACTUALITÉ TECHNOLOGIQUE : ne retenir que l'angle BUSINESS pour une ESN en CI/UEMOA —
-  vulnérabilité majeure sur les technologies de nos éditeurs (Cisco, Fortinet, Palo Alto, HPE,
-  Microsoft, Wallix) → subtype "vulnerability", OPPORTUNITÉ de campagne de patch/upgrade/audit chez
-  les clients équipés ; nouvelle techno monétisable en zone = opportunité d'offre.
+- ACTUALITÉ TECHNOLOGIQUE (angle BUSINESS pour une ESN en CI/UEMOA, TOUS domaines à parts égales —
+  NE PAS tout ramener à la cybersécurité : elle n'est qu'UN domaine parmi d'autres). Détecte au même
+  titre : IA générative & agents métier, automatisation (RPA/BPA), data/analytics & plateformes,
+  open banking / mobile money / fintech, e-commerce & omnicanal, IoT & edge (industrie, énergie,
+  logistique), e-gov/GovTech, verticaux (insurtech, agritech, healthtech, edtech) → subtype "trend"
+  ou "product_launch", opportunité d'offre NT (intégration, data/IA, formation). Le CLOUD et la
+  CYBERSÉCURITÉ sont des ENABLERS, pas la finalité : une vulnérabilité majeure sur les technologies
+  de nos éditeurs (Cisco, Fortinet, Palo Alto, HPE, Microsoft, Wallix) → subtype "vulnerability",
+  opportunité de patch/upgrade/audit — MAIS ne la surclasse pas par rapport aux autres domaines sans
+  raison métier réelle.
 - SOURCING / APPROVISIONNEMENT : pénurie, rupture, allongement des délais, changement de conditions
   de crédit d'un distributeur (Hiperdist, Westcon, Exclusive, Ingram, TD SYNNEX) → subtype "supply" ;
   déterminant pour la marge et la trésorerie (cycle long, backlog à financer).
