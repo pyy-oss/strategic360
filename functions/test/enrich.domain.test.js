@@ -690,3 +690,16 @@ describe("Vague B — objectivité : garde-fous anti-fabrication dans les prompt
     expect(buildTechRadarPrompt([], undefined, [])).not.toContain("justifié par les signaux fournis chaque fois que possible");
   });
 });
+
+describe("parseTechRadarResponse — quadrant invalide dérivé des mots-clés (audit 2026-07)", () => {
+  it("un blip cyber au quadrant invalide retombe en Cybersécurité (3), pas arbitrairement en Data (1)", () => {
+    const parsed = parseTechRadarResponse({ blips: [
+      { name: "EDR/XDR managé", quadrant: 9, ring: "adopter", rationale: "détection de menaces" },
+      { name: "Open banking / API", quadrant: -1, ring: "essayer", rationale: "plateforme fintech" },
+      { name: "Cloud souverain", quadrant: "x", ring: "evaluer", rationale: "datacenter local" },
+    ] });
+    expect(parsed.blips[0].quadrant).toBe(3); // cyber
+    expect(parsed.blips[1].quadrant).toBe(1); // data & plateformes
+    expect(parsed.blips[2].quadrant).toBe(2); // cloud & infra
+  });
+});

@@ -12,7 +12,8 @@ describe("Copilote — prompt builders (reuse contexte veille)", () => {
   });
   it("buildRedactionPrompt applique canal/ton et interdit l'invention", async () => {
     const { buildRedactionPrompt } = await import("../domain/copilote.js");
-    const p = buildRedactionPrompt({ kind: "relance", canal: "whatsapp", ton: "Chaleureux", compte: "Orange CI", contexte: "" });
+    // Sans matière compte (aucun historique/deal/CAS) → repli « dire ce qui manque ».
+    const p = buildRedactionPrompt({ kind: "relance", canal: "whatsapp", ton: "Chaleureux", contexte: "" });
     expect(p).toContain("WhatsApp");
     expect(p).toContain("chaleureux");
     expect(p).toContain("indique clairement ce qu'il manque");
@@ -128,5 +129,30 @@ describe("Copilote — agent planAction (plan d'action daté 90 j)", () => {
     expect(r.plan[1].quand).toBe("Continu"); // coercition enum
     expect(parsePlanActionResponse({ plan: [] })).toBeNull();
     expect(parsePlanActionResponse(null)).toBeNull();
+  });
+});
+
+describe("Copilote — corrections audit (rédaction ancrée + next best offer honnête)", () => {
+  it("buildRedactionPrompt s'ancre sur les faits du compte + anti-générique quand il y a de la matière", async () => {
+    const { buildRedactionPrompt } = await import("../domain/copilote.js");
+    const p = buildRedactionPrompt({ compte: "BRVM", canal: "email", ton: "Direct", kind: "relance",
+      historique: [{ offre: "ICT", cas: 120000000, firstYear: 2021, lastYear: 2024 }], casTotal: 120000000 });
+    expect(p).toContain("INTERDIT"); // NO_GENERIC injecté
+    expect(p).toContain("Faits réels du compte");
+    expect(p).toContain("citer AU MOINS un fait réel du compte");
+    // sans matière compte → pas d'ancrage forcé, garde le repli « indique ce qui manque »
+    const g = buildRedactionPrompt({ canal: "whatsapp", ton: "Direct", kind: "prise de contact" });
+    expect(g).toContain("indique clairement ce qu'il manque");
+    expect(g).not.toContain("Faits réels du compte");
+  });
+
+  it("factBase : next best offer sans affinité (csPct=0) devient PISTE DE QUALIFICATION, pas « à prioriser »", async () => {
+    const { buildCvpPrompt } = await import("../domain/copilote.js");
+    const cold = buildCvpPrompt({ compte: "X", recommendation: { offre: "SOC managé", csPct: 0, montantEstime: 0 } });
+    expect(cold).toContain("PISTE DE QUALIFICATION");
+    expect(cold).not.toContain("À prioriser dans la recommandation");
+    const warm = buildCvpPrompt({ compte: "X", recommendation: { offre: "SOC managé", csPct: 62, montantEstime: 0 } });
+    expect(warm).toContain("NEXT BEST OFFER");
+    expect(warm).toContain("À prioriser dans la recommandation");
   });
 });

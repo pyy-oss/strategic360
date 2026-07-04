@@ -20,6 +20,15 @@ service cloud.firestore {
     function commercial() { return request.auth != null && role() in ['commercial', 'commercial_dir', 'direction', 'strategie', 'innovation']; }
     // Rôles NON cloisonnés (voient tout le portefeuille) : directeurs commerciaux + exécutifs.
     function copiloteUnscoped() { return request.auth != null && role() in ['commercial_dir', 'direction', 'strategie', 'innovation']; }
+    // Compte rattaché à l'appelant (audit 2026-07) : rôle non cloisonné, OU créateur, OU e-mail dans
+    // `owners` (normalisé en minuscule côté serveur). NB : le rattachement am/BU ne peut PAS être
+    // rejoué en règles (il exige copiloteProfiles) — l'édition directe est donc limitée au créateur/
+    // owner ; le cloisonnement complet reste servi par le callable Admin (listCopiloteAccounts).
+    function copiloteOwned() {
+      return copiloteUnscoped()
+        || resource.data.get('createdBy', '') == request.auth.uid
+        || (request.auth.token.email != null && request.auth.token.email.lower() in resource.data.get('owners', []));
+    }
 
     // — Signaux & détection —
     match /intelItems/{id} {
@@ -109,22 +118,28 @@ service cloud.firestore {
     // champs SERVEUR : jamais écrits depuis le client (empreinte pipeline + attribution).
     match /copiloteAccounts/{id} {
       allow read: if copiloteUnscoped();
-      allow delete: if commercial();
+      // Écriture directe cloisonnée (audit 2026-07) : un commercial simple ne peut supprimer/éditer
+      // QUE les comptes qui lui sont rattachés (créateur/owner), plus jamais un compte hors périmètre.
+      allow delete: if commercial() && copiloteOwned();
       // `createdBy`, s'il est fourni, doit être l'appelant (un commercial ne peut pas attribuer un
       // compte à autrui via createdBy) ; `nt360`/`owners` restent réservés au serveur.
       allow create: if commercial()
         && !('nt360' in request.resource.data) && !('owners' in request.resource.data)
         && (!('createdBy' in request.resource.data) || request.resource.data.createdBy == request.auth.uid);
-      allow update: if commercial()
+      allow update: if commercial() && copiloteOwned()
         && !('nt360' in request.resource.data.diff(resource.data).affectedKeys())
         && !('owners' in request.resource.data.diff(resource.data).affectedKeys())
         && (!('createdBy' in request.resource.data.diff(resource.data).affectedKeys())
             || request.resource.data.createdBy == request.auth.uid);
     }
 
-    // — Copilote : périmètres de cloisonnement par commercial (écrits par callable Admin uniquement) —
-    match /copiloteProfiles/{uid} {
-      allow read: if commercial();
+    // — Copilote : périmètres de cloisonnement par commercial (clé = e-mail ; écrits par callable
+    // Admin uniquement). Lecture réservée au propriétaire du périmètre ou aux admins (audit 2026-07 :
+    // le périmètre d'un collègue — ses am/BU — ne doit pas être lisible par tout le monde). La liste
+    // admin (PerimetresPanel) reste autorisée car la clause admin est indépendante du document.
+    match /copiloteProfiles/{email} {
+      allow read: if request.auth != null
+        && (role() in ['direction', 'commercial_dir'] || request.auth.token.email == email);
       allow write: if false;
     }
 

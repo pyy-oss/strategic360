@@ -86,9 +86,13 @@ function factBase(c) {
   const deals = (Array.isArray(c.deals) ? c.deals : []).map((d) => coerceStr(d && d.titre)).filter(Boolean).slice(0, 6);
   const rec = c.recommendation || {};
   const montant = Number(rec.montantEstime) > 0 ? ` ; panier de référence de cette offre sur le portefeuille ≈ ${xof(rec.montantEstime)} (montant d'ancrage à viser)` : "";
+  // Cold start (audit 2026-07) : quand l'affinité de cross-sell ne fonde PAS l'offre (csPct=0, ex.
+  // compte sans historique ou portefeuille sans co-occurrence), on ne prétend plus « data-driven / à
+  // prioriser » — on la présente honnêtement comme une piste à qualifier.
   const reco = rec.offre
-    ? `— NEXT BEST OFFER (recommandation data-driven, affinité de cross-sell sur le portefeuille NT) : « ${coerceStr(rec.offre)} »` +
-      `${Number(rec.csPct) > 0 ? ` — ${rec.csPct}% des comptes au profil d'achat comparable la détiennent` : ""}${montant}. À prioriser dans la recommandation.`
+    ? (Number(rec.csPct) > 0
+        ? `— NEXT BEST OFFER (recommandation data-driven, affinité de cross-sell sur le portefeuille NT) : « ${coerceStr(rec.offre)} » — ${rec.csPct}% des comptes au profil d'achat comparable la détiennent${montant}. À prioriser dans la recommandation.`
+        : `— PISTE DE QUALIFICATION (whitespace non encore étayé par l'affinité portefeuille — aucune donnée de cross-sell exploitable sur ce compte, à confirmer avant d'en faire une priorité) : « ${coerceStr(rec.offre)} »${montant}.`)
     : "";
   // Déclencheurs de veille RATTACHÉS à ce compte (signaux qui le nomment) — timing/accroche commerciale.
   const signauxCompte = (Array.isArray(c.signauxCompte) ? c.signauxCompte : [])
@@ -401,20 +405,32 @@ function buildRedactionPrompt(ctx) {
   const c = ctx || {};
   const canal = CANAL[c.canal] ? c.canal : "email";
   const ton = TON[c.ton] ? c.ton : "Direct";
+  // Ancrage sur les faits RÉELS du compte (audit 2026-07) : la Rédaction est le seul contenu envoyé
+  // au prospect, elle ne doit pas rester le dernier livrable générique. Dès qu'il y a de la matière,
+  // on injecte NO_GENERIC + la même fiche de faits que les autres agents (HISTO_DIRECTIVE volontairement
+  // omise : un e-mail/WhatsApp court n'a pas à dérouler l'analyse historique complète).
+  const hasCompte =
+    coerceStr(c.compte) ||
+    (Array.isArray(c.historique) && c.historique.length) ||
+    (Array.isArray(c.deals) && c.deals.length) ||
+    Number(c.casTotal) > 0;
+  const faits = hasCompte
+    ? `${NO_GENERIC}\n\nFaits réels du compte (ancrer l'accroche sur UN chiffre réel — CA réalisé / deal en cours — une offre du whitespace, ou un déclencheur de veille rattaché ; ne rien inventer au-delà) :\n${factBase(c)}\n`
+    : "";
   return `${NT_ROLE}
 Tu rédiges des messages commerciaux prêts à envoyer.
-
+${faits}
 Rédige un message de type "${coerceStr(c.kind, "prise de contact")}" pour le compte ${coerceStr(c.compte, "le compte")}.
 Canal — ${CANAL[canal]}
 Ton — ${TON[ton]}.
-Contexte fourni (à utiliser SANS rien inventer) : ${coerceStr(c.contexte) || "AUCUN — indique clairement ce qu'il manque au lieu d'inventer."}
+Contexte fourni (à utiliser SANS rien inventer) : ${coerceStr(c.contexte) || (hasCompte ? "aucun contexte libre — appuie-toi sur les faits réels du compte ci-dessus." : "AUCUN — indique clairement ce qu'il manque au lieu d'inventer.")}
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
   "variantes": [ { "label": string, "objet": string, "corps": string } ]
 }
 Produis 2 "variantes" à STRATÉGIE DIFFÉRENTE (ex. « relance douce / entretenir » vs « créer l'urgence / provoquer la décision »),
-chacune avec un "label" court décrivant la stratégie, un "objet" (vide si canal ≠ email), et le "corps". JSON uniquement.`;
+chacune avec un "label" court décrivant la stratégie, un "objet" (vide si canal ≠ email), et le "corps"${hasCompte ? " ; chaque corps doit citer AU MOINS un fait réel du compte (montant, offre vendue, whitespace ou signal)" : ""}. JSON uniquement.`;
 }
 
 function parseRedactionResponse(raw, ctx) {
