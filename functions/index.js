@@ -26,6 +26,7 @@ const { computePorterForces, computeBcg, computeCasSummary, computePipeline, com
 const { intelItemId } = require("./domain/ids");
 const { buildClassificationPrompt, parseClassificationResponse } = require("./domain/classify");
 const { dedupeByTitle } = require("./domain/dedupe");
+const { pickRelevant } = require("./domain/retrieve");
 const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
 const { buildBriefingPdf } = require("./domain/pdf");
 const { generateJson } = require("./domain/vertex");
@@ -1399,8 +1400,12 @@ async function runEnrichment(db) {
       let anyParsed = false;
       for (let i = 0; i < topCompetitors.length; i += CHUNK) {
         const batch = topCompetitors.slice(i, i + CHUNK);
+        // Récupération légère (Vague D) : au lieu de repasser le MÊME top-60 à chaque lot, on classe
+        // les signaux par pertinence aux concurrents DE CE LOT (axe concurrents + noms) → chaque
+        // battlecard voit d'abord les signaux qui la concernent, moins de fabrication hors-sujet.
+        const batchSignals = pickRelevant(signals, { axes: ["concurrents"], terms: batch.map((c) => c.name) }, 30);
         const parsed = parseFullBattlecardsResponse(
-          await generateJson(buildFullBattlecardsPrompt(signals, batch, companyContext))
+          await generateJson(buildFullBattlecardsPrompt(batchSignals, batch, companyContext))
         );
         if (!parsed) {
           logger.error(`runEnrichment: full battlecards lot ${i / CHUNK + 1} inutilisable (parse null)`);
@@ -1664,7 +1669,11 @@ async function assembleCopiloteContext(db, accountId) {
   //  - `signaux` : échantillon générique pour la PROSPECTION (comptes cibles) ;
   //  - `signauxCompte` : ceux qui NOMMENT ce compte → déclencheurs commerciaux rattachés au portefeuille.
   const bizAll = bizSnap.docs.map((d) => d.data()).filter((o) => o && o.name);
-  const signaux = bizAll.slice(0, 10).map((o) => ({ titre: o.name }));
+  // Récupération légère (Vague D) : au lieu des 10 PREMIERS leads (ordre Firestore arbitraire), on
+  // classe par PERTINENCE au compte (secteur + whitespace + enjeux) — la prospection voit les leads
+  // qui comptent pour CE compte, pas un échantillon aveugle.
+  const prospectTerms = [a.secteur, ...(Array.isArray(a.whitespace) ? a.whitespace : []), ...(Array.isArray(a.enjeux) ? a.enjeux : [])].filter(Boolean);
+  const signaux = pickRelevant(bizAll, { terms: prospectTerms }, 10).map((o) => ({ titre: o.name }));
   const signauxCompte = (a.nom ? nt360MatchSignalsToAccount(a.nom, bizAll) : [])
     .slice(0, 5)
     .map((o) => ({ titre: o.name }));
