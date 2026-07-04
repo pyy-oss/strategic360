@@ -1948,6 +1948,7 @@ exports.listCopiloteAccounts = onCall(CALLABLE_OPTS, async (request) => {
   const snap = await db.collection("copiloteAccounts").get();
   const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   const unscoped = COPILOTE_UNSCOPED_ROLES.includes(role);
+  logger.info(`listCopiloteAccounts: uid=${request.auth.uid} role=${role} unscoped=${unscoped} totalDocs=${all.length}`);
   if (unscoped) return { accounts: all, scoped: false };
   // Périmètre du commercial : e-mail (token/owners) + am/bu de son profil (clé = e-mail : pas de
   // répertoire d'utilisateurs dans l'app, l'admin définit le périmètre par e-mail, plus simple qu'un uid).

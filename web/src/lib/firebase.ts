@@ -65,7 +65,10 @@ if (isFirebaseConfigured) {
     { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) },
     firestoreDatabaseId
   );
-  functions = getFunctions(app);
+  // Région EXPLICITE : toutes les Cloud Functions sont déployées en europe-west1. Sans ce
+  // paramètre, getFunctions() vise us-central1 par défaut → tous les callables échouent
+  // silencieusement (endpoint inexistant), d'où un portefeuille Copilote vide et des « internal ».
+  functions = getFunctions(app, "europe-west1");
 
   if (appCheckSiteKey) {
     appCheck = initializeAppCheck(app, {
@@ -94,7 +97,10 @@ if (isFirebaseConfigured) {
   db = initializeFirestore(app, {
     localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
   });
-  functions = getFunctions(app);
+  // Région EXPLICITE : toutes les Cloud Functions sont déployées en europe-west1. Sans ce
+  // paramètre, getFunctions() vise us-central1 par défaut → tous les callables échouent
+  // silencieusement (endpoint inexistant), d'où un portefeuille Copilote vide et des « internal ».
+  functions = getFunctions(app, "europe-west1");
 }
 
 export { app, auth, db, functions, appCheck };
