@@ -20,6 +20,16 @@ const NT_ROLE =
   "si une information manque, écris-le explicitement plutôt que de l'estimer. " +
   "Réponds UNIQUEMENT avec un objet JSON valide conforme au schéma demandé, sans texte ni balises autour.";
 
+// Directive anti-générique (2026-07, retour terrain : « les outputs sont génériques, on dirait un
+// copier-coller de la veille »). Force l'ancrage sur les FAITS PROPRES au compte.
+const NO_GENERIC =
+  "EXIGENCE DE CONSISTANCE (impérative) : chaque phrase doit s'appuyer sur un FAIT PROPRE À CE COMPTE — " +
+  "un montant réel (CA déjà réalisé, montant d'un deal en cours), une offre DÉJÀ vendue, ou une offre du " +
+  "whitespace (jamais vendue à ce compte). Nomme les offres et cite les montants. " +
+  "INTERDIT : généralités macro-économiques, copier-coller du contexte de veille/PESTEL, phrases " +
+  "passe-partout applicables à n'importe quelle entreprise, jargon creux. Si la matière manque sur ce " +
+  "compte, dis-le franchement et propose une action de QUALIFICATION plutôt que d'inventer ou de meubler.";
+
 /* ------------------------------------------------------------------------------------------- *
  * Helpers de coercition (miroir de enrich.js — jamais d'undefined vers Firestore)
  * ------------------------------------------------------------------------------------------- */
@@ -47,6 +57,27 @@ function empreinteChiffree(c) {
     `pipeline pondéré en cours : ${xof(c.pipelinePondere)} ; ` +
     `affaires déjà gagnées : ${Number(c.wins) > 0 ? c.wins : "n.c."}.`
   );
+}
+
+/**
+ * Fiche de faits RÉELS du compte (ancrage commun à tous les agents compte, pour la consistance) :
+ * offres vendues / en cours / whitespace + empreinte chiffrée + deals nommés. `deals` = opportunités
+ * RÉELLES du compte (pas les leads de veille génériques).
+ */
+function factBase(c) {
+  const vendues = (Array.isArray(c.historique) ? c.historique : [])
+    .filter((h) => h && h.offre)
+    .map((h) => coerceStr(h.offre));
+  const deals = (Array.isArray(c.deals) ? c.deals : []).map((d) => coerceStr(d && d.titre)).filter(Boolean).slice(0, 6);
+  return [
+    `— Compte : ${coerceStr(c.compte, "(non nommé)")}${c.secteur ? ` — secteur ${coerceStr(c.secteur)}` : ""}${c.tier ? `, compte ${coerceStr(c.tier)}` : ""}.`,
+    `— ${empreinteChiffree(c)}`,
+    `— Offres NT DÉJÀ vendues à ce compte : ${list(vendues)}.`,
+    `— Travaux / consultations EN COURS : ${list(c.enCours)}.`,
+    `— Whitespace = offres NT JAMAIS vendues à ce compte (cible cross-sell prioritaire) : ${list(c.whitespace)}.`,
+    `— Opportunités réelles en cours (à nommer avec leur montant exact) : ${list(deals)}.`,
+    (Array.isArray(c.enjeux) && c.enjeux.length) ? `— Enjeux saisis par le commercial : ${list(c.enjeux)}.` : "",
+  ].filter(Boolean).join("\n");
 }
 
 /* ------------------------------------------------------------------------------------------- *
@@ -104,27 +135,26 @@ function parseProspectionResponse(raw) {
  * ------------------------------------------------------------------------------------------- */
 function buildCvpPrompt(ctx) {
   const c = ctx || {};
+  // PESTEL réduit à 1 angle : simple garniture facultative, jamais le cœur du message (sinon « copié de la veille »).
   const pestel = (c.pestel || [])
     .filter((p) => p && (p.axe || p.texte))
-    .map((p) => `- ${coerceStr(p.axe, "?")} : ${coerceStr(p.texte)}`)
-    .join("\n");
+    .slice(0, 1)
+    .map((p) => `${coerceStr(p.axe, "?")} : ${coerceStr(p.texte)}`)
+    .join("");
   return `${NT_ROLE}
+${NO_GENERIC}
 
-Construis la proposition de valeur de Neurones Technologies pour ${coerceStr(c.compte, "le compte")} (${coerceStr(c.secteur, "secteur non précisé")}).
-Enjeux client : ${list(c.enjeux)}.
-Whitespace (offres non encore vendues) : ${list(c.whitespace)}.
-${empreinteChiffree(c)}
-Opportunités réelles en cours sur ce compte : ${list((c.signaux || []).map((s) => s.titre))}.
-Contexte PESTEL (déjà établi par la veille, à EXPLOITER, pas à réécrire) :
-${pestel || "- (aucun PESTEL disponible)"}
-Preuves / références NT mobilisables : ${list(c.preuves)}.
-Différenciateurs NT à valoriser : proximité locale, accréditation PASSI (en cours), modèle managé OPEX,
-montages en groupement solidaire (chef de file).
+Construis la proposition de valeur de Neurones Technologies pour CE compte, en t'appuyant STRICTEMENT sur ses faits réels :
+${factBase(c)}
+
+Différenciateurs NT mobilisables (à relier chacun à UN enjeu/whitespace/deal NOMMÉ de ce compte, jamais en vrac) :
+proximité locale & souveraineté de la donnée, accréditation PASSI (en cours), modèle managé OPEX, montage en groupement solidaire (chef de file).
+Preuves / références NT : ${list(c.preuves)}.${pestel ? `\nAngle de marché (à n'utiliser QUE s'il éclaire un besoin concret de ce compte) : ${pestel}` : ""}
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
-  "message": string,                       // 2 phrases nommant le compte et son enjeu prioritaire
-  "differenciateurs": [string]             // 3 différenciateurs concrets reliés aux enjeux
+  "message": string,                       // 2 phrases : cite le compte + un chiffre réel (CA réalisé OU un deal en cours) + l'offre whitespace à ouvrir
+  "differenciateurs": [string]             // 3 : chacun relie UN différenciateur NT à UN enjeu/whitespace/deal nommé de CE compte (aucun différenciateur générique)
 }
 JSON uniquement.`;
 }
@@ -144,18 +174,15 @@ const ANNEES = ["An 1", "An 2", "An 3"];
 
 function buildTriennalPrompt(ctx) {
   const c = ctx || {};
-  const histo = (c.historique || [])
-    .filter((h) => h && h.offre)
-    .map((h) => `${coerceStr(h.offre)} (${coerceStr(h.statut, "?")})`);
   return `${NT_ROLE}
+${NO_GENERIC}
 
-Bâtis un plan de croissance à 3 ans pour le compte ${coerceStr(c.compte, "le compte")} (${coerceStr(c.secteur, "secteur")}) chez Neurones Technologies.
-Empreinte actuelle (offres déjà vendues) : ${list(histo)}.
-${empreinteChiffree(c)}
-Travaux en cours : ${list(c.enCours)}.
-Whitespace à conquérir : ${list(c.whitespace)}.
-Logique attendue : An 1 = consolider/sécuriser la base + un premier cross-sell ; An 2 = étendre le périmètre
-(ouvrir une nouvelle ligne d'offre depuis le whitespace) ; An 3 = devenir partenaire de référence (contrat-cadre).
+Bâtis un plan de croissance à 3 ans pour CE compte, à partir de ses faits réels :
+${factBase(c)}
+
+Logique attendue, ancrée sur SES offres réelles : An 1 = sécuriser/renouveler ce qui est déjà vendu + convertir un deal en cours nommé ;
+An 2 = ouvrir 1 offre PRÉCISE du whitespace ci-dessus (cross-sell) ; An 3 = contrat-cadre / partenaire de référence.
+Les "offres" citées doivent provenir de l'empreinte réelle (déjà vendu / en cours) ou du whitespace — jamais d'offre générique inventée.
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
@@ -163,7 +190,7 @@ Réponds UNIQUEMENT avec un objet JSON valide :
     { "an": "An 1" | "An 2" | "An 3", "titre": string, "offres": [string], "jalon": string }
   ]
 }
-Pour chaque année : un "titre" d'intention, 1 à 2 "offres" concrètes issues du whitespace/en-cours, et un "jalon" mesurable. JSON uniquement.`;
+Chaque année : "titre" d'intention lié au compte, 1 à 2 "offres" NOMMÉES (whitespace/en-cours/déjà vendu), "jalon" mesurable (montant ou échéance). JSON uniquement.`;
 }
 
 function parseTriennalResponse(raw) {
@@ -193,22 +220,20 @@ function buildPlanComptePrompt(ctx) {
     .filter((x) => x && x.role)
     .map((x) => `${coerceStr(x.role)} (${coerceStr(x.posture, "?")})`);
   return `${NT_ROLE}
+${NO_GENERIC}
 
-Rédige le cœur d'un plan de compte pour ${coerceStr(c.compte, "le compte")} (${coerceStr(c.secteur, "secteur")}, compte ${coerceStr(c.tier, "?")}) chez Neurones Technologies.
-Enjeux : ${list(c.enjeux)}.
-${empreinteChiffree(c)}
-Actions déjà en cours : ${list(c.enCours)}.
-Whitespace : ${list(c.whitespace)}.
+Rédige le cœur d'un plan de compte pour CE compte, à partir de ses faits réels :
+${factBase(c)}
 Décideurs connus : ${list(contacts)}.
-Signaux & opportunités en cours : ${list((c.signaux || []).map((s) => s.titre))}.
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
   "actions": [ { "libelle": string, "horizon": "Court terme" | "Moyen terme" | "Continu" } ],
   "risques": [ { "r": string, "m": string, "niv": "Élevé" | "Moyen" | "Faible" } ]
 }
-4 "actions" priorisées (dont au moins une d'ouverture sur le whitespace et une de gouvernance/COPIL) ;
-3 "risques" (r) avec mitigation (m) et niveau (niv), ancrés sur la réalité du compte. JSON uniquement.`;
+4 "actions" priorisées et SPÉCIFIQUES à ce compte : chacune cite une offre (déjà vendue / en cours / whitespace) ou un deal nommé ;
+au moins une action d'OUVERTURE sur une offre PRÉCISE du whitespace, et une de gouvernance/COPIL sur le compte.
+3 "risques" (r) réels du compte avec mitigation (m) et niveau (niv) — pas de risque générique ("concurrence", "budget") sans lien nommé au compte. JSON uniquement.`;
 }
 
 function parsePlanCompteResponse(raw) {
@@ -237,19 +262,26 @@ function buildChatSystem(ctx) {
     "Français, très concis (max 6 lignes), concret et actionnable. " +
     "Ne fournis AUCUNE donnée client (chiffre, contact, budget, échéance) qui ne figure pas dans le " +
     "contexte ci-dessous : si elle manque, dis-le explicitement au lieu de l'estimer. " +
+    "Ancre tes réponses sur les FAITS RÉELS du compte ci-dessous (montants, offres vendues, whitespace, deals) : " +
+    "cite-les. Pas de généralités macro ni de copier-coller de veille. " +
     `Contexte : écran « ${coerceStr(c.ecran, "Copilote")} ». `;
-  const histoOffres = (Array.isArray(c.compte && c.compte.historique) ? c.compte.historique : [])
-    .filter((h) => h && typeof h === "object" && h.offre)
-    .map((h) => h.offre);
+  // Réutilise la même fiche de faits que les autres agents (consistance) quand un compte est fourni.
   const compte = c.compte
-    ? `Compte en cours : ${coerceStr(c.compte.nom)} (${coerceStr(c.compte.secteur, "?")}, ${coerceStr(c.compte.tier, "?")}). ` +
-      `Enjeux : ${list(c.compte.enjeux)}. ` +
-      `Offres déjà vendues : ${list(histoOffres)}. ` +
-      `Whitespace : ${list(c.compte.whitespace)}. ` +
-      `${empreinteChiffree(c.compte)} ` +
-      `Opportunités en cours : ${list((c.compte.signaux || []).map((s) => s.titre))}.`
-    : "Aucun compte précis sélectionné : réponds au niveau méthode/portefeuille.";
-  return base + compte;
+    ? `Faits réels du compte en cours :\n${factBase({
+        compte: c.compte.nom,
+        secteur: c.compte.secteur,
+        tier: c.compte.tier,
+        enjeux: c.compte.enjeux,
+        historique: c.compte.historique,
+        enCours: c.compte.enCours,
+        whitespace: c.compte.whitespace,
+        casTotal: c.compte.casTotal,
+        pipelinePondere: c.compte.pipelinePondere,
+        wins: c.compte.wins,
+        deals: c.compte.deals || c.compte.signaux,
+      })}`
+    : "Aucun compte précis sélectionné : réponds au niveau méthode/portefeuille, sans inventer de compte.";
+  return `${base}\n${compte}`;
 }
 
 /** Sérialise l'historique multi-turn en un seul prompt JSON-only (reuse generateJson). */
