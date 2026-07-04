@@ -658,3 +658,35 @@ describe("battlecards complètes top 10 (« pas assez riche », 2026-07)", () =>
     expect(parseFullBattlecardsResponse(null)).toBeNull();
   });
 });
+
+describe("Vague B — objectivité : garde-fous anti-fabrication dans les prompts", () => {
+  it("buildSwotPestelPrompt impose l'objectivité et supprime l'échappatoire « chaque fois que possible »", async () => {
+    const { buildSwotPestelPrompt } = await import("../domain/enrich.js");
+    const p = buildSwotPestelPrompt([{ title: "sig", axis: "concurrents", impact: "high", stance: "threat", date: "2026-07-01" }]);
+    expect(p).toContain("OBJECTIVITÉ (impérative)");
+    expect(p).not.toContain("chaque fois que possible");
+    expect(p).not.toContain("uniquement quand les signaux ne suffisent pas");
+  });
+
+  it("buildFullBattlecardsPrompt n'autorise plus les « faits connus du marché » non sourcés et cadre les hypothèses", async () => {
+    const { buildFullBattlecardsPrompt } = await import("../domain/enrich.js");
+    const p = buildFullBattlecardsPrompt([], [{ name: "Talentys", note: "concurrent cyber" }]);
+    expect(p).toContain("OBJECTIVITÉ (impérative)");
+    expect(p).toContain("PAS dans des « faits connus du marché » non sourcés");
+    expect(p).toContain("HYPOTHÈSES");
+    expect(p).not.toContain("Ancre chaque affirmation dans des faits connus du marché");
+  });
+
+  it("Porter / GE9 / TechRadar / Scénarios portent la directive d'objectivité", async () => {
+    const { buildPorterPrompt, buildGe9Prompt, buildTechRadarPrompt, buildScenariosPrompt } = await import("../domain/enrich.js");
+    for (const p of [
+      buildPorterPrompt([]),
+      buildGe9Prompt([], []),
+      buildTechRadarPrompt([], undefined, []),
+      buildScenariosPrompt([]),
+    ]) {
+      expect(p).toContain("OBJECTIVITÉ (impérative)");
+    }
+    expect(buildTechRadarPrompt([], undefined, [])).not.toContain("justifié par les signaux fournis chaque fois que possible");
+  });
+});

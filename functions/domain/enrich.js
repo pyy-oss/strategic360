@@ -121,6 +121,19 @@ function signalsBlock(items) {
     .join("\n");
 }
 
+// Directive d'OBJECTIVITÉ commune (Vague B, 2026-07) — portée du garde-fou anti-invention du
+// Copilote (NO_GENERIC) à TOUS les générateurs de cadres. Remplace les échappatoires « chaque fois
+// que possible » / « faits connus du marché » qui autorisaient le modèle à fabriquer à partir de
+// ses connaissances paramétriques. Les signaux sont numérotés dans signalsBlock : le modèle peut
+// donc les citer par leur numéro.
+const GROUNDING =
+  "OBJECTIVITÉ (impérative) : n'affirme AUCUN fait, chiffre, nom d'entité, date ou mouvement " +
+  "concurrent qui ne soit tiré des SIGNAUX numérotés ci-dessous ou du contexte entreprise fourni. " +
+  "N'invoque PAS de « faits connus du marché » ni de connaissances générales non sourcées. Quand un " +
+  "élément s'appuie sur un signal, cite son numéro entre crochets (ex. [3]). Si la matière manque, " +
+  "écris-le explicitement (« à qualifier », « non observé dans les signaux ») plutôt que de l'inventer, " +
+  "de l'estimer au hasard ou de le déduire — l'incertitude doit être visible, jamais déguisée en certitude.";
+
 /**
  * Builds the Gemini prompt producing the SWOT + PESTEL strategic synthesis from real signals.
  * @param {Array<object>} items Lightweight signals from `pickSignalsForEnrichment`.
@@ -153,12 +166,14 @@ objet JSON valide (pas de markdown, pas de texte hors JSON) respectant STRICTEME
   }
 }
 
+${GROUNDING}
+
 Consignes impératives :
 - Rédige tout en français.
 - Les clés du SWOT doivent être EXACTEMENT "Forces", "Faiblesses", "Opportunités", "Menaces".
-- 3 à 6 puces par quadrant SWOT, chacune une phrase courte et factuelle.
-- Ancre chaque affirmation dans les signaux fournis chaque fois que possible (cite l'entité ou le
-  fait concerné) ; complète par le contexte entreprise uniquement quand les signaux ne suffisent pas.
+- 3 à 6 puces par quadrant SWOT, chacune une phrase courte et factuelle, ANCRÉE sur un signal (cite
+  son numéro) ou sur le contexte entreprise ; à défaut de matière, réduis le nombre de puces plutôt
+  que de meubler.
 - Le PESTEL doit contenir LES 6 facteurs, chacun exactement une fois, avec les noms français exacts
   ci-dessus.
 
@@ -242,10 +257,13 @@ pas de texte hors JSON) respectant STRICTEMENT ce schéma :
   ]
 }
 
+${GROUNDING}
+
 Consignes impératives :
 - Rédige tout en français.
 - Entre 5 et 12 blips, chacun distinct.
-- Chaque blip doit être justifié par les signaux fournis chaque fois que possible.
+- Chaque blip doit être justifié par un signal fourni (rationale citant son numéro) ou par le
+  contexte entreprise ; n'invente pas une technologie qu'aucun signal n'évoque.
 - "ring" reflète la recommandation pour cette entreprise (adopter = en production ;
   essayer = pilote ; evaluer = à étudier ; suspendre = éviter/désinvestir).
 
@@ -590,8 +608,11 @@ Contraintes :
   intitulé "t" nomme un axe de cause distinct ; chaque hypothèse "h" est testable par les données.
 - "s7" doit contenir EXACTEMENT ces 7 dimensions : ${S7_DIMENSIONS.map((s) => `"${s}"`).join(", ")}.
 - Les scores (0-100) sont des estimations honnêtes justifiables par le contexte/les signaux — pas
-  de complaisance (une ESN régionale n'a pas 90 partout).
+  de complaisance (une ESN régionale n'a pas 90 partout) ; à défaut d'élément probant, reste au
+  milieu de l'échelle plutôt que d'afficher un score tranché non fondé.
 - Tout le texte en français, concret, spécifique à cette entreprise.
+
+${GROUNDING}
 
 Signaux de veille :
 ${signalsBlock(items)}
@@ -701,9 +722,12 @@ Réponds UNIQUEMENT avec un objet JSON valide :
   ]
 }
 
+${GROUNDING}
+
 Contraintes : 6 à 9 segments AU TOTAL dont AU MOINS 3 émergents (emerging:true) ; scores honnêtes et
-différenciés (pas tout à 70) ; un segment émergent a typiquement attr élevé et pos faible ; ancre
-chaque note dans les signaux et les données internes fournies.
+différenciés (pas tout à 70) ; un segment émergent a typiquement attr élevé et pos faible ; chaque
+note DOIT citer le(s) signal(aux) ou la donnée interne qui la fondent — un score d'attractivité sans
+signal correspondant doit rester prudent et le dire (« potentiel estimé, à confirmer »).
 
 Données internes réelles (CAS par BU) :
 ${granBlock}
@@ -800,8 +824,11 @@ Fonde chaque estimation sur les signaux réels et le contexte (concurrents, dés
   "nouveauxEntrants": { "v": number, "note": string } // menace de nouveaux entrants (pure players, acteurs étrangers, filiales)
 }
 
+${GROUNDING}
+
 Contraintes : v entre 0 et 100 (100 = force très intense/menaçante) ; chaque note en 1-2 phrases
-cite un fait/signal précis (concurrent nommé, mouvement, tendance). Français. JSON uniquement.`;
+DOIT citer un fait/signal précis (concurrent nommé, mouvement, tendance) avec son numéro de signal —
+une intensité sans fait cité doit rester prudente et le signaler dans la note. Français. JSON uniquement.`;
 }
 
 /** parsePorterResponse(raw) -> {rivalite:{v,note}, substituts:{v,note}, nouveauxEntrants:{v,note}} | null */
@@ -862,9 +889,10 @@ Règles impératives :
   partenaires passées/nouvelles, nouveaux concurrents ou mouvements notables, nouvelles
   obligations réglementaires, EOL/pénuries. N'invente RIEN ; ne supprime pas d'informations
   encore valables ; en cas de doute, ne change pas.
-- "changes" : la liste courte (0-8) des modifications apportées, en français ("ajout du
-  concurrent X", "date Y passée — retirée"...). Si rien ne justifie de changement, renvoie le
-  contexte inchangé et "changes": [].
+- "changes" : la liste courte (0-8) des modifications apportées, en français, CHACUNE justifiée par
+  un signal précis avec son numéro ("ajout du concurrent X [signal 4]", "date Y passée — retirée
+  [signal 2]"...). Une modification sans signal correspondant est INTERDITE. Si rien ne justifie de
+  changement, renvoie le contexte inchangé et "changes": [].
 
 Signaux de veille récents :
 ${signalsBlock(items)}
@@ -1014,9 +1042,15 @@ Réponds UNIQUEMENT avec un objet JSON valide :
   ]
 }
 
+${GROUNDING}
+
 Contraintes :
-- Ancre chaque affirmation dans des faits connus du marché ivoirien/UEMOA ou les notes fournies ;
-  pas de généralités interchangeables ("bon service client", "prix compétitifs" sans contexte).
+- Ancre chaque affirmation dans les SIGNAUX numérotés, les notes fournies sur le concurrent, ou le
+  contexte entreprise — PAS dans des « faits connus du marché » non sourcés. N'invente JAMAIS un fait
+  spécifique (contrat gagné, chiffre, date, nom de client) qui ne figure pas dans ces sources.
+- "theirLikelyMoves" sont des HYPOTHÈSES : formule-les comme telles (« pourrait… ») et fonde-les sur
+  un signal ou une note, jamais sur une certitude inventée.
+- Pas de généralités interchangeables ("bon service client", "prix compétitifs" sans contexte).
 - Les axes de victoire doivent s'appuyer sur NOS atouts réels (partenariats, certifications,
   proximité, Academy, références) face aux faiblesses de CE concurrent précis.
 - Tout en français.
@@ -1204,8 +1238,11 @@ Réponds UNIQUEMENT avec un objet JSON valide :
   ]
 }
 
-Contraintes : EXACTEMENT 4 mondes (les 4 combinaisons des 2 axes), probabilités sommant ~1,
-signposts ancrés dans des faits observables. Français. JSON uniquement.
+${GROUNDING}
+
+Contraintes : EXACTEMENT 4 mondes (les 4 combinaisons des 2 axes), probabilités sommant ~1 (des
+estimations prudentes, pas de fausse précision), signposts ancrés dans des faits OBSERVABLES cités
+depuis les signaux (indiquer le numéro). Français. JSON uniquement.
 
 Signaux de veille :
 ${signalsBlock(items)}
