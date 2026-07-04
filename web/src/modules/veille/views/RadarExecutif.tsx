@@ -4,6 +4,7 @@ import { AX, IMP, PROX, STANCE, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { useDecisions } from "../lib/execution";
 import { useIntelItems, useWatchlist } from "../lib/intel";
+import { isPastDue } from "../lib/freshness";
 import { useVeilleExecSummary } from "../lib/summaries";
 
 export interface RadarExecutifProps {
@@ -22,7 +23,11 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   const opps = sorted.filter((s) => s.stance === "opportunity");
   // « Business imminent » (plan d'audit §5.4) : signaux à échéance proche OU à contenu business
   // direct (AO, fins de vie, réglementation, financements), déjà triés par priorityScore.
+  // Anti-obsolescence : on EXCLUT les items périmés (échéance dépassée) — un AO déjà clos ou un
+  // scrutin passé n'a rien d'« imminent ».
+  const nowMs = Date.now();
   const bizImminent = sorted
+    .filter((s) => !isPastDue(s, nowMs))
     .filter((s) => s.prox === "imminent" || s.prox === "court" || ["tender", "eol", "regulation", "funding"].includes(s.subtype ?? ""))
     .slice(0, 6);
   const cell = (imp: string, st: string) => items.filter((s) => s.impact === imp && s.stance === st).length;

@@ -573,7 +573,11 @@ function isDegradedWebPage(text) {
  */
 async function classifyRawText(rawText, watchlistEntities, context) {
   const companyContext = await getCompanyContext();
-  const prompt = buildClassificationPrompt(rawText, watchlistEntities, companyContext);
+  // Repères temporels : date de publication de la source (context.defaultDate) → le classifieur
+  // juge passé/à-venir sur des dates réelles plutôt que sur le ton du texte (anti-obsolescence).
+  const prompt = buildClassificationPrompt(rawText, watchlistEntities, companyContext, {
+    pubDate: context && context.defaultDate ? context.defaultDate : undefined,
+  });
   const response = await generateJson(prompt);
   return parseClassificationResponse(response, context);
 }

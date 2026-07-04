@@ -61,6 +61,7 @@ export interface IntelItem {
   dueDate?: string;
   budgetIdentified?: boolean;
   prox?: IntelProx;
+  stale?: boolean; // échéance (dueDate) dépassée — item périmé, ne pas présenter comme imminent
   neuf?: boolean;
   linkedFp?: string;
   linkedSupplierId?: string;
