@@ -74,6 +74,110 @@ function useDismiss(open: boolean, close: () => void, ref: React.RefObject<HTMLE
   }, [open, close, ref]);
 }
 
+/* ----------------------------------- Input / Textarea ----------------------------------- */
+
+const fieldBase: React.CSSProperties = {
+  width: "100%",
+  background: T.panel2,
+  border: `1px solid ${T.line}`,
+  borderRadius: 8,
+  padding: "8px 11px",
+  color: T.ink,
+  fontSize: 12.5,
+  fontFamily: "inherit",
+  transition: "border-color .15s, box-shadow .15s",
+  outline: "none",
+};
+
+export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> {
+  onChange?: (value: string) => void;
+  invalid?: boolean;
+}
+/** Champ texte premium — `onChange` reçoit directement la valeur. Focus doré via le CSS global. */
+export function Input({ onChange, invalid, style, onFocus, onBlur, ...rest }: InputProps) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <input
+      {...rest}
+      onChange={(e) => onChange?.(e.target.value)}
+      onFocus={(e) => { setFocus(true); onFocus?.(e); }}
+      onBlur={(e) => { setFocus(false); onBlur?.(e); }}
+      style={{
+        ...fieldBase,
+        borderColor: focus ? T.gold : invalid ? T.clay : T.line,
+        boxShadow: focus ? `0 0 0 3px ${T.gold}22` : "none",
+        ...style,
+      }}
+    />
+  );
+}
+
+export interface TextareaProps extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, "onChange"> {
+  onChange?: (value: string) => void;
+}
+/** Zone de texte premium (redimensionnable verticalement). */
+export function Textarea({ onChange, style, onFocus, onBlur, ...rest }: TextareaProps) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <textarea
+      {...rest}
+      onChange={(e) => onChange?.(e.target.value)}
+      onFocus={(e) => { setFocus(true); onFocus?.(e); }}
+      onBlur={(e) => { setFocus(false); onBlur?.(e); }}
+      style={{
+        ...fieldBase,
+        minHeight: 72,
+        resize: "vertical",
+        lineHeight: 1.45,
+        borderColor: focus ? T.gold : T.line,
+        boxShadow: focus ? `0 0 0 3px ${T.gold}22` : "none",
+        ...style,
+      }}
+    />
+  );
+}
+
+/* --------------------------------------- Toggle --------------------------------------- */
+
+export interface ToggleProps {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label?: React.ReactNode;
+  disabled?: boolean;
+  color?: string;
+  id?: string;
+}
+/** Interrupteur premium (on/off) — accessible (role switch), remplace une case à cocher. */
+export function Toggle({ checked, onChange, label, disabled, color = T.emerald, id }: ToggleProps) {
+  return (
+    <label htmlFor={id} style={{ display: "inline-flex", alignItems: "center", gap: 9, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1, userSelect: "none" }}>
+      <button
+        id={id}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={() => !disabled && onChange(!checked)}
+        style={{
+          position: "relative",
+          width: 38,
+          height: 22,
+          borderRadius: 999,
+          border: "none",
+          flexShrink: 0,
+          cursor: disabled ? "not-allowed" : "pointer",
+          background: checked ? color : T.line,
+          transition: "background .18s",
+          padding: 0,
+        }}
+      >
+        <span style={{ position: "absolute", top: 2, left: checked ? 18 : 2, width: 18, height: 18, borderRadius: "50%", background: checked ? "#0E1613" : T.dim, transition: "left .18s, background .18s" }} />
+      </button>
+      {label != null && <span style={{ fontSize: 12.5, color: T.dim }}>{label}</span>}
+    </label>
+  );
+}
+
 export interface SelectOption {
   value: string;
   label: React.ReactNode;

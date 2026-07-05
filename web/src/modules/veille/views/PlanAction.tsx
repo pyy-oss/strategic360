@@ -9,7 +9,8 @@ import { slugifyClient } from "../lib/copilote";
 import { actionPriority, createAction, useActions, type ActionStatus } from "../lib/execution";
 import { updateBizOpportunity, useBizOpportunities, type BizOpportunityProbability, type BizOpportunityStatus } from "../lib/intel";
 import { usePaged, Pager } from "../components/Pager";
-import { Select } from "../../../design/fields";
+import { Select, Input } from "../../../design/fields";
+import { Modal, useToast } from "../../../design/overlay";
 
 const PROBA_META: Record<BizOpportunityProbability, { l: string; c: string }> = {
   high: { l: "Probabilité haute", c: T.emerald },
@@ -202,10 +203,11 @@ const EMPTY_FORM: NewActionForm = {
  * `ev` (valeur attendue) is derived on submit from the impact×urgence/effort formula (BUILD_KIT.md
  * §8.3) as a proxy — the action's own fields carry no independent monetary base, so this mirrors
  * the same priority formula used for the quadrant/sort rather than an unrelated manual estimate. */
-function NewActionPanel({ onClose }: { onClose: () => void }) {
+function NewActionPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form, setForm] = useState<NewActionForm>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
 
   const set = <K extends keyof NewActionForm>(k: K, v: NewActionForm[K]) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -231,6 +233,7 @@ function NewActionPanel({ onClose }: { onClose: () => void }) {
         source: form.source.trim() || undefined,
       });
       setForm(EMPTY_FORM);
+      toast.success("Action enregistrée.");
       onClose();
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Échec de l'enregistrement.");
@@ -239,51 +242,35 @@ function NewActionPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    background: T.panel2,
-    border: `1px solid ${T.line}`,
-    borderRadius: 8,
-    padding: "7px 10px",
-    color: T.ink,
-    fontSize: 12.5,
-    fontFamily: "inherit",
-  };
   const labelStyle: React.CSSProperties = { fontSize: 11, color: T.faint, display: "block", marginBottom: 4 };
 
   return (
-    <Card style={{ marginBottom: 14, borderColor: T.gold }}>
+    <Modal open={open} onClose={onClose} title="Nouvelle action">
       <form onSubmit={submit}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Nouvelle action</span>
-          <button type="button" className="pill" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Titre *</label>
-            <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} required />
+            <Input value={form.title} onChange={(v) => set("title", v)} required />
           </div>
           <div>
             <label style={labelStyle}>Impact (1-5)</label>
-            <input type="number" min={1} max={5} style={inputStyle} value={form.impact} onChange={(e) => set("impact", Number(e.target.value))} />
+            <Input type="number" min={1} max={5} value={String(form.impact)} onChange={(v) => set("impact", Number(v))} />
           </div>
           <div>
             <label style={labelStyle}>Urgence (1-5)</label>
-            <input type="number" min={1} max={5} style={inputStyle} value={form.urgence} onChange={(e) => set("urgence", Number(e.target.value))} />
+            <Input type="number" min={1} max={5} value={String(form.urgence)} onChange={(v) => set("urgence", Number(v))} />
           </div>
           <div>
             <label style={labelStyle}>Effort (1-5)</label>
-            <input type="number" min={1} max={5} style={inputStyle} value={form.effort} onChange={(e) => set("effort", Number(e.target.value))} />
+            <Input type="number" min={1} max={5} value={String(form.effort)} onChange={(v) => set("effort", Number(v))} />
           </div>
           <div>
             <label style={labelStyle}>Porteur</label>
-            <input style={inputStyle} value={form.owner} onChange={(e) => set("owner", e.target.value)} />
+            <Input value={form.owner} onChange={(v) => set("owner", v)} />
           </div>
           <div>
             <label style={labelStyle}>Échéance</label>
-            <input style={inputStyle} value={form.echeance} onChange={(e) => set("echeance", e.target.value)} placeholder="ex: T3, Immédiat" />
+            <Input value={form.echeance} onChange={(v) => set("echeance", v)} placeholder="ex: T3, Immédiat" />
           </div>
           <div>
             <label style={labelStyle}>Statut</label>
@@ -292,15 +279,18 @@ function NewActionPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Source</label>
-            <input style={inputStyle} value={form.source} onChange={(e) => set("source", e.target.value)} placeholder="ex: Signal #2" />
+            <Input value={form.source} onChange={(v) => set("source", v)} placeholder="ex: Signal #2" />
           </div>
         </div>
         {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
-        <button type="submit" className="pill on" disabled={submitting}>
-          {submitting ? "Enregistrement…" : "Enregistrer l'action"}
-        </button>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" className="pill" onClick={onClose}>Annuler</button>
+          <button type="submit" className="pill on" disabled={submitting}>
+            {submitting ? "Enregistrement…" : "Enregistrer l'action"}
+          </button>
+        </div>
       </form>
-    </Card>
+    </Modal>
   );
 }
 
@@ -340,7 +330,7 @@ export function PlanAction() {
           </button>
         )}
       </div>
-      {showForm && isExec && <NewActionPanel onClose={() => setShowForm(false)} />}
+      {isExec && <NewActionPanel open={showForm} onClose={() => setShowForm(false)} />}
       {loading && actions.length === 0 && <div style={{ fontSize: 12.5, color: T.faint, marginBottom: 10 }}>Chargement du plan d'action…</div>}
       {!loading && actions.length === 0 && (
         <div style={{ fontSize: 12.5, color: T.faint, marginBottom: 10 }}>

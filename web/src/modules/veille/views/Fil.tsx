@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { usePaged, Pager } from "../components/Pager";
-import { Select, DateField } from "../../../design/fields";
+import { Select, DateField, Input, Textarea } from "../../../design/fields";
+import { Modal, useToast } from "../../../design/overlay";
 import { T, AX, IMP, STANCE, PROX } from "../../../design/tokens";
 import { Card, Badge } from "../../../design/ui";
 import { useCan } from "../../../lib/rbac";
@@ -42,10 +43,11 @@ const EMPTY_FORM: NewItemForm = {
 };
 
 /** "Nouvelle fiche de veille" — contribution panel (BUILD_KIT.md §11 "Fil de veille" → create/update items). */
-function NewItemPanel({ onClose }: { onClose: () => void }) {
+function NewItemPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form, setForm] = useState<NewItemForm>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
 
   const set = <K extends keyof NewItemForm>(k: K, v: NewItemForm[K]) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -71,6 +73,7 @@ function NewItemPanel({ onClose }: { onClose: () => void }) {
         date: form.date,
       });
       setForm(EMPTY_FORM);
+      toast.success("Fiche de veille enregistrée.");
       onClose();
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Échec de l'enregistrement.");
@@ -79,43 +82,27 @@ function NewItemPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    background: T.panel2,
-    border: `1px solid ${T.line}`,
-    borderRadius: 8,
-    padding: "7px 10px",
-    color: T.ink,
-    fontSize: 12.5,
-    fontFamily: "inherit",
-  };
   const labelStyle: React.CSSProperties = { fontSize: 11, color: T.faint, display: "block", marginBottom: 4 };
 
   return (
-    <Card style={{ marginBottom: 14, borderColor: T.gold }}>
+    <Modal open={open} onClose={onClose} title="Nouvelle fiche de veille">
       <form onSubmit={submit}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Nouvelle fiche de veille</span>
-          <button type="button" className="pill" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Titre *</label>
-            <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} required />
+            <Input value={form.title} onChange={(v) => set("title", v)} required />
           </div>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Résumé</label>
-            <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={form.summary} onChange={(e) => set("summary", e.target.value)} />
+            <Textarea value={form.summary} onChange={(v) => set("summary", v)} />
           </div>
           <div>
             <label style={labelStyle}>URL / source</label>
-            <input style={inputStyle} value={form.url} onChange={(e) => set("url", e.target.value)} placeholder="https://…" />
+            <Input value={form.url} onChange={(v) => set("url", v)} placeholder="https://…" />
           </div>
           <div>
             <label style={labelStyle}>Cotation source (A1..F5)</label>
-            <input style={inputStyle} value={form.sourceRating} onChange={(e) => set("sourceRating", e.target.value)} placeholder="ex: B2" />
+            <Input value={form.sourceRating} onChange={(v) => set("sourceRating", v)} placeholder="ex: B2" />
           </div>
           <div>
             <label style={labelStyle}>Axe</label>
@@ -135,19 +122,22 @@ function NewItemPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Entité</label>
-            <input style={inputStyle} value={form.ent} onChange={(e) => set("ent", e.target.value)} placeholder="ex: Cisco" />
+            <Input value={form.ent} onChange={(v) => set("ent", v)} placeholder="ex: Cisco" />
           </div>
           <div>
             <label style={labelStyle}>Géographie</label>
-            <input style={inputStyle} value={form.geo} onChange={(e) => set("geo", e.target.value)} placeholder="ex: Côte d'Ivoire" />
+            <Input value={form.geo} onChange={(v) => set("geo", v)} placeholder="ex: Côte d'Ivoire" />
           </div>
         </div>
         {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
-        <button type="submit" className="pill on" disabled={submitting}>
-          {submitting ? "Enregistrement…" : "Enregistrer la fiche"}
-        </button>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" className="pill" onClick={onClose}>Annuler</button>
+          <button type="submit" className="pill on" disabled={submitting}>
+            {submitting ? "Enregistrement…" : "Enregistrer la fiche"}
+          </button>
+        </div>
       </form>
-    </Card>
+    </Modal>
   );
 }
 
@@ -234,7 +224,7 @@ export function Fil() {
         )}
       </div>
 
-      {showForm && canWrite && <NewItemPanel onClose={() => setShowForm(false)} />}
+      {canWrite && <NewItemPanel open={showForm} onClose={() => setShowForm(false)} />}
 
       {loading && items.length === 0 && (
         <div style={{ fontSize: 12.5, color: T.faint, marginBottom: 10 }}>Chargement du fil de veille…</div>

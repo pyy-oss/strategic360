@@ -13,7 +13,8 @@ import {
   type InitiativeStatus,
 } from "../lib/execution";
 import { usePaged, Pager } from "../components/Pager";
-import { Select, DateField } from "../../../design/fields";
+import { Select, DateField, Input } from "../../../design/fields";
+import { Modal, useToast } from "../../../design/overlay";
 
 interface NewInitiativeForm {
   title: string;
@@ -41,11 +42,12 @@ const EMPTY_FORM: NewInitiativeForm = {
 
 /** "Nouvelle initiative" — contribution panel, exec-gated (BUILD_KIT.md §7 "cadres/scénarios/
  * décisions/OKR → exécutifs"), same layout convention as Fil.tsx's `NewItemPanel` (V2). */
-function NewInitiativePanel({ onClose }: { onClose: () => void }) {
+function NewInitiativePanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form, setForm] = useState<NewInitiativeForm>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const { themes } = useStrategicThemes();
+  const toast = useToast();
 
   const set = <K extends keyof NewInitiativeForm>(k: K, v: NewInitiativeForm[K]) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -71,6 +73,7 @@ function NewInitiativePanel({ onClose }: { onClose: () => void }) {
         linkedItems: [],
       });
       setForm(EMPTY_FORM);
+      toast.success("Initiative enregistrée.");
       onClose();
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Échec de l'enregistrement.");
@@ -79,39 +82,23 @@ function NewInitiativePanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    background: T.panel2,
-    border: `1px solid ${T.line}`,
-    borderRadius: 8,
-    padding: "7px 10px",
-    color: T.ink,
-    fontSize: 12.5,
-    fontFamily: "inherit",
-  };
   const labelStyle: React.CSSProperties = { fontSize: 11, color: T.faint, display: "block", marginBottom: 4 };
 
   return (
-    <Card style={{ marginBottom: 14, borderColor: T.gold }}>
+    <Modal open={open} onClose={onClose} title="Nouvelle initiative">
       <form onSubmit={submit}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Nouvelle initiative</span>
-          <button type="button" className="pill" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Titre *</label>
-            <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} required />
+            <Input value={form.title} onChange={(v) => set("title", v)} required />
           </div>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Objectif *</label>
-            <input style={inputStyle} value={form.objective} onChange={(e) => set("objective", e.target.value)} required />
+            <Input value={form.objective} onChange={(v) => set("objective", v)} required />
           </div>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Résultats clés (séparés par des virgules)</label>
-            <input style={inputStyle} value={form.keyResults} onChange={(e) => set("keyResults", e.target.value)} placeholder="ex: 20 contrats managés, +5 pts win rate" />
+            <Input value={form.keyResults} onChange={(v) => set("keyResults", v)} placeholder="ex: 20 contrats managés, +5 pts win rate" />
           </div>
           <div>
             <label style={labelStyle}>Pilier / thème</label>
@@ -120,7 +107,7 @@ function NewInitiativePanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Porteur</label>
-            <input style={inputStyle} value={form.owner} onChange={(e) => set("owner", e.target.value)} />
+            <Input value={form.owner} onChange={(v) => set("owner", v)} />
           </div>
           <div>
             <label style={labelStyle}>Horizon</label>
@@ -142,11 +129,14 @@ function NewInitiativePanel({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
-        <button type="submit" className="pill on" disabled={submitting}>
-          {submitting ? "Enregistrement…" : "Enregistrer l'initiative"}
-        </button>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" className="pill" onClick={onClose}>Annuler</button>
+          <button type="submit" className="pill on" disabled={submitting}>
+            {submitting ? "Enregistrement…" : "Enregistrer l'initiative"}
+          </button>
+        </div>
       </form>
-    </Card>
+    </Modal>
   );
 }
 
@@ -170,10 +160,11 @@ const EMPTY_DECISION_FORM: NewDecisionForm = {
 
 /** "Nouvelle décision" — exec-gated contribution panel for the decision registry, same layout
  * convention as `NewInitiativePanel` above. */
-function NewDecisionPanel({ onClose }: { onClose: () => void }) {
+function NewDecisionPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form, setForm] = useState<NewDecisionForm>(EMPTY_DECISION_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
 
   const set = <K extends keyof NewDecisionForm>(k: K, v: NewDecisionForm[K]) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -196,6 +187,7 @@ function NewDecisionPanel({ onClose }: { onClose: () => void }) {
         statut: form.statut,
       });
       setForm(EMPTY_DECISION_FORM);
+      toast.success("Décision enregistrée.");
       onClose();
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Échec de l'enregistrement.");
@@ -204,35 +196,19 @@ function NewDecisionPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    background: T.panel2,
-    border: `1px solid ${T.line}`,
-    borderRadius: 8,
-    padding: "7px 10px",
-    color: T.ink,
-    fontSize: 12.5,
-    fontFamily: "inherit",
-  };
   const labelStyle: React.CSSProperties = { fontSize: 11, color: T.faint, display: "block", marginBottom: 4 };
 
   return (
-    <Card style={{ marginBottom: 14, borderColor: T.gold }}>
+    <Modal open={open} onClose={onClose} title="Nouvelle décision">
       <form onSubmit={submit}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Nouvelle décision</span>
-          <button type="button" className="pill" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Décision *</label>
-            <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} required />
+            <Input value={form.title} onChange={(v) => set("title", v)} required />
           </div>
           <div>
             <label style={labelStyle}>Instance (CODIR, DG…) *</label>
-            <input style={inputStyle} value={form.decidedBy} onChange={(e) => set("decidedBy", e.target.value)} required />
+            <Input value={form.decidedBy} onChange={(v) => set("decidedBy", v)} required />
           </div>
           <div>
             <label style={labelStyle}>Date *</label>
@@ -245,19 +221,22 @@ function NewDecisionPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Option retenue</label>
-            <input style={inputStyle} value={form.chosen} onChange={(e) => set("chosen", e.target.value)} />
+            <Input value={form.chosen} onChange={(v) => set("chosen", v)} />
           </div>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Signaux liés (séparés par des virgules, optionnel)</label>
-            <input style={inputStyle} value={form.linkedItems} onChange={(e) => set("linkedItems", e.target.value)} />
+            <Input value={form.linkedItems} onChange={(v) => set("linkedItems", v)} />
           </div>
         </div>
         {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
-        <button type="submit" className="pill on" disabled={submitting}>
-          {submitting ? "Enregistrement…" : "Enregistrer la décision"}
-        </button>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" className="pill" onClick={onClose}>Annuler</button>
+          <button type="submit" className="pill on" disabled={submitting}>
+            {submitting ? "Enregistrement…" : "Enregistrer la décision"}
+          </button>
+        </div>
       </form>
-    </Card>
+    </Modal>
   );
 }
 
@@ -285,7 +264,7 @@ export function Execution() {
             </button>
           )}
         </div>
-        {showForm && isExec && <NewInitiativePanel onClose={() => setShowForm(false)} />}
+        {isExec && <NewInitiativePanel open={showForm} onClose={() => setShowForm(false)} />}
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
           {loadingInit && initiatives.length === 0 && <div style={{ fontSize: 12.5, color: T.faint }}>Chargement des initiatives…</div>}
           {!loadingInit && initiatives.length === 0 && (
@@ -321,7 +300,7 @@ export function Execution() {
             </button>
           )}
         </div>
-        {showDecisionForm && isExec && <NewDecisionPanel onClose={() => setShowDecisionForm(false)} />}
+        {isExec && <NewDecisionPanel open={showDecisionForm} onClose={() => setShowDecisionForm(false)} />}
         <div className="tbl-scroll" style={{ marginTop: 12 }}>
           {loadingDec && decisions.length === 0 && <div style={{ fontSize: 12.5, color: T.faint }}>Chargement du registre…</div>}
           {!loadingDec && decisions.length === 0 && <div style={{ fontSize: 12.5, color: T.faint }}>Aucune décision enregistrée pour l'instant.</div>}
