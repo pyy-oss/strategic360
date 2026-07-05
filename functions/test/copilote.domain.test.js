@@ -167,6 +167,82 @@ describe("Copilote — CVP : différenciateurs source unique + angle métier (au
   });
 });
 
+describe("Copilote — profondeur : données réelles branchées + nouveaux agents (audit 2026-07)", () => {
+  const richCtx = {
+    compte: "SGCI", secteur: "Banque", tier: "Stratégique",
+    casTotal: 200000000, pipelinePondere: 80000000, wins: 3,
+    historique: [{ offre: "ICT", cas: 150000000, firstYear: 2021, lastYear: 2024 }],
+    whitespace: ["SOC managé", "Data/IA"],
+    deals: [{ nom: "OPP-9", montant: 60000000, etape: "Négociation", probability: 0.6, closingDate: "2026-09-30" }],
+    recommendation: { offre: "SOC managé", csPct: 55, montantEstime: 45000000 },
+    battlecards: [{ competitor: "Atos", positioning: "gros intégrateur", strengths: ["notoriété"], weaknesses: ["prix", "proximité locale"], ourWinThemes: ["présence Abidjan"], objectionHandling: ["délais tenus"] }],
+    winStats: { global: 58, dealsTotal: 12, byCompetitor: [{ competitor: "Atos", winPct: 40, deals: 5 }], lessons: [{ result: "win", competitor: "Atos", lesson: "proximité décisive" }] },
+    valueModel: { casTotal: 200000000, pipelinePondere: 80000000, nextOffer: { offre: "SOC managé", montant: 45000000, csPct: 55 }, whitespaceValue: [{ offre: "SOC managé", montant: 45000000 }, { offre: "Data/IA", montant: 30000000 }], whitespacePotential: 75000000 },
+    contacts: [{ nom: "M. Kone", role: "DSI", posture: "Favorable" }],
+    today: "2026-07-05",
+  };
+
+  it("factBase enrichit les deals (montant/étape/proba/closing) via un prompt qui les cite", async () => {
+    const { buildMeddicPrompt } = await import("../domain/copilote.js");
+    const p = buildMeddicPrompt(richCtx);
+    expect(p).toContain("OPP-9");
+    expect(p).toMatch(/60\D000\D000\D?XOF/);
+    expect(p).toContain("stade Négociation");
+    expect(p).toContain("closing 2026-09-30");
+  });
+
+  it("les blocs concurrentiel / win-stats / valeur s'injectent dans les agents concernés", async () => {
+    const { buildDealAnalysisPrompt, buildBusinessCasePrompt } = await import("../domain/copilote.js");
+    const deal = buildDealAnalysisPrompt(richCtx);
+    expect(deal).toContain("INTELLIGENCE CONCURRENTIELLE");
+    expect(deal).toContain("Atos");
+    expect(deal).toContain("HISTORIQUE DE VICTOIRE");
+    expect(deal).toContain("58%");
+    const bc = buildBusinessCasePrompt(richCtx);
+    expect(bc).toContain("MODÈLE DE VALEUR CHIFFRÉ");
+    expect(bc).toMatch(/45\D000\D000\D?XOF/);
+    expect(bc).toContain("À CITER TELS QUELS");
+  });
+
+  it("parseMeddicResponse : coercitions, trous/actions bornés, défauts « à qualifier »", async () => {
+    const { parseMeddicResponse } = await import("../domain/copilote.js");
+    const r = parseMeddicResponse({ metrics: "-20% incidents", identifiedPain: "conformité", score: 150, trous: ["budget", 3], prochainesActions: ["identifier le sponsor"] });
+    expect(r.score).toBe(100); // borné 0-100
+    expect(r.economicBuyer).toBe("à identifier"); // défaut honnête
+    expect(r.trous).toEqual(["budget"]);
+    expect(parseMeddicResponse(null)).toBeNull();
+  });
+
+  it("parseDealAnalysisResponse : probabilité coercée, objections/plan structurés", async () => {
+    const { parseDealAnalysisResponse } = await import("../domain/copilote.js");
+    const r = parseDealAnalysisResponse({ deal: "OPP-9 60M", concurrent: "Atos", probabilite: "Certaine", winThemes: ["proximité"], objections: [{ objection: "prix", reponse: "TCO" }], planClosing: [{ quand: "S+1", action: "démo" }] });
+    expect(r.probabilite).toBe("Moyenne"); // invalide → défaut
+    expect(r.objections[0].reponse).toBe("TCO");
+    expect(r.planClosing).toHaveLength(1);
+    expect(parseDealAnalysisResponse({})).toBeNull();
+  });
+
+  it("parseBusinessCaseResponse / parseSequenceResponse / parseStakeholdersResponse : structures et bornes", async () => {
+    const { parseBusinessCaseResponse, parseSequenceResponse, parseStakeholdersResponse } = await import("../domain/copilote.js");
+    const bc = parseBusinessCaseResponse({ synthese: "75M adressables", gains: [{ levier: "SOC managé", montant: "45M", base: "panier" }], potentielTotal: "75M" });
+    expect(bc.gains).toHaveLength(1);
+    const seq = parseSequenceResponse({ touches: [{ jour: "J0", canal: "Fax", objectif: "accroche", message: "Bonjour…" }] });
+    expect(seq.touches[0].canal).toBe("E-mail"); // canal invalide → défaut
+    const stk = parseStakeholdersResponse({ parties: [{ role: "DSI", pouvoir: "Total", posture: "Ami", strategie: "cultiver" }], champion: "M. Kone" });
+    expect(stk.parties[0].pouvoir).toBe("Moyen"); // coercé
+    expect(stk.parties[0].posture).toBe("Inconnu"); // coercé
+    expect(parseStakeholdersResponse({ parties: [] })).toBeNull();
+  });
+
+  it("brief & séquence sont datés/ancrés (today) et sans invention", async () => {
+    const { buildBriefPrompt, buildSequencePrompt } = await import("../domain/copilote.js");
+    expect(buildBriefPrompt(richCtx)).toContain("NOTE DE BRIEF");
+    const seq = buildSequencePrompt(richCtx);
+    expect(seq).toContain("2026-07-05"); // ancrage temporel
+    expect(seq).toContain("MULTI-TOUCH");
+  });
+});
+
 describe("Copilote — désambiguïsation de marque dans les contenus sortants (audit 2026-07)", () => {
   it("NT_ROLE nomme la raison sociale complète et écarte les homonymes ; l'e-mail signe identifiant", async () => {
     const { NT_ROLE, buildRedactionPrompt } = await import("../domain/copilote.js");

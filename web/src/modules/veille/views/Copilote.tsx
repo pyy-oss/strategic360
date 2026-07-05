@@ -25,6 +25,12 @@ import {
   type PlanActionResult,
   type RedactionResult,
   type CopiloteChatMessage,
+  type MeddicResult,
+  type BriefResult,
+  type DealAnalysisResult,
+  type BusinessCaseResult,
+  type SequenceResult,
+  type StakeholdersResult,
 } from "../lib/copilote";
 
 const CHALEUR_C: Record<string, string> = { Chaud: T.clay, Tiède: T.gold, Froid: T.steel };
@@ -32,7 +38,13 @@ const NIV_C: Record<string, string> = { "Élevé": T.clay, Moyen: T.gold, Faible
 
 const AGENT_TABS: { k: string; l: string; icon: string }[] = [
   { k: "prospection", l: "Prospection", icon: "🎯" },
+  { k: "sequence", l: "Séquence multi-touch", icon: "📨" },
   { k: "cvp", l: "Proposition de valeur", icon: "💡" },
+  { k: "businessCase", l: "Business case", icon: "💰" },
+  { k: "meddic", l: "Qualification MEDDIC", icon: "🩺" },
+  { k: "dealAnalysis", l: "Analyse de deal", icon: "♟️" },
+  { k: "stakeholders", l: "Parties prenantes", icon: "🕸️" },
+  { k: "brief", l: "Brief RDV", icon: "📑" },
   { k: "triennal", l: "Plan triennal", icon: "🗺️" },
   { k: "planCompte", l: "Plan de compte", icon: "📋" },
   { k: "planAction", l: "Plan d'action 90 j", icon: "⚡" },
@@ -219,7 +231,7 @@ export function Copilote() {
               <Eyebrow>Opportunités réelles en cours</Eyebrow>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 7 }}>
                 {(account.nt360?.opportunites ?? []).map((o, i) => (
-                  <DealRow key={`${o.nom}-${i}`} nom={o.nom} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
+                  <DealRow key={`${o.ref || o.nom}-${i}`} nom={o.nom} dealRef={o.ref} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
                 ))}
               </div>
             </div>
@@ -240,7 +252,13 @@ export function Copilote() {
       {!account && !loading && <PortfolioDashboard accounts={sorted} poids={poids} fmt={fmtC} onPick={setAccountId} />}
 
       {tab === "prospection" && <ProspectionTab accountId={accountId} canWrite={canWrite} />}
+      {tab === "sequence" && <SequenceTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "cvp" && <CvpTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "businessCase" && <BusinessCaseTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "meddic" && <MeddicTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "dealAnalysis" && <DealAnalysisTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "stakeholders" && <StakeholdersTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "brief" && <BriefTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "triennal" && <TriennalTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "planCompte" && <PlanCompteTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "planAction" && <PlanActionTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
@@ -314,13 +332,16 @@ function Money({ label, value, accent }: { label: string; value: number; accent?
 }
 
 /* -------- Ligne opportunité : montant + jauge de probabilité (met en avant ce qui est jouable) -------- */
-function DealRow({ nom, bu, etape, montant, probability, closingDate }: { nom: string; bu?: string; etape: string; montant: number; probability?: number | null; closingDate?: string }) {
+function DealRow({ nom, bu, etape, montant, probability, closingDate, dealRef }: { nom: string; bu?: string; etape: string; montant: number; probability?: number | null; closingDate?: string; dealRef?: string }) {
   const p = typeof probability === "number" ? Math.max(0, Math.min(100, probability)) : null;
+  // Le libellé (fiche projet ou « Opportunité <offre> ») peut déjà contenir l'offre → on n'affiche le
+  // BU en second que s'il n'y est pas déjà, pour éviter « Opportunité ICT · ICT ».
+  const showBu = bu && !nom.toLowerCase().includes(bu.toLowerCase());
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", padding: "8px 11px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${T.gold}` }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {nom}{bu ? <span style={{ color: T.dim }}> · {bu}</span> : null} <span style={{ color: T.steel }}>— {etape}</span>
+        <div title={dealRef ? `réf. ${dealRef}` : undefined} style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {nom}{showBu ? <span style={{ color: T.dim }}> · {bu}</span> : null} <span style={{ color: T.steel }}>— {etape}</span>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
           {p !== null && (
@@ -444,7 +465,7 @@ function PortfolioDashboard({
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
               {hotDeals.map((o, i) => (
                 <button key={i} onClick={() => onPick(o.accountId)} style={{ display: "block", width: "100%", padding: 0, background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
-                  <DealRow nom={`${o.compte} · ${o.nom}`} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
+                  <DealRow nom={`${o.compte} · ${o.nom}`} dealRef={o.ref} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
                 </button>
               ))}
             </div>
@@ -546,6 +567,7 @@ function ProspectionTab({ accountId, canWrite }: { accountId: string; canWrite: 
             {c.source ? <div style={{ fontSize: 11.5, color: T.faint, marginTop: 3 }}>Source : {c.source}</div> : null}
             <div style={{ fontSize: 12.5, color: T.dim, marginTop: 4 }}><b style={{ color: T.steel }}>Angle :</b> {c.angle}</div>
             <div style={{ fontSize: 12.5, color: T.dim, marginTop: 2 }}><b style={{ color: T.gold }}>Accroche :</b> {c.accroche}</div>
+            {c.offre && <div style={{ fontSize: 12, color: T.emerald, marginTop: 2 }}><b>Offre à pousser :</b> {c.offre}</div>}
             {/* Maillage (audit 2026-07) : une cible sourcée n'est plus un cul-de-sac → ses signaux. */}
             {c.source && (
               <div style={{ marginTop: 8 }}>
@@ -609,7 +631,8 @@ function TriennalTab({ accountId, disabled, canWrite }: { accountId: string; dis
             <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: T.dim, lineHeight: 1.6 }}>
               {r.offres.map((o, j) => <li key={j}>{o}</li>)}
             </ul>
-            {r.jalon && <div style={{ fontSize: 11.5, color: T.gold, marginTop: 6 }}><b>Jalon :</b> {r.jalon}</div>}
+            {r.caCible && <div style={{ fontSize: 12, color: T.emerald, fontWeight: 700, marginTop: 6 }}>🎯 {r.caCible}</div>}
+            {r.jalon && <div style={{ fontSize: 11.5, color: T.gold, marginTop: 4 }}><b>Jalon :</b> {r.jalon}</div>}
           </div>
         ))}
       </div>
@@ -679,7 +702,10 @@ function PlanActionTab({ accountId, disabled, canWrite }: { accountId: string; d
           <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}>
             <Badge c={QUAND_C[p.quand] ?? T.faint}>{p.quand}</Badge>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{p.action}</div>
+              <div style={{ display: "flex", gap: 6, alignItems: "baseline", flexWrap: "wrap" }}>
+                <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{p.action}</div>
+                {p.echeance && <Badge c={T.gold}>📅 {p.echeance}</Badge>}
+              </div>
               {p.objet && <div style={{ fontSize: 11.5, color: T.steel, marginTop: 2 }}>↳ {p.objet}</div>}
               {p.preuve && <div style={{ fontSize: 11.5, color: T.dim, marginTop: 2 }}><b style={{ color: T.emerald }}>Preuve :</b> {p.preuve}</div>}
             </div>
@@ -687,6 +713,254 @@ function PlanActionTab({ accountId, disabled, canWrite }: { accountId: string; d
         ))}
       </div>
     </Card>
+  );
+}
+
+/* ---------- Livrables à forte valeur (audit profondeur 2026-07) ---------- */
+
+const PROBA_C: Record<string, string> = { "Élevée": T.emerald, Moyenne: T.gold, Faible: T.clay };
+const POUVOIR_C: Record<string, string> = { "Élevé": T.clay, Moyen: T.gold, Faible: T.steel };
+const POSTURE_C: Record<string, string> = { Champion: T.emerald, Favorable: T.emerald, Neutre: T.steel, Sceptique: T.gold, "Détracteur": T.clay, Inconnu: T.faint };
+
+/** En-tête + états communs d'un onglet livrable (réduit la répétition). */
+function TabShell({ title, color = T.emerald, busy, disabled, canWrite, done, empty, onRun, label, children, hint }: {
+  title: string; color?: string; busy: boolean; disabled: boolean; canWrite: boolean; done: boolean; empty: boolean;
+  onRun: () => void; label: string; children: React.ReactNode; hint?: string;
+}) {
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <Eyebrow color={color}>{title}</Eyebrow>
+        <GenButton busy={busy} disabled={disabled || !canWrite} onClick={onRun} label={label} />
+      </div>
+      <PickHint show={disabled} text={hint || "Sélectionnez un compte."} />
+      <ReadOnlyNote show={!canWrite} />
+      <GenSkeleton show={busy} />
+      <EmptyLine show={done && !busy && empty} />
+      {children}
+    </Card>
+  );
+}
+function Chips({ items, color = T.dim }: { items: string[]; color?: string }) {
+  return (
+    <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12.5, color, lineHeight: 1.65 }}>
+      {items.map((x, i) => <li key={i}>{x}</li>)}
+    </ul>
+  );
+}
+function QaList({ pairs }: { pairs: { objection: string; reponse: string }[] }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+      {pairs.map((q, i) => (
+        <div key={i} style={{ background: T.panel2, borderRadius: 8, padding: "8px 10px" }}>
+          <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: T.clay }}>Objection :</b> {q.objection}</div>
+          <div style={{ fontSize: 12.5, color: T.dim, marginTop: 2 }}><b style={{ color: T.emerald }}>Réponse :</b> {q.reponse}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function Section({ title, color, children }: { title: string; color: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", color }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function SequenceTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<SequenceResult>("sequence", accountId);
+  const CANAL_C: Record<string, string> = { "E-mail": T.steel, WhatsApp: T.emerald, LinkedIn: T.plum, Appel: T.gold, RDV: T.clay };
+  return (
+    <TabShell title="Séquence de prospection multi-touch (datée)" busy={busy} disabled={disabled} canWrite={canWrite} done={done} empty={(data?.touches ?? []).length === 0} onRun={() => run()} label="Générer la séquence" hint="Sélectionnez un compte pour une séquence ancrée sur ses faits.">
+      <ErrLine err={err} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+        {(data?.touches ?? []).map((t, i) => (
+          <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}>
+            <div style={{ minWidth: 44, textAlign: "center", fontWeight: 700, fontFamily: "'Bricolage Grotesque',sans-serif", color: T.gold }}>{t.jour}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                <Badge c={CANAL_C[t.canal] ?? T.faint}>{t.canal}</Badge>
+                <span style={{ fontSize: 12, color: T.steel }}>{t.objectif}</span>
+                <CopyBtn text={t.message} />
+              </div>
+              <div style={{ fontSize: 12.5, color: T.ink, marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{t.message}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </TabShell>
+  );
+}
+
+function BusinessCaseTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<BusinessCaseResult>("businessCase", accountId);
+  return (
+    <TabShell title="Business case chiffré (ROI)" color={T.gold} busy={busy} disabled={disabled} canWrite={canWrite} done={done} empty={!data} onRun={() => run()} label="Générer le business case" hint="Sélectionnez un compte pour chiffrer sa valeur.">
+      <ErrLine err={err} />
+      {data && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ padding: "12px 14px", background: T.panel2, borderRadius: 10, fontSize: 14, color: T.ink, lineHeight: 1.55 }}>{data.synthese}</div>
+          {data.potentielTotal && <div style={{ fontSize: 16, fontWeight: 700, color: T.emerald, marginTop: 10, fontFamily: "'Bricolage Grotesque',sans-serif" }}>Potentiel adressable : {data.potentielTotal}</div>}
+          {data.gains.length > 0 && (
+            <Section title="Leviers de valeur (chiffrés sur paniers de référence réels)" color={T.emerald}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                {data.gains.map((g, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "8px 10px", background: T.panel2, borderRadius: 8 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{g.levier}</div>
+                      {g.base && <div style={{ fontSize: 11, color: T.faint }}>{g.base}</div>}
+                    </div>
+                    <div style={{ fontSize: 13, color: T.gold, fontWeight: 700, whiteSpace: "nowrap" }}>{g.montant}</div>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+          {data.hypotheses.length > 0 && <Section title="Hypothèses" color={T.steel}><Chips items={data.hypotheses} /></Section>}
+          {data.risques.length > 0 && <Section title="Conditions / risques" color={T.clay}><Chips items={data.risques} /></Section>}
+          {data.recommandation && <div style={{ fontSize: 12.5, color: T.dim, marginTop: 12 }}><b style={{ color: T.gold }}>Première action :</b> {data.recommandation}</div>}
+        </div>
+      )}
+    </TabShell>
+  );
+}
+
+function MeddicTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<MeddicResult>("meddic", accountId);
+  const rows: [string, string][] = data ? [
+    ["Metrics (gains chiffrés)", data.metrics], ["Economic buyer", data.economicBuyer],
+    ["Decision criteria", data.decisionCriteria], ["Decision process", data.decisionProcess],
+    ["Identified pain", data.identifiedPain], ["Champion", data.champion], ["Concurrence", data.competition],
+  ] : [];
+  const scoreC = data ? (data.score >= 66 ? T.emerald : data.score >= 33 ? T.gold : T.clay) : T.faint;
+  return (
+    <TabShell title="Qualification MEDDIC" color={T.plum} busy={busy} disabled={disabled} canWrite={canWrite} done={done} empty={!data} onRun={() => run()} label="Qualifier le deal" hint="Sélectionnez un compte pour qualifier son opportunité.">
+      <ErrLine err={err} />
+      {data && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: scoreC, fontFamily: "'Bricolage Grotesque',sans-serif" }}>{data.score}/100</div>
+            <div style={{ flex: 1, height: 8, background: T.panel2, borderRadius: 4, minWidth: 0 }}>
+              <div style={{ width: `${data.score}%`, height: "100%", background: scoreC, borderRadius: 4 }} />
+            </div>
+            <span style={{ fontSize: 11.5, color: T.faint }}>maturité de qualification</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            {rows.map(([k, v], i) => (
+              <div key={i} style={{ display: "flex", gap: 10, padding: "7px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}>
+                <div style={{ width: 150, flexShrink: 0, fontSize: 11.5, color: T.faint, fontWeight: 600 }}>{k}</div>
+                <div style={{ fontSize: 12.5, color: /qualifier|identifier|inconnu/i.test(v) ? T.gold : T.ink }}>{v}</div>
+              </div>
+            ))}
+          </div>
+          {data.trous.length > 0 && <Section title="Trous à combler" color={T.clay}><Chips items={data.trous} /></Section>}
+          {data.prochainesActions.length > 0 && <Section title="Prochaines actions de qualification" color={T.emerald}><Chips items={data.prochainesActions} /></Section>}
+        </div>
+      )}
+    </TabShell>
+  );
+}
+
+function DealAnalysisTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<DealAnalysisResult>("dealAnalysis", accountId);
+  return (
+    <TabShell title="Analyse de deal & stratégie de gain" color={T.clay} busy={busy} disabled={disabled} canWrite={canWrite} done={done} empty={!data} onRun={() => run()} label="Analyser le deal" hint="Sélectionnez un compte avec un deal en cours.">
+      <ErrLine err={err} />
+      {data && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{data.deal || "Deal principal"}</span>
+            <Badge c={PROBA_C[data.probabilite] ?? T.faint}>Probabilité {data.probabilite}</Badge>
+            <Badge c={T.steel}>vs {data.concurrent}</Badge>
+          </div>
+          {data.forcesConcurrent.length > 0 && <Section title="Forces adverses à neutraliser" color={T.clay}><Chips items={data.forcesConcurrent} /></Section>}
+          {data.parades.length > 0 && <Section title="Parades" color={T.emerald}><Chips items={data.parades} /></Section>}
+          {data.winThemes.length > 0 && <Section title="Axes de victoire" color={T.gold}><Chips items={data.winThemes} /></Section>}
+          {data.objections.length > 0 && <Section title="Objections & réponses" color={T.steel}><QaList pairs={data.objections} /></Section>}
+          {data.planClosing.length > 0 && (
+            <Section title="Plan de closing daté" color={T.emerald}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                {data.planClosing.map((s, i) => (
+                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+                    <Badge c={T.gold}>{s.quand}</Badge>
+                    <span style={{ fontSize: 12.5, color: T.ink }}>{s.action}</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+        </div>
+      )}
+    </TabShell>
+  );
+}
+
+function StakeholdersTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<StakeholdersResult>("stakeholders", accountId);
+  return (
+    <TabShell title="Cartographie des parties prenantes" color={T.steel} busy={busy} disabled={disabled} canWrite={canWrite} done={done} empty={!data} onRun={() => run()} label="Cartographier" hint="Sélectionnez un compte pour cartographier ses décideurs.">
+      <ErrLine err={err} />
+      {data && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {data.parties.map((p, i) => (
+              <div key={i} style={{ background: T.panel2, borderRadius: 8, padding: "9px 11px", borderLeft: `3px solid ${POSTURE_C[p.posture] ?? T.faint}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{p.nom}{p.role && p.role !== p.nom ? ` — ${p.role}` : ""}</span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Badge c={POUVOIR_C[p.pouvoir] ?? T.faint}>Pouvoir {p.pouvoir}</Badge>
+                    <Badge c={POSTURE_C[p.posture] ?? T.faint}>{p.posture}</Badge>
+                  </div>
+                </div>
+                {p.strategie && <div style={{ fontSize: 12, color: T.dim, marginTop: 3 }}>{p.strategie}</div>}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            {data.champion && <Badge c={T.emerald}>Champion : {data.champion}</Badge>}
+          </div>
+          {data.risqueRelationnel && <div style={{ fontSize: 12.5, color: T.dim, marginTop: 8 }}><b style={{ color: T.clay }}>Risque relationnel :</b> {data.risqueRelationnel}</div>}
+          {data.multiThread.length > 0 && <Section title="Élargir la couverture (multi-thread)" color={T.emerald}><Chips items={data.multiThread} /></Section>}
+        </div>
+      )}
+    </TabShell>
+  );
+}
+
+function BriefTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<BriefResult>("brief", accountId);
+  const [obj, setObj] = useState("");
+  const copyText = data ? [
+    `Snapshot : ${data.snapshot}`,
+    data.objectifs.length ? `Objectifs :\n- ${data.objectifs.join("\n- ")}` : "",
+    data.questions.length ? `Questions :\n- ${data.questions.join("\n- ")}` : "",
+    data.aValoriser.length ? `À valoriser :\n- ${data.aValoriser.join("\n- ")}` : "",
+    data.objections.length ? `Objections :\n${data.objections.map((o) => `- ${o.objection} → ${o.reponse}`).join("\n")}` : "",
+    data.prochainesEtapes.length ? `Next steps :\n- ${data.prochainesEtapes.join("\n- ")}` : "",
+  ].filter(Boolean).join("\n\n") : "";
+  return (
+    <TabShell title="Brief de rendez-vous" color={T.plum} busy={busy} disabled={disabled} canWrite={canWrite} done={done} empty={!data} onRun={() => run(obj.trim() ? { objectif: obj.trim() } : undefined)} label="Générer le brief" hint="Sélectionnez un compte pour préparer un RDV.">
+      <ErrLine err={err} />
+      {!disabled && (
+        <div style={{ marginTop: 10 }}>
+          <label style={lbl}>Objectif du RDV (optionnel)</label>
+          <Input value={obj} onChange={setObj} placeholder="ex : ouvrir le SOC managé / renouveler le contrat ICT" />
+        </div>
+      )}
+      {data && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}><CopyBtn text={copyText} label="Copier le brief" /></div>
+          <div style={{ padding: "12px 14px", background: T.panel2, borderRadius: 10, fontSize: 13.5, color: T.ink, lineHeight: 1.55 }}>{data.snapshot}</div>
+          {data.objectifs.length > 0 && <Section title="Objectifs du RDV" color={T.emerald}><Chips items={data.objectifs} /></Section>}
+          {data.questions.length > 0 && <Section title="Questions à poser" color={T.steel}><Chips items={data.questions} /></Section>}
+          {data.aValoriser.length > 0 && <Section title="À valoriser" color={T.gold}><Chips items={data.aValoriser} /></Section>}
+          {data.objections.length > 0 && <Section title="Objections probables & réponses" color={T.clay}><QaList pairs={data.objections} /></Section>}
+          {data.prochainesEtapes.length > 0 && <Section title="Next steps à obtenir" color={T.emerald}><Chips items={data.prochainesEtapes} /></Section>}
+        </div>
+      )}
+    </TabShell>
   );
 }
 
