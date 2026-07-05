@@ -170,37 +170,115 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
           ))}
         </div>
       </Card>
-      <Card style={{ marginTop: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <Eyebrow color={T.plum}>Watchlist — entités surveillées</Eyebrow>
-          <Badge c={T.plum}>{watchlist.filter((w) => w.active).length} actives</Badge>
-        </div>
-        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-          {watchLoading && watchlist.length === 0 && (
-            <div style={{ fontSize: 12, color: T.faint }}>Chargement de la watchlist…</div>
-          )}
-          {!watchLoading && watchlist.length === 0 && (
-            <div style={{ fontSize: 12, color: T.faint }}>Aucune entité en watchlist pour l'instant.</div>
-          )}
-          {watchlist.map((w, i) => (
-            <div key={w.id} style={{ display: "flex", alignItems: "baseline", gap: 10, fontSize: 12.5, padding: "8px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
-              {/* Colonne priorité à largeur fixe : aligne tous les noms quel que soit le libellé du badge. */}
-              <div style={{ width: 74, flexShrink: 0 }}>
-                <Badge c={w.priority === "Haute" ? T.clay : w.priority === "Moyenne" ? T.gold : T.faint}>{w.priority}</Badge>
+      <WatchlistPanel entries={watchlist} loading={watchLoading} />
+    </div>
+  );
+}
+
+/** Couleur de priorité — code commun watchlist. */
+const prioColor = (p: string) => (p === "Haute" ? T.clay : p === "Moyenne" ? T.gold : T.faint);
+const prioRank = (p: string) => (p === "Haute" ? 0 : p === "Moyenne" ? 1 : 2);
+
+/**
+ * Watchlist repensée (audit design 2026-07) : une liste plate de ~54 entités était illisible.
+ * On la transforme en tableau de bord scannable — recherche + filtre de priorité, regroupement
+ * par TYPE (concurrents, régulateurs, clients…), et grille dense de puces compactes où la priorité
+ * est portée par la barre de gauche colorée (plus de badge répété par ligne).
+ */
+function WatchlistPanel({ entries, loading }: { entries: import("../lib/intel").IntelWatchlistEntry[]; loading: boolean }) {
+  const [q, setQ] = React.useState("");
+  const [prio, setPrio] = React.useState("all");
+  const [showInactive, setShowInactive] = React.useState(false);
+
+  const ql = q.trim().toLowerCase();
+  const filtered = entries
+    .filter((w) => showInactive || w.active)
+    .filter((w) => prio === "all" || w.priority === prio)
+    .filter((w) => !ql || w.name.toLowerCase().includes(ql) || (w.type ?? "").toLowerCase().includes(ql) || (w.geo ?? "").toLowerCase().includes(ql));
+
+  // Regroupement par type, groupes triés par effectif décroissant ; entités triées priorité puis nom.
+  const groups = new Map<string, typeof filtered>();
+  for (const w of filtered) {
+    const k = w.type || "Autre";
+    if (!groups.has(k)) groups.set(k, [] as typeof filtered);
+    groups.get(k)!.push(w);
+  }
+  const ordered = [...groups.entries()]
+    .map(([type, list]) => [type, [...list].sort((a, b) => prioRank(a.priority) - prioRank(b.priority) || a.name.localeCompare(b.name))] as const)
+    .sort((a, b) => b[1].length - a[1].length);
+
+  const activeCount = entries.filter((w) => w.active).length;
+  const PRIOS = ["all", "Haute", "Moyenne", "Basse"];
+
+  return (
+    <Card style={{ marginTop: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <Eyebrow color={T.plum}>Watchlist — entités surveillées</Eyebrow>
+        <Badge c={T.plum}>{activeCount} actives</Badge>
+      </div>
+
+      {loading && entries.length === 0 && <div style={{ marginTop: 12, fontSize: 12, color: T.faint }}>Chargement de la watchlist…</div>}
+      {!loading && entries.length === 0 && <div style={{ marginTop: 12, fontSize: 12, color: T.faint }}>Aucune entité en watchlist pour l'instant.</div>}
+
+      {entries.length > 0 && (
+        <>
+          {/* Barre de contrôle : recherche + filtres de priorité. */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Rechercher une entité, un type, un pays…"
+              style={{ flex: "1 1 200px", minWidth: 0, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 999, color: T.ink, fontSize: 12.5, padding: "9px 14px" }}
+            />
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {PRIOS.map((p) => (
+                <button key={p} className={`pill ${prio === p ? "on" : ""}`} onClick={() => setPrio(p)}>
+                  {p === "all" ? "Toutes" : p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+            <span style={{ fontSize: 11.5, color: T.faint }}>
+              {filtered.length} entité{filtered.length > 1 ? "s" : ""} · {ordered.length} type{ordered.length > 1 ? "s" : ""}
+            </span>
+            <button className="tab" style={{ color: T.steel }} onClick={() => setShowInactive((v) => !v)}>
+              {showInactive ? "Masquer les inactives" : "Afficher les inactives"}
+            </button>
+          </div>
+
+          {filtered.length === 0 && <div style={{ marginTop: 12, fontSize: 12, color: T.faint }}>Aucune entité ne correspond à ce filtre.</div>}
+
+          {ordered.map(([type, list]) => (
+            <div key={type} style={{ marginTop: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: T.dim }}>{type}</span>
+                <span style={{ height: 1, flex: 1, background: T.line }} />
+                <Badge c={T.faint}>{list.length}</Badge>
               </div>
-              {/* Nom + méta : sur une ligne si ça tient (desktop), repliés proprement sinon (mobile). */}
-              <div style={{ flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: "2px 10px" }}>
-                <span style={{ color: T.ink, fontWeight: 500, overflowWrap: "anywhere" }}>{w.name}</span>
-                <span style={{ color: T.faint, fontSize: 11.5, overflowWrap: "anywhere" }}>
-                  {w.type}
-                  {w.geo ? ` · ${w.geo}` : ""}
-                </span>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 8 }}>
+                {list.map((w) => (
+                  <div
+                    key={w.id}
+                    title={`${w.name} · ${w.priority}${w.geo ? ` · ${w.geo}` : ""}`}
+                    style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, padding: "8px 11px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${prioColor(w.priority)}`, opacity: w.active ? 1 : 0.55 }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: T.ink, fontWeight: 600, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</div>
+                      <div style={{ color: T.faint, fontSize: 10.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {w.priority}
+                        {w.geo ? ` · ${w.geo}` : ""}
+                        {!w.active ? " · inactive" : ""}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-              {!w.active && <Badge c={T.faint}>Inactive</Badge>}
             </div>
           ))}
-        </div>
-      </Card>
-    </div>
+        </>
+      )}
+    </Card>
   );
 }
