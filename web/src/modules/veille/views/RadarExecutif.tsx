@@ -155,13 +155,17 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
             <div style={{ fontSize: 12, color: T.faint }}>Aucune décision enregistrée pour l'instant.</div>
           )}
           {decisions.map((d, i) => (
-            <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, padding: "7px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
-              <Badge c={d.statut === "Actée" ? T.emerald : d.statut === "En cours" ? T.gold : T.clay}>{d.statut}</Badge>
-              <span style={{ flex: 1, color: T.ink }}>{d.title}</span>
-              <span style={{ color: T.faint }}>
-                {d.decidedBy}
-                {d.linkedItems?.length ? ` · ${d.linkedItems.join(", ")}` : ""}
-              </span>
+            <div key={d.id} style={{ display: "flex", alignItems: "baseline", gap: 10, fontSize: 12.5, padding: "8px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
+              <div style={{ width: 74, flexShrink: 0 }}>
+                <Badge c={d.statut === "Actée" ? T.emerald : d.statut === "En cours" ? T.gold : T.clay}>{d.statut}</Badge>
+              </div>
+              <div style={{ flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: "2px 10px" }}>
+                <span style={{ color: T.ink, overflowWrap: "anywhere" }}>{d.title}</span>
+                <span style={{ color: T.faint, fontSize: 11.5, overflowWrap: "anywhere" }}>
+                  {d.decidedBy}
+                  {d.linkedItems?.length ? ` · ${d.linkedItems.join(", ")}` : ""}
+                </span>
+              </div>
             </div>
           ))}
         </div>
@@ -179,13 +183,19 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
             <div style={{ fontSize: 12, color: T.faint }}>Aucune entité en watchlist pour l'instant.</div>
           )}
           {watchlist.map((w, i) => (
-            <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, padding: "7px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
-              <Badge c={w.priority === "Haute" ? T.clay : w.priority === "Moyenne" ? T.gold : T.faint}>{w.priority}</Badge>
-              <span style={{ flex: 1, color: T.ink }}>{w.name}</span>
-              <span style={{ color: T.faint }}>
-                {w.type}
-                {w.geo ? ` · ${w.geo}` : ""}
-              </span>
+            <div key={w.id} style={{ display: "flex", alignItems: "baseline", gap: 10, fontSize: 12.5, padding: "8px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
+              {/* Colonne priorité à largeur fixe : aligne tous les noms quel que soit le libellé du badge. */}
+              <div style={{ width: 74, flexShrink: 0 }}>
+                <Badge c={w.priority === "Haute" ? T.clay : w.priority === "Moyenne" ? T.gold : T.faint}>{w.priority}</Badge>
+              </div>
+              {/* Nom + méta : sur une ligne si ça tient (desktop), repliés proprement sinon (mobile). */}
+              <div style={{ flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: "2px 10px" }}>
+                <span style={{ color: T.ink, fontWeight: 500, overflowWrap: "anywhere" }}>{w.name}</span>
+                <span style={{ color: T.faint, fontSize: 11.5, overflowWrap: "anywhere" }}>
+                  {w.type}
+                  {w.geo ? ` · ${w.geo}` : ""}
+                </span>
+              </div>
               {!w.active && <Badge c={T.faint}>Inactive</Badge>}
             </div>
           ))}
