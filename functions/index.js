@@ -1639,11 +1639,13 @@ exports.enrichNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
 
 /** Assemble le contexte d'un compte pour les agents, en réutilisant l'existant de la veille. */
 async function assembleCopiloteContext(db, accountId) {
-  const [acctSnap, pestelSnap, bizSnap, metaSnap] = await Promise.all([
+  const [acctSnap, pestelSnap, bizSnap, metaSnap, battlecardsSnap, winLossSnap] = await Promise.all([
     accountId ? db.doc(`copiloteAccounts/${accountId}`).get() : Promise.resolve(null),
     db.doc("frameworks/pestel").get(),
     db.collection("bizOpportunities").get(),
     db.doc("summaries/copiloteMeta").get(),
+    db.collection("battlecards").get(),
+    db.collection("winLoss").get(),
   ]);
   const a = acctSnap && acctSnap.exists ? acctSnap.data() : {};
   // Empreinte dérivée de nt360 (additive, jamais destructive) : on fusionne l'historique/les
@@ -1674,8 +1676,16 @@ async function assembleCopiloteContext(db, accountId) {
     .filter((x) => x && typeof x === "object" && x.d)
     .map((x) => ({ axe: x.f, texte: x.d }));
   // DEALS = opportunités RÉELLES du compte (pipeline nt360), avec montant nommé — matière spécifique.
+  // Enrichis (audit profondeur 2026-07) : on remonte AUSSI montant/étape/probabilité/date de closing
+  // pour que les agents puissent dater et prioriser un plan sur le réel (et non sur des buckets flous).
   const deals = (Array.isArray(nt.opportunites) ? nt.opportunites : []).map((o) => ({
     titre: `${o.nom} — ${Number.isFinite(o.montant) ? new Intl.NumberFormat("fr-FR").format(o.montant) + " XOF" : "montant n.c."} (${o.etape})`,
+    nom: o.nom || "",
+    montant: Number.isFinite(o.montant) ? o.montant : null,
+    etape: o.etape || "",
+    bu: o.bu || "",
+    closingDate: typeof o.closingDate === "string" ? o.closingDate : "",
+    probability: Number.isFinite(o.probability) ? o.probability : null,
   }));
   // SIGNAUX = leads de veille (opportunités business dérivées de la veille). Deux usages distincts :
   //  - `signaux` : échantillon générique pour la PROSPECTION (comptes cibles) ;
@@ -1714,6 +1724,66 @@ async function assembleCopiloteContext(db, accountId) {
   const pipelinePondere = Number(nt.pipelinePondere) || 0;
   const wins = Number(nt.wins) || 0;
   const enjeux = Array.isArray(a.enjeux) ? a.enjeux : [];
+
+  // --- Intelligence concurrentielle (audit profondeur 2026-07) : les battlecards existaient mais
+  // n'étaient JAMAIS lues par le copilote. On les compacte et on ne garde que celles pertinentes
+  // pour ce compte : concurrents cités dans le champ `concurrence` du compte (sinon top par richesse).
+  const bcAll = battlecardsSnap.docs.map((d) => d.data()).filter((b) => b && b.competitor);
+  const concurrenceText = String(a.concurrence || "").toLowerCase();
+  const bcMatched = bcAll.filter((b) => concurrenceText.includes(String(b.competitor).toLowerCase()));
+  const compact = (b) => ({
+    competitor: String(b.competitor),
+    positioning: typeof b.positioning === "string" ? b.positioning : "",
+    strengths: (Array.isArray(b.strengths) ? b.strengths : []).slice(0, 3),
+    weaknesses: (Array.isArray(b.weaknesses) ? b.weaknesses : []).slice(0, 3),
+    ourWinThemes: (Array.isArray(b.ourWinThemes) ? b.ourWinThemes : []).slice(0, 3),
+    objectionHandling: (Array.isArray(b.objectionHandling) ? b.objectionHandling : []).slice(0, 3),
+    theirLikelyMoves: (Array.isArray(b.theirLikelyMoves) ? b.theirLikelyMoves : []).slice(0, 2),
+  });
+  const battlecards = (bcMatched.length ? bcMatched : bcAll)
+    .slice(0, 6)
+    .map(compact);
+
+  // --- Win/Loss réel (audit profondeur) : taux de victoire global + par concurrent + leçons récentes.
+  // Jamais injecté auparavant → aucune analyse « win-theme » data-driven n'était possible.
+  const wlByComp = {};
+  let winsTot = 0, dealsTot = 0;
+  const lessons = [];
+  for (const d of winLossSnap.docs) {
+    const e = d.data();
+    if (!e) continue;
+    if (typeof e.competitor === "string" && e.competitor.trim()) {
+      const b = (wlByComp[e.competitor] ??= { wins: 0, total: 0 });
+      b.total += 1;
+      if (e.result === "win") b.wins += 1;
+      dealsTot += 1;
+      if (e.result === "win") winsTot += 1;
+    }
+    if (typeof e.lesson === "string" && e.lesson.trim()) {
+      lessons.push({ competitor: e.competitor || "", result: e.result || "", lesson: e.lesson.trim(), date: e.date || "" });
+    }
+  }
+  const winStats = {
+    global: dealsTot ? Math.round((winsTot / dealsTot) * 100) : null,
+    dealsTotal: dealsTot,
+    byCompetitor: Object.entries(wlByComp).map(([competitor, b]) => ({ competitor, winPct: b.total ? Math.round((b.wins / b.total) * 100) : 0, deals: b.total })).sort((x, y) => y.deals - x.deals).slice(0, 6),
+    lessons: lessons.slice(-5).reverse(),
+  };
+
+  // --- Modèle de valeur CHIFFRÉ en code (audit profondeur) : la trajectoire/business case ne doit plus
+  // reposer sur des montants hallucinés par l'IA. On projette depuis les VRAIS paniers de référence
+  // (benchmark.medianCas par offre) et l'historique du compte. L'IA n'aura qu'à narrer ces chiffres.
+  const money = (n) => Math.round(Number(n) || 0);
+  const nextOfferAmount = recommendation ? money(recommendation.montantEstime) : 0;
+  const whitespaceValue = whitespace.slice(0, 5).map((offre) => ({ offre, montant: money(benchmark[offre]?.medianCas) })).filter((x) => x.montant > 0);
+  const whitespacePotential = whitespaceValue.reduce((s, x) => s + x.montant, 0);
+  const valueModel = {
+    casTotal: money(casTotal),
+    pipelinePondere: money(pipelinePondere),
+    nextOffer: recommendation ? { offre: recommendation.offre, montant: nextOfferAmount, csPct: recommendation.csPct || 0 } : null,
+    whitespaceValue, // [{offre, montant}] chiffré depuis les paniers de référence réels
+    whitespacePotential, // somme du potentiel cross-sell chiffrable
+  };
   return {
     compte: a.nom || "",
     secteur: a.secteur || "",
@@ -1738,7 +1808,11 @@ async function assembleCopiloteContext(db, accountId) {
     casTotal,
     pipelinePondere,
     wins,
-    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte },
+    battlecards,   // intelligence concurrentielle réelle (matchée au compte)
+    winStats,      // taux de victoire réel (global + par concurrent + leçons)
+    valueModel,    // modèle de valeur chiffré (paniers de référence réels) — pour le business case
+    today: new Date().toISOString().slice(0, 10), // ancrage temporel des séquences/plans datés
+    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte, battlecards, winStats, valueModel },
   };
 }
 
@@ -1749,7 +1823,7 @@ async function assembleCopiloteContext(db, accountId) {
  */
 // Champs d'écran que le client a le droit de fournir (redaction) — tout le reste du contexte est
 // assemblé côté serveur depuis nt360/veille et ne doit PAS être surchargé par le client.
-const COPILOTE_EXTRA_ALLOWED = ["kind", "canal", "ton", "contexte", "compte"];
+const COPILOTE_EXTRA_ALLOWED = ["kind", "canal", "ton", "contexte", "compte", "objectif"];
 function assertAccountId(accountId) {
   if (accountId == null || accountId === "") return;
   if (typeof accountId !== "string" || !/^[A-Za-z0-9_-]+$/.test(accountId)) {

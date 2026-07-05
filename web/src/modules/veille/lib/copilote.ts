@@ -171,25 +171,53 @@ export async function deleteCopiloteAccount(id: string): Promise<void> {
  * Agents IA (callables server-side)
  * ------------------------------------------------------------------------------------------- */
 
-export type CopiloteAgent = "prospection" | "cvp" | "triennal" | "planCompte" | "planAction" | "redaction";
+export type CopiloteAgent =
+  | "prospection" | "cvp" | "triennal" | "planCompte" | "planAction" | "redaction"
+  | "meddic" | "brief" | "dealAnalysis" | "businessCase" | "sequence" | "stakeholders";
 
-export interface ProspectionCible { nom: string; source?: string; angle: string; accroche: string; chaleur: "Chaud" | "Tiède" | "Froid" }
+export interface ProspectionCible { nom: string; source?: string; angle: string; accroche: string; offre?: string; chaleur: "Chaud" | "Tiède" | "Froid" }
 export interface ProspectionResult { cibles: ProspectionCible[] }
 
 export interface CvpResult { message: string; differenciateurs: string[] }
 
-export interface TriennalItem { an: "An 1" | "An 2" | "An 3"; titre: string; offres: string[]; jalon: string }
+export interface TriennalItem { an: "An 1" | "An 2" | "An 3"; titre: string; offres: string[]; caCible?: string; jalon: string }
 export interface TriennalResult { roadmap: TriennalItem[] }
 
 export interface PlanCompteAction { libelle: string; horizon: "Court terme" | "Moyen terme" | "Continu" }
 export interface PlanCompteRisque { r: string; m: string; niv: "Élevé" | "Moyen" | "Faible" }
 export interface PlanCompteResult { actions: PlanCompteAction[]; risques: PlanCompteRisque[] }
 
-export interface PlanActionItem { quand: "0–30 jours" | "30–60 jours" | "60–90 jours" | "Continu"; action: string; objet: string; preuve: string }
+export interface PlanActionItem { quand: "0–30 jours" | "30–60 jours" | "60–90 jours" | "Continu"; echeance?: string; action: string; objet: string; preuve: string }
 export interface PlanActionResult { plan: PlanActionItem[] }
 
 export interface RedactionVariante { label: string; objet: string; corps: string }
 export interface RedactionResult { variantes: RedactionVariante[] }
+
+/* --- Nouveaux livrables à forte valeur (audit profondeur 2026-07) --- */
+export interface MeddicResult {
+  metrics: string; economicBuyer: string; decisionCriteria: string; decisionProcess: string;
+  identifiedPain: string; champion: string; competition: string; score: number;
+  trous: string[]; prochainesActions: string[];
+}
+export interface QaPair { objection: string; reponse: string }
+export interface BriefResult {
+  snapshot: string; objectifs: string[]; questions: string[];
+  objections: QaPair[]; aValoriser: string[]; prochainesEtapes: string[];
+}
+export interface DealAnalysisResult {
+  deal: string; concurrent: string; forcesConcurrent: string[]; parades: string[];
+  winThemes: string[]; objections: QaPair[]; probabilite: "Élevée" | "Moyenne" | "Faible";
+  planClosing: { quand: string; action: string }[];
+}
+export interface BusinessCaseGain { levier: string; montant: string; base: string }
+export interface BusinessCaseResult {
+  synthese: string; hypotheses: string[]; gains: BusinessCaseGain[];
+  potentielTotal: string; risques: string[]; recommandation: string;
+}
+export interface SequenceTouche { jour: string; canal: string; objectif: string; message: string }
+export interface SequenceResult { touches: SequenceTouche[] }
+export interface StakeholderPartie { nom: string; role: string; pouvoir: "Élevé" | "Moyen" | "Faible"; posture: string; strategie: string }
+export interface StakeholdersResult { parties: StakeholderPartie[]; champion: string; risqueRelationnel: string; multiThread: string[] }
 
 export interface CopiloteChatMessage { role: "user" | "assistant"; content: string }
 

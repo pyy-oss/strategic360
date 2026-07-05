@@ -88,7 +88,20 @@ function factBase(c) {
       const yrs = h.firstYear ? ` [${h.firstYear === h.lastYear ? h.firstYear : `${h.firstYear}–${h.lastYear}`}]` : "";
       return `${coerceStr(h.offre)}${cas}${yrs}`;
     });
-  const deals = (Array.isArray(c.deals) ? c.deals : []).map((d) => coerceStr(d && d.titre)).filter(Boolean).slice(0, 6);
+  // Deals enrichis (audit profondeur) : montant + étape + probabilité + date de closing réelle quand
+  // disponibles → l'IA peut prioriser et dater. Repli sur le `titre` compact pour les entrées pauvres.
+  const deals = (Array.isArray(c.deals) ? c.deals : []).map((d) => {
+    if (!d || typeof d !== "object") return "";
+    if (d.nom) {
+      const parts = [coerceStr(d.nom)];
+      if (Number(d.montant) > 0) parts.push(xof(d.montant));
+      if (d.etape) parts.push(`stade ${coerceStr(d.etape)}`);
+      if (Number(d.probability) > 0) parts.push(`prob. ${Math.round(Number(d.probability) * (Number(d.probability) <= 1 ? 100 : 1))}%`);
+      if (d.closingDate) parts.push(`closing ${coerceStr(d.closingDate)}`);
+      return parts.join(" · ");
+    }
+    return coerceStr(d.titre);
+  }).filter(Boolean).slice(0, 6);
   const rec = c.recommendation || {};
   const montant = Number(rec.montantEstime) > 0 ? ` ; panier de référence de cette offre sur le portefeuille ≈ ${xof(rec.montantEstime)} (montant d'ancrage à viser)` : "";
   // Cold start (audit 2026-07) : quand l'affinité de cross-sell ne fonde PAS l'offre (csPct=0, ex.
@@ -115,6 +128,60 @@ function factBase(c) {
   ].filter(Boolean).join("\n");
 }
 
+/**
+ * Intelligence concurrentielle RÉELLE (battlecards) — bloc partagé injecté dans les agents qui en
+ * ont besoin (deal analysis, plan de compte, prospection). Vide si aucune battlecard rattachée.
+ */
+function competitorBlock(c) {
+  const bc = Array.isArray(c.battlecards) ? c.battlecards : [];
+  if (!bc.length) return "";
+  const lines = bc.slice(0, 4).map((b) => {
+    const seg = [`• ${coerceStr(b.competitor)}`];
+    if (b.positioning) seg.push(`positionnement : ${coerceStr(b.positioning)}`);
+    if (Array.isArray(b.strengths) && b.strengths.length) seg.push(`forces : ${list(b.strengths)}`);
+    if (Array.isArray(b.weaknesses) && b.weaknesses.length) seg.push(`faiblesses à exploiter : ${list(b.weaknesses)}`);
+    if (Array.isArray(b.ourWinThemes) && b.ourWinThemes.length) seg.push(`nos axes de victoire : ${list(b.ourWinThemes)}`);
+    if (Array.isArray(b.objectionHandling) && b.objectionHandling.length) seg.push(`réponses aux objections : ${list(b.objectionHandling)}`);
+    return seg.join(" — ");
+  });
+  return `INTELLIGENCE CONCURRENTIELLE (battlecards réelles, à mobiliser — ne pas inventer d'autre concurrent) :\n${lines.join("\n")}`;
+}
+
+/** Statistiques de victoire RÉELLES (winLoss) — bloc partagé pour contextualiser probabilité/win-themes. */
+function winStatsBlock(c) {
+  const w = c.winStats;
+  if (!w || (w.global == null && (!Array.isArray(w.byCompetitor) || !w.byCompetitor.length))) return "";
+  const parts = [];
+  if (w.global != null) parts.push(`Taux de victoire global NT : ${w.global}% (${w.dealsTotal} deals tracés).`);
+  if (Array.isArray(w.byCompetitor) && w.byCompetitor.length) {
+    parts.push(`Par concurrent : ${w.byCompetitor.map((x) => `${x.competitor} ${x.winPct}% (${x.deals})`).join(" ; ")}.`);
+  }
+  if (Array.isArray(w.lessons) && w.lessons.length) {
+    parts.push(`Leçons récentes gagné/perdu : ${w.lessons.map((l) => `[${l.result}${l.competitor ? "/" + l.competitor : ""}] ${l.lesson}`).join(" ; ")}.`);
+  }
+  return `HISTORIQUE DE VICTOIRE (winLoss réel, à utiliser pour calibrer la probabilité et les win-themes) :\n${parts.join(" ")}`;
+}
+
+/** Modèle de valeur CHIFFRÉ en amont (paniers de référence réels) — pour le business case et le triennal. */
+function valueModelBlock(c) {
+  const v = c.valueModel;
+  if (!v) return "";
+  const parts = [`CA déjà réalisé : ${xof(v.casTotal)} ; pipeline pondéré : ${xof(v.pipelinePondere)}.`];
+  if (v.nextOffer && v.nextOffer.montant > 0) parts.push(`Next best offer « ${coerceStr(v.nextOffer.offre)} » ≈ ${xof(v.nextOffer.montant)} (panier de référence réel).`);
+  if (Array.isArray(v.whitespaceValue) && v.whitespaceValue.length) {
+    parts.push(`Potentiel cross-sell chiffré (panier de référence par offre) : ${v.whitespaceValue.map((x) => `${coerceStr(x.offre)} ≈ ${xof(x.montant)}`).join(" ; ")} → potentiel total ≈ ${xof(v.whitespacePotential)}.`);
+  }
+  return `MODÈLE DE VALEUR CHIFFRÉ (montants RÉELS calculés en amont — À CITER TELS QUELS, ne jamais inventer d'autres montants) :\n${parts.join(" ")}`;
+}
+
+/** Décideurs / parties prenantes saisis (rôle + posture) — bloc partagé (stakeholder mapping). */
+function contactsBlock(c) {
+  const contacts = (Array.isArray(c.contacts) ? c.contacts : [])
+    .filter((x) => x && (x.nom || x.role))
+    .map((x) => `${coerceStr(x.nom || x.role)}${x.role && x.nom ? ` (${coerceStr(x.role)})` : ""}${x.posture ? ` — posture ${coerceStr(x.posture)}` : ""}`);
+  return contacts.length ? `Parties prenantes connues : ${list(contacts)}.` : "Parties prenantes : aucune saisie — recommander de les cartographier.";
+}
+
 /* ------------------------------------------------------------------------------------------- *
  * §B — PROSPECTION (comptes cibles)
  * ------------------------------------------------------------------------------------------- */
@@ -122,8 +189,14 @@ const CHALEURS = ["Chaud", "Tiède", "Froid"];
 
 function buildProspectionPrompt(ctx) {
   const c = ctx || {};
+  // Ancrage sur le PORTEFEUILLE réel (audit profondeur) : la prospection n'est plus « secteur générique ».
+  // Quand un compte est sélectionné, on adosse les cibles à son empreinte réelle (comptes-jumeaux :
+  // même secteur, même profil d'achat) et on mobilise l'intelligence concurrentielle.
+  const anchor = c.compte
+    ? `\nCompte de référence (chercher des JUMEAUX — même secteur / profil d'achat comparable) :\n${factBase(c)}\n${competitorBlock(c)}\n${winStatsBlock(c)}\n`
+    : "";
   return `${NT_ROLE}
-
+${anchor}
 Propose une liste priorisée de comptes cibles pour le secteur "${coerceStr(c.secteur, "non précisé")}" en Côte d'Ivoire / Afrique de l'Ouest.
 Tendances d'achat : ${list(c.tendances)}.
 Réglementation : ${coerceStr(c.reglementation, "non précisée")}.
@@ -133,16 +206,19 @@ Signaux de veille exploitables : ${list((c.signaux || []).map((s) => s.titre))}.
 Règle anti-invention STRICTE : ne NOMME une entreprise (raison sociale) que si elle est explicitement
 citée dans les "Signaux de veille exploitables" ci-dessus. Sinon, décris un PROFIL de compte cible
 (secteur précis, taille, critère déclencheur) SANS inventer de raison sociale, de chiffre ni de contact.
-Rends 3 à 4 cibles, en priorisant celles adossées à un signal.
+Quand un compte de référence est fourni : dimensionne l'accroche et l'offre à proposer sur ce qui a
+RÉELLEMENT fonctionné (offres vendues, next best offer, taux de victoire par concurrent), et vise des
+comptes au profil comparable. Rends 3 à 4 cibles, en priorisant celles adossées à un signal.
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
   "cibles": [
-    { "nom": string, "source": string, "angle": string, "accroche": string, "chaleur": "Chaud" | "Tiède" | "Froid" }
+    { "nom": string, "source": string, "angle": string, "accroche": string, "offre": string, "chaleur": "Chaud" | "Tiède" | "Froid" }
   ]
 }
 "source" = le signal exact qui justifie cette cible, ou "profil-type (non nommé)" si aucune source ;
 "nom" = raison sociale UNIQUEMENT si sourcée, sinon un libellé de profil (ex. « Banque de détail UEMOA, >200 agences ») ;
 "angle" = pourquoi maintenant / sur quel besoin ; "accroche" = valeur chiffrable si possible ;
+"offre" = l'offre NT à mettre en avant (issue de ce qui marche sur le compte de référence si fourni) ;
 "chaleur" = Chaud seulement si un signal/historique le justifie, sinon Tiède/Froid. JSON uniquement.`;
 }
 
@@ -158,6 +234,7 @@ function parseProspectionResponse(raw) {
         source,
         angle: coerceStr(x.angle),
         accroche: coerceStr(x.accroche),
+        offre: coerceStr(x.offre),
         // Pas de source explicite → on ne laisse pas passer un « Chaud » : une cible non sourcée est froide.
         chaleur: source ? coerceEnum(x.chaleur, CHALEURS, "Froid") : "Froid",
       };
@@ -217,18 +294,21 @@ ${HISTO_DIRECTIVE}
 
 Bâtis un plan de croissance à 3 ans pour CE compte, à partir de ses faits réels :
 ${factBase(c)}
+${valueModelBlock(c)}
 
 Logique attendue, ancrée sur SES offres réelles : An 1 = sécuriser/renouveler ce qui est déjà vendu + convertir un deal en cours nommé ;
 An 2 = ouvrir 1 offre PRÉCISE du whitespace ci-dessus (cross-sell) ; An 3 = contrat-cadre / partenaire de référence.
 Les "offres" citées doivent provenir de l'empreinte réelle (déjà vendu / en cours) ou du whitespace — jamais d'offre générique inventée.
+Le "caCible" de chaque année DOIT être cohérent avec le modèle de valeur chiffré ci-dessus (paniers de référence réels) — n'invente aucun autre montant.
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
   "roadmap": [
-    { "an": "An 1" | "An 2" | "An 3", "titre": string, "offres": [string], "jalon": string }
+    { "an": "An 1" | "An 2" | "An 3", "titre": string, "offres": [string], "caCible": string, "jalon": string }
   ]
 }
-Chaque année : "titre" d'intention lié au compte, 1 à 2 "offres" NOMMÉES (whitespace/en-cours/déjà vendu), "jalon" mesurable (montant ou échéance). JSON uniquement.`;
+Chaque année : "titre" d'intention lié au compte, 1 à 2 "offres" NOMMÉES (whitespace/en-cours/déjà vendu),
+"caCible" = objectif de CA chiffré depuis le modèle de valeur (ex. « ≈ 45 000 000 XOF »), "jalon" mesurable (échéance/preuve). JSON uniquement.`;
 }
 
 function parseTriennalResponse(raw) {
@@ -239,6 +319,7 @@ function parseTriennalResponse(raw) {
       an: coerceEnum(x.an, ANNEES, "An 1"),
       titre: coerceStr(x.titre),
       offres: coerceStrArray(x.offres),
+      caCible: coerceStr(x.caCible),
       jalon: coerceStr(x.jalon),
     }))
     .filter((x) => x.titre || x.offres.length)
@@ -254,16 +335,14 @@ const NIVEAUX = ["Élevé", "Moyen", "Faible"];
 
 function buildPlanComptePrompt(ctx) {
   const c = ctx || {};
-  const contacts = (c.contacts || [])
-    .filter((x) => x && x.role)
-    .map((x) => `${coerceStr(x.role)} (${coerceStr(x.posture, "?")})`);
   return `${NT_ROLE}
 ${NO_GENERIC}
 ${HISTO_DIRECTIVE}
 
 Rédige le cœur d'un plan de compte pour CE compte, à partir de ses faits réels :
 ${factBase(c)}
-Décideurs connus : ${list(contacts)}.
+${contactsBlock(c)}
+${competitorBlock(c)}
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
@@ -304,20 +383,24 @@ ${HISTO_DIRECTIVE}
 
 Bâtis le PLAN D'ACTION COMMERCIAL des 90 prochains jours pour CE compte, à partir de ses faits réels :
 ${factBase(c)}
+${winStatsBlock(c)}
+Date du jour : ${coerceStr(c.today, "aujourd'hui")}. Aligne les échéances des actions sur les DATES DE CLOSING réelles des deals ci-dessus quand elles existent (ne pas planifier après une closing).
 
 Exigences : une séquence DATÉE et concrète, pas une liste de bonnes intentions. Chaque action doit :
 - porter sur un OBJET nommé (offre déjà vendue à renouveler / offre du whitespace à ouvrir / deal en cours à faire avancer / déclencheur de veille à activer) ;
-- être ancrée sur une PREUVE tirée des faits ci-dessus (un montant réel, une année d'achat, un % d'affinité, un signal) ;
+- être ancrée sur une PREUVE tirée des faits ci-dessus (un montant réel, une année d'achat, un % d'affinité, un signal, une probabilité de deal) ;
+- porter une ÉCHÉANCE datée réaliste (semaine ou date calendaire à partir de la date du jour), cohérente avec la closing du deal visé ;
 - être séquencée dans le temps : ouvrir/renouveler tôt (0–30 j), instruire (30–60 j), converger (60–90 j).
 Fais de la NEXT BEST OFFER l'un des fils conducteurs, avec son montant d'ancrage.
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
   "plan": [
-    { "quand": "0–30 jours" | "30–60 jours" | "60–90 jours" | "Continu", "action": string, "objet": string, "preuve": string }
+    { "quand": "0–30 jours" | "30–60 jours" | "60–90 jours" | "Continu", "echeance": string, "action": string, "objet": string, "preuve": string }
   ]
 }
-4 à 6 actions, ordonnées dans le temps ; "action" = geste commercial précis (RDV, chiffrage, proposition, COPIL, relance) ;
+4 à 6 actions, ordonnées dans le temps ; "echeance" = date ou semaine cible (ex. « S+2 » ou « 2026-08-15 ») ;
+"action" = geste commercial précis (RDV, chiffrage, proposition, COPIL, relance) ;
 "objet" = l'offre/deal/signal nommé visé ; "preuve" = le fait réel du compte qui la justifie (montant/année/affinité/signal). JSON uniquement.`;
 }
 
@@ -327,6 +410,7 @@ function parsePlanActionResponse(raw) {
     .filter((x) => x && typeof x === "object" && coerceStr(x.action))
     .map((x) => ({
       quand: coerceEnum(x.quand, QUANDS, "Continu"),
+      echeance: coerceStr(x.echeance),
       action: coerceStr(x.action),
       objet: coerceStr(x.objet),
       preuve: coerceStr(x.preuve),
@@ -343,14 +427,16 @@ function buildChatSystem(ctx) {
   const c = ctx || {};
   const base =
     "Tu es le copilote commercial de Neurones Technologies (intégrateur IT/télécom/cyber, zone UEMOA/CEMAC). " +
-    "Tu aides un commercial à préparer ses RDV, bâtir ses argumentaires et ses plans de compte. " +
-    "Français, très concis (max 6 lignes), concret et actionnable. " +
+    "Tu aides un commercial à préparer ses RDV, bâtir ses argumentaires, ses plans de compte, qualifier ses deals " +
+    "et contrer ses concurrents. Français, concret et actionnable, structuré (puces si utile), 10 lignes max. " +
+    "Va au bout du raisonnement : quand on te demande une analyse, cite les chiffres réels, nomme l'offre/le deal/" +
+    "le concurrent concerné et termine par la PROCHAINE ACTION précise. " +
     "Ne fournis AUCUNE donnée client (chiffre, contact, budget, échéance) qui ne figure pas dans le " +
     "contexte ci-dessous : si elle manque, dis-le explicitement au lieu de l'estimer. " +
-    "Ancre tes réponses sur les FAITS RÉELS du compte ci-dessous (montants, offres vendues, whitespace, deals) : " +
-    "cite-les. Pas de généralités macro ni de copier-coller de veille. " +
+    "Ancre tes réponses sur les FAITS RÉELS du compte ci-dessous (montants, offres vendues, whitespace, deals, " +
+    "concurrents, taux de victoire) : cite-les. Pas de généralités macro ni de copier-coller de veille. " +
     `Contexte : écran « ${coerceStr(c.ecran, "Copilote")} ». `;
-  // Réutilise la même fiche de faits que les autres agents (consistance) quand un compte est fourni.
+  // Réutilise la même fiche de faits + l'intelligence concurrentielle/valeur que les autres agents.
   const compte = c.compte
     ? `Faits réels du compte en cours :\n${factBase({
         compte: c.compte.nom,
@@ -366,7 +452,7 @@ function buildChatSystem(ctx) {
         deals: c.compte.deals || c.compte.signaux,
         recommendation: c.compte.recommendation,
         signauxCompte: c.compte.signauxCompte,
-      })}`
+      })}\n${competitorBlock(c.compte)}\n${winStatsBlock(c.compte)}\n${valueModelBlock(c.compte)}`
     : "Aucun compte précis sélectionné : réponds au niveau méthode/portefeuille, sans inventer de compte.";
   return `${base}\n${compte}`;
 }
@@ -452,6 +538,283 @@ function parseRedactionResponse(raw, ctx) {
 }
 
 /* ------------------------------------------------------------------------------------------- *
+ * §H — QUALIFICATION MEDDIC/BANT (deal). Structure la qualification sur les faits réels du compte
+ * et pointe les TROUS à combler + les prochaines actions. Aucun champ inventé : si l'info manque,
+ * le champ le dit et devient une action de qualification.
+ * ------------------------------------------------------------------------------------------- */
+function buildMeddicPrompt(ctx) {
+  const c = ctx || {};
+  return `${NT_ROLE}
+${NO_GENERIC}
+
+Qualifie l'opportunité principale de CE compte selon MEDDIC (+ note de confiance), à partir de ses faits réels :
+${factBase(c)}
+${contactsBlock(c)}
+${winStatsBlock(c)}
+
+Règle : chaque critère MEDDIC s'appuie sur un FAIT réel du compte (montant, deal nommé, contact, offre). Si l'information
+n'existe pas dans les faits, écris « à qualifier » (jamais d'invention) et ajoute-la dans "trous" + "prochainesActions".
+
+Réponds UNIQUEMENT avec un objet JSON valide :
+{
+  "metrics": string,            // gains chiffrés visés par le client (ancrés sur un montant/offre réel), ou « à qualifier »
+  "economicBuyer": string,      // décideur budgétaire (contact réel) ou « à identifier »
+  "decisionCriteria": string,   // critères de choix connus ou « à qualifier »
+  "decisionProcess": string,    // processus/échéance (closing réelle si connue) ou « à qualifier »
+  "identifiedPain": string,     // douleur/enjeu réel du compte
+  "champion": string,           // relais interne (contact réel) ou « à identifier »
+  "competition": string,        // concurrent en place (battlecard) ou « inconnu »
+  "score": number,              // 0-100 : maturité de qualification
+  "trous": [string],            // informations manquantes à combler (2-5)
+  "prochainesActions": [string] // 2-4 actions de qualification concrètes et datables
+}
+JSON uniquement.`;
+}
+function parseMeddicResponse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const s = Number(raw.score);
+  const out = {
+    metrics: coerceStr(raw.metrics, "à qualifier"),
+    economicBuyer: coerceStr(raw.economicBuyer, "à identifier"),
+    decisionCriteria: coerceStr(raw.decisionCriteria, "à qualifier"),
+    decisionProcess: coerceStr(raw.decisionProcess, "à qualifier"),
+    identifiedPain: coerceStr(raw.identifiedPain, "à qualifier"),
+    champion: coerceStr(raw.champion, "à identifier"),
+    competition: coerceStr(raw.competition, "inconnu"),
+    score: Number.isFinite(s) ? Math.max(0, Math.min(100, Math.round(s))) : 0,
+    trous: coerceStrArray(raw.trous).slice(0, 6),
+    prochainesActions: coerceStrArray(raw.prochainesActions).slice(0, 5),
+  };
+  return (out.metrics || out.identifiedPain || out.prochainesActions.length) ? out : null;
+}
+
+/* ------------------------------------------------------------------------------------------- *
+ * §I — BRIEF DE RDV. Note de préparation avant rendez-vous : snapshot, deals, objectifs, questions
+ * à poser, objections probables + parades (battlecards), prochaines étapes.
+ * ------------------------------------------------------------------------------------------- */
+function buildBriefPrompt(ctx) {
+  const c = ctx || {};
+  const objectif = coerceStr(c.contexte) || coerceStr(c.objectif);
+  return `${NT_ROLE}
+${NO_GENERIC}
+
+Prépare une NOTE DE BRIEF avant un rendez-vous commercial pour CE compte, à partir de ses faits réels :
+${factBase(c)}
+${contactsBlock(c)}
+${competitorBlock(c)}
+Objectif du rendez-vous (si fourni) : ${objectif || "non précisé — proposer l'objectif le plus utile au vu du pipeline"}.
+
+Réponds UNIQUEMENT avec un objet JSON valide :
+{
+  "snapshot": string,               // 2 phrases : où en est la relation (CA réalisé, deals, dernier achat)
+  "objectifs": [string],            // 2-3 objectifs concrets du RDV
+  "questions": [string],            // 4-6 questions à poser (découverte/qualification), ancrées sur les faits
+  "objections": [ { "objection": string, "reponse": string } ], // 2-3, parades issues des battlecards si concurrent connu
+  "aValoriser": [string],           // 2-3 preuves/offres/atouts à mettre en avant (offres vendues, next best offer chiffrée)
+  "prochainesEtapes": [string]      // 2-3 next steps à obtenir en sortie de RDV
+}
+JSON uniquement.`;
+}
+function parseBriefResponse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const objections = (Array.isArray(raw.objections) ? raw.objections : [])
+    .filter((x) => x && typeof x === "object" && coerceStr(x.objection))
+    .map((x) => ({ objection: coerceStr(x.objection), reponse: coerceStr(x.reponse) }))
+    .slice(0, 4);
+  const out = {
+    snapshot: coerceStr(raw.snapshot),
+    objectifs: coerceStrArray(raw.objectifs).slice(0, 4),
+    questions: coerceStrArray(raw.questions).slice(0, 7),
+    objections,
+    aValoriser: coerceStrArray(raw.aValoriser).slice(0, 4),
+    prochainesEtapes: coerceStrArray(raw.prochainesEtapes).slice(0, 4),
+  };
+  return (out.snapshot || out.questions.length) ? out : null;
+}
+
+/* ------------------------------------------------------------------------------------------- *
+ * §J — ANALYSE DE DEAL & STRATÉGIE DE GAIN. Concurrent en place (battlecard), win-themes (winLoss),
+ * probabilité, plan de closing daté sur la closing réelle, objections chiffrées.
+ * ------------------------------------------------------------------------------------------- */
+const PROBAS = ["Élevée", "Moyenne", "Faible"];
+function buildDealAnalysisPrompt(ctx) {
+  const c = ctx || {};
+  return `${NT_ROLE}
+${NO_GENERIC}
+
+Analyse l'opportunité en cours la plus importante de CE compte et propose une STRATÉGIE DE GAIN, à partir des faits réels :
+${factBase(c)}
+${competitorBlock(c)}
+${winStatsBlock(c)}
+Date du jour : ${coerceStr(c.today, "aujourd'hui")}.
+
+Règle : identifie le deal réel visé (nom + montant). Le "concurrent" doit provenir des battlecards/faits, sinon « inconnu — à qualifier ».
+Les "winThemes" s'appuient sur nos axes de victoire réels et les leçons winLoss. Le "planClosing" est daté et cohérent avec la closing réelle.
+
+Réponds UNIQUEMENT avec un objet JSON valide :
+{
+  "deal": string,               // nom + montant du deal visé
+  "concurrent": string,         // concurrent en place (battlecard) ou « inconnu — à qualifier »
+  "forcesConcurrent": [string], // 1-3 forces adverses à neutraliser
+  "parades": [string],          // 2-4 parades concrètes (faiblesses adverses + nos atouts)
+  "winThemes": [string],        // 2-4 axes de victoire ancrés (offres vendues, references, winLoss)
+  "objections": [ { "objection": string, "reponse": string } ], // 2-3
+  "probabilite": "Élevée" | "Moyenne" | "Faible",
+  "planClosing": [ { "quand": string, "action": string } ] // 3-5 étapes datées jusqu'à la signature
+}
+JSON uniquement.`;
+}
+function parseDealAnalysisResponse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const objections = (Array.isArray(raw.objections) ? raw.objections : [])
+    .filter((x) => x && typeof x === "object" && coerceStr(x.objection))
+    .map((x) => ({ objection: coerceStr(x.objection), reponse: coerceStr(x.reponse) })).slice(0, 4);
+  const planClosing = (Array.isArray(raw.planClosing) ? raw.planClosing : [])
+    .filter((x) => x && typeof x === "object" && coerceStr(x.action))
+    .map((x) => ({ quand: coerceStr(x.quand), action: coerceStr(x.action) })).slice(0, 6);
+  const out = {
+    deal: coerceStr(raw.deal),
+    concurrent: coerceStr(raw.concurrent, "inconnu — à qualifier"),
+    forcesConcurrent: coerceStrArray(raw.forcesConcurrent).slice(0, 4),
+    parades: coerceStrArray(raw.parades).slice(0, 5),
+    winThemes: coerceStrArray(raw.winThemes).slice(0, 5),
+    objections,
+    probabilite: coerceEnum(raw.probabilite, PROBAS, "Moyenne"),
+    planClosing,
+  };
+  return (out.deal || out.winThemes.length || planClosing.length) ? out : null;
+}
+
+/* ------------------------------------------------------------------------------------------- *
+ * §K — BUSINESS CASE CHIFFRÉ (ROI). Les montants viennent du MODÈLE DE VALEUR calculé en amont
+ * (paniers de référence réels) — l'IA structure le récit, jamais les chiffres.
+ * ------------------------------------------------------------------------------------------- */
+function buildBusinessCasePrompt(ctx) {
+  const c = ctx || {};
+  return `${NT_ROLE}
+${NO_GENERIC}
+
+Construis un BUSINESS CASE chiffré pour développer CE compte, à partir de ses faits réels :
+${factBase(c)}
+${valueModelBlock(c)}
+
+RÈGLE ABSOLUE SUR LES MONTANTS : n'utilise QUE les montants du "modèle de valeur chiffré" ci-dessus (CA réalisé, next best offer,
+paniers de référence par offre, potentiel cross-sell). N'invente AUCUN autre chiffre. Chaque "gain" doit référencer une offre nommée
+et son montant de référence. Si le modèle est vide, dis-le et propose une action de qualification chiffrable.
+
+Réponds UNIQUEMENT avec un objet JSON valide :
+{
+  "synthese": string,           // 2 phrases : la valeur en jeu pour ce compte, chiffrée
+  "hypotheses": [string],       // 2-3 hypothèses explicites (base de calcul : paniers de référence, cadence de réachat)
+  "gains": [ { "levier": string, "montant": string, "base": string } ], // 2-4 : levier=offre nommée, montant=du modèle, base=d'où vient le chiffre
+  "potentielTotal": string,     // somme chiffrée du potentiel adressable (du modèle)
+  "risques": [string],          // 1-3 risques/conditions de réalisation
+  "recommandation": string      // la 1re action pour enclencher la valeur
+}
+JSON uniquement.`;
+}
+function parseBusinessCaseResponse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const gains = (Array.isArray(raw.gains) ? raw.gains : [])
+    .filter((x) => x && typeof x === "object" && coerceStr(x.levier))
+    .map((x) => ({ levier: coerceStr(x.levier), montant: coerceStr(x.montant), base: coerceStr(x.base) })).slice(0, 5);
+  const out = {
+    synthese: coerceStr(raw.synthese),
+    hypotheses: coerceStrArray(raw.hypotheses).slice(0, 4),
+    gains,
+    potentielTotal: coerceStr(raw.potentielTotal),
+    risques: coerceStrArray(raw.risques).slice(0, 4),
+    recommandation: coerceStr(raw.recommandation),
+  };
+  return (out.synthese || gains.length) ? out : null;
+}
+
+/* ------------------------------------------------------------------------------------------- *
+ * §L — SÉQUENCE DE PROSPECTION MULTI-TOUCH DATÉE. Cadence datée depuis aujourd'hui, message par canal.
+ * ------------------------------------------------------------------------------------------- */
+const SEQ_CANAUX = ["E-mail", "WhatsApp", "LinkedIn", "Appel", "RDV"];
+function buildSequencePrompt(ctx) {
+  const c = ctx || {};
+  return `${NT_ROLE}
+${NO_GENERIC}
+
+Bâtis une SÉQUENCE DE PROSPECTION MULTI-TOUCH datée (cadence 4 à 6 points de contact sur ~3 semaines) pour CE compte, à partir de ses faits réels :
+${factBase(c)}
+Date du jour : ${coerceStr(c.today, "aujourd'hui")}. Date chaque touche en jours à partir d'aujourd'hui (J0, J+3, J+7…).
+
+Règle : alterne les canaux, chaque touche a un OBJECTIF distinct (accroche → valeur → preuve → relance → alternative → rupture), et un
+message court ANCRÉ sur un fait réel (offre vendue, next best offer chiffrée, signal de veille). Pas de relance vide « je reviens vers vous ».
+
+Réponds UNIQUEMENT avec un objet JSON valide :
+{
+  "touches": [
+    { "jour": string, "canal": "E-mail" | "WhatsApp" | "LinkedIn" | "Appel" | "RDV", "objectif": string, "message": string }
+  ]
+}
+4 à 6 touches. "jour" = ex. « J0 », « J+3 ». "message" = 1-3 phrases prêtes, citant un fait réel. JSON uniquement.`;
+}
+function parseSequenceResponse(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.touches)) return null;
+  const touches = raw.touches
+    .filter((x) => x && typeof x === "object" && coerceStr(x.message))
+    .map((x) => ({
+      jour: coerceStr(x.jour, "J0"),
+      canal: coerceEnum(x.canal, SEQ_CANAUX, "E-mail"),
+      objectif: coerceStr(x.objectif),
+      message: coerceStr(x.message),
+    }))
+    .slice(0, 6);
+  return touches.length ? { touches } : null;
+}
+
+/* ------------------------------------------------------------------------------------------- *
+ * §M — CARTOGRAPHIE DES PARTIES PRENANTES (stakeholder map) & stratégie multi-thread.
+ * ------------------------------------------------------------------------------------------- */
+const POUVOIRS = ["Élevé", "Moyen", "Faible"];
+const POSTURES = ["Champion", "Favorable", "Neutre", "Sceptique", "Détracteur", "Inconnu"];
+function buildStakeholdersPrompt(ctx) {
+  const c = ctx || {};
+  return `${NT_ROLE}
+${NO_GENERIC}
+
+Cartographie les PARTIES PRENANTES de CE compte et propose une stratégie multi-thread, à partir des faits réels :
+${factBase(c)}
+${contactsBlock(c)}
+
+Règle : ne crée PAS de personne fictive. Repars des contacts saisis ; s'il en manque, liste les RÔLES-CIBLES à identifier
+(ex. « DSI — à identifier », « Directeur financier — à identifier ») sans inventer de nom. Qualifie pouvoir et posture.
+
+Réponds UNIQUEMENT avec un objet JSON valide :
+{
+  "parties": [ { "nom": string, "role": string, "pouvoir": "Élevé" | "Moyen" | "Faible", "posture": "Champion" | "Favorable" | "Neutre" | "Sceptique" | "Détracteur" | "Inconnu", "strategie": string } ],
+  "champion": string,        // qui cultiver comme relais (ou « à identifier »)
+  "risqueRelationnel": string, // le principal risque politique (détracteur, mono-contact…)
+  "multiThread": [string]    // 2-3 actions pour élargir la couverture des décideurs
+}
+3 à 6 "parties". "strategie" = comment engager cette personne/ce rôle. JSON uniquement.`;
+}
+function parseStakeholdersResponse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const parties = (Array.isArray(raw.parties) ? raw.parties : [])
+    .filter((x) => x && typeof x === "object" && (coerceStr(x.nom) || coerceStr(x.role)))
+    .map((x) => ({
+      nom: coerceStr(x.nom, coerceStr(x.role, "Partie prenante")),
+      role: coerceStr(x.role),
+      pouvoir: coerceEnum(x.pouvoir, POUVOIRS, "Moyen"),
+      posture: coerceEnum(x.posture, POSTURES, "Inconnu"),
+      strategie: coerceStr(x.strategie),
+    }))
+    .slice(0, 6);
+  const out = {
+    parties,
+    champion: coerceStr(raw.champion, "à identifier"),
+    risqueRelationnel: coerceStr(raw.risqueRelationnel),
+    multiThread: coerceStrArray(raw.multiThread).slice(0, 4),
+  };
+  return parties.length ? out : null;
+}
+
+/* ------------------------------------------------------------------------------------------- *
  * Registre agent → {build, parse} pour un routage unique côté index.js.
  * ------------------------------------------------------------------------------------------- */
 const AGENTS = {
@@ -461,6 +824,12 @@ const AGENTS = {
   planCompte: { build: buildPlanComptePrompt, parse: parsePlanCompteResponse },
   planAction: { build: buildPlanActionPrompt, parse: parsePlanActionResponse },
   redaction: { build: buildRedactionPrompt, parse: parseRedactionResponse },
+  meddic: { build: buildMeddicPrompt, parse: parseMeddicResponse },
+  brief: { build: buildBriefPrompt, parse: parseBriefResponse },
+  dealAnalysis: { build: buildDealAnalysisPrompt, parse: parseDealAnalysisResponse },
+  businessCase: { build: buildBusinessCasePrompt, parse: parseBusinessCaseResponse },
+  sequence: { build: buildSequencePrompt, parse: parseSequenceResponse },
+  stakeholders: { build: buildStakeholdersPrompt, parse: parseStakeholdersResponse },
 };
 
 module.exports = {
@@ -473,4 +842,10 @@ module.exports = {
   buildPlanActionPrompt, parsePlanActionResponse,
   buildChatSystem, buildChatPrompt, parseChatResponse,
   buildRedactionPrompt, parseRedactionResponse,
+  buildMeddicPrompt, parseMeddicResponse,
+  buildBriefPrompt, parseBriefResponse,
+  buildDealAnalysisPrompt, parseDealAnalysisResponse,
+  buildBusinessCasePrompt, parseBusinessCaseResponse,
+  buildSequencePrompt, parseSequenceResponse,
+  buildStakeholdersPrompt, parseStakeholdersResponse,
 };
