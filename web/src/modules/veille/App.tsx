@@ -47,6 +47,7 @@ export default function VeilleApp() {
       html,body{max-width:100%;overflow-x:clip}
       .appshell{overflow-x:clip;max-width:100vw}
       img,svg,video,canvas{max-width:100%}
+      .g2>*,.g3>*,.g4>*,.g2-stack>*,.canvas-grid>*,.pestel-row>*{min-width:0}
       .pill{cursor:pointer;border:1px solid ${T.line};background:${T.panel};color:${T.dim};border-radius:999px;padding:6px 13px;font-size:12.5px;font-weight:600}
       .pill.on{background:${T.gold};border-color:${T.gold};color:#0E1613}
       .pill:disabled{opacity:.55;cursor:not-allowed}
