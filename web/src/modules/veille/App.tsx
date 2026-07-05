@@ -44,13 +44,16 @@ export default function VeilleApp() {
   return (
     <div className="appshell" style={{ background: T.bg, minHeight: "100vh", color: T.ink, fontFamily: "'Inter',system-ui,sans-serif", padding: "20px 24px 40px" }}>
       <style>{`*{box-sizing:border-box}::selection{background:#C9A24B;color:#0E1613}
+      html,body{max-width:100%;overflow-x:clip}
+      .appshell{overflow-x:clip;max-width:100vw}
+      img,svg,video,canvas{max-width:100%}
       .pill{cursor:pointer;border:1px solid ${T.line};background:${T.panel};color:${T.dim};border-radius:999px;padding:6px 13px;font-size:12.5px;font-weight:600}
       .pill.on{background:${T.gold};border-color:${T.gold};color:#0E1613}
       .pill:disabled{opacity:.55;cursor:not-allowed}
       .tab{cursor:pointer;border:none;background:none;color:${T.dim};font-size:13.5px;font-weight:600;padding:9px 2px;border-bottom:2px solid transparent;white-space:nowrap}
       .tab.on{color:${T.ink};border-bottom-color:${T.gold}}
       .navwrap::-webkit-scrollbar{height:0}
-      .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+      .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;min-width:0}
       .pill:focus-visible,.tab:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid ${T.gold};outline-offset:2px}
       @keyframes cop-spin{to{transform:rotate(360deg)}}
       @keyframes cop-pulse{0%,100%{opacity:.45}50%{opacity:.9}}
