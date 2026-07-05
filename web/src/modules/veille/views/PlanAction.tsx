@@ -8,6 +8,7 @@ import { useIsExec } from "../../../lib/rbac";
 import { slugifyClient } from "../lib/copilote";
 import { actionPriority, createAction, useActions, type ActionStatus } from "../lib/execution";
 import { updateBizOpportunity, useBizOpportunities, type BizOpportunityProbability, type BizOpportunityStatus } from "../lib/intel";
+import { usePaged, Pager } from "../components/Pager";
 
 const PROBA_META: Record<BizOpportunityProbability, { l: string; c: string }> = {
   high: { l: "Probabilité haute", c: T.emerald },
@@ -28,6 +29,10 @@ function BizOpportunitiesSection({ isExec }: { isExec: boolean }) {
   const navigate = useNavigate();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [owners, setOwners] = useState<Record<string, string>>({});
+  // Longue liste cumulative (audit design) : filtre par statut + pagination.
+  const [oppFilter, setOppFilter] = useState<"all" | BizOpportunityStatus>("all");
+  const oppFiltered = opportunities.filter((o) => oppFilter === "all" || o.status === oppFilter);
+  const oppPaged = usePaged(oppFiltered, 10, oppFilter);
 
   async function setStatus(id: string, status: BizOpportunityStatus) {
     setBusyId(id);
@@ -66,7 +71,19 @@ function BizOpportunitiesSection({ isExec }: { isExec: boolean }) {
 
   return (
     <Card style={{ marginBottom: 14 }}>
-      <Eyebrow color={T.emerald}>💼 Opportunités business (IA)</Eyebrow>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <Eyebrow color={T.emerald}>💼 Opportunités business (IA)</Eyebrow>
+        {opportunities.length > 0 && <Badge c={T.emerald}>{opportunities.length}</Badge>}
+      </div>
+      {opportunities.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+          {([["all", "Toutes"], ["new", "Nouvelles"], ["qualified", "Qualifiées"], ["dropped", "Écartées"]] as const).map(([k, l]) => (
+            <button key={k} className={`pill ${oppFilter === k ? "on" : ""}`} onClick={() => setOppFilter(k)}>
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
       <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
         {loading && opportunities.length === 0 && (
           <div style={{ fontSize: 12.5, color: T.faint }}>Chargement des opportunités…</div>
@@ -76,7 +93,10 @@ function BizOpportunitiesSection({ isExec }: { isExec: boolean }) {
             Aucune opportunité détectée pour l'instant — alimenté par l'enrichissement IA hebdomadaire.
           </div>
         )}
-        {opportunities.map((o, i) => (
+        {!loading && opportunities.length > 0 && oppFiltered.length === 0 && (
+          <div style={{ fontSize: 12.5, color: T.faint }}>Aucune opportunité pour ce filtre.</div>
+        )}
+        {oppPaged.pageItems.map((o, i) => (
           <div key={o.id} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "10px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none", opacity: o.status === "dropped" ? 0.55 : 1 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 600 }}>{o.name}</div>
@@ -150,6 +170,7 @@ function BizOpportunitiesSection({ isExec }: { isExec: boolean }) {
           </div>
         ))}
       </div>
+      <Pager {...oppPaged} />
     </Card>
   );
 }
