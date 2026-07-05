@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { T, QCOL, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Tip, Badge } from "../../../design/ui";
+import { Select } from "../../../design/fields";
 import { useIsExec } from "../../../lib/rbac";
 import { useFramework, updateFramework } from "../lib/frameworks";
 import { useQuantiSummary } from "../lib/quanti";
@@ -223,11 +224,8 @@ function PestelEditor({ initial, onClose }: { initial: PestelContent | null; onC
             </div>
             <div>
               <label style={labelStyle}>Tendance</label>
-              <select style={inputStyle} value={r.tr} onChange={(e) => set(i, { tr: e.target.value })}>
-                <option value="↑">↑</option>
-                <option value="→">→</option>
-                <option value="↓">↓</option>
-              </select>
+              <Select value={r.tr} onChange={(v) => set(i, { tr: v })} ariaLabel="Tendance"
+                options={[{ value: "↑", label: "↑ En hausse" }, { value: "→", label: "→ Stable" }, { value: "↓", label: "↓ En baisse" }]} />
             </div>
             <div>
               <label style={labelStyle}>Description</label>

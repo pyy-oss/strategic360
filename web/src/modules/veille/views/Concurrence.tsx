@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { T, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Badge, Tip } from "../../../design/ui";
+import { Select, DateField } from "../../../design/fields";
 import { useCan } from "../../../lib/rbac";
 import { createWinLossEntry, upsertBattlecard, useBattlecards, useWinLoss, winRateByCompetitor, type WinLossResult } from "../lib/execution";
 
@@ -144,10 +145,8 @@ function NewWinLossPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Résultat</label>
-            <select style={inputStyle} value={form.result} onChange={(e) => set("result", e.target.value as WinLossResult)}>
-              <option value="win">Win</option>
-              <option value="loss">Loss</option>
-            </select>
+            <Select value={form.result} onChange={(v) => set("result", v as WinLossResult)} ariaLabel="Résultat"
+              options={[{ value: "win", label: "Win" }, { value: "loss", label: "Loss" }]} />
           </div>
           <div>
             <label style={labelStyle}>Raison</label>
@@ -155,7 +154,7 @@ function NewWinLossPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Date *</label>
-            <input type="date" style={inputStyle} value={form.date} onChange={(e) => set("date", e.target.value)} required />
+            <DateField value={form.date} onChange={(v) => set("date", v)} ariaLabel="Date" required />
           </div>
         </div>
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 10, marginBottom: 10 }}>

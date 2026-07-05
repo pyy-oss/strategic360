@@ -13,6 +13,7 @@ import {
   type InitiativeStatus,
 } from "../lib/execution";
 import { usePaged, Pager } from "../components/Pager";
+import { Select, DateField } from "../../../design/fields";
 
 interface NewInitiativeForm {
   title: string;
@@ -114,14 +115,8 @@ function NewInitiativePanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Pilier / thème</label>
-            <select style={inputStyle} value={form.themeId} onChange={(e) => set("themeId", e.target.value)}>
-              <option value="">—</option>
-              {themes.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.title}
-                </option>
-              ))}
-            </select>
+            <Select value={form.themeId} onChange={(v) => set("themeId", v)} ariaLabel="Pilier / thème" placeholder="—"
+              options={[{ value: "", label: "—" }, ...themes.map((t) => ({ value: t.id, label: t.title }))]} />
           </div>
           <div>
             <label style={labelStyle}>Porteur</label>
@@ -129,24 +124,17 @@ function NewInitiativePanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Horizon</label>
-            <select style={inputStyle} value={form.horizon} onChange={(e) => set("horizon", e.target.value)}>
-              <option value="H1">H1</option>
-              <option value="H2">H2</option>
-              <option value="H3">H3</option>
-            </select>
+            <Select value={form.horizon} onChange={(v) => set("horizon", v)} ariaLabel="Horizon"
+              options={[{ value: "H1", label: "H1" }, { value: "H2", label: "H2" }, { value: "H3", label: "H3" }]} />
           </div>
           <div>
             <label style={labelStyle}>Statut</label>
-            <select style={inputStyle} value={form.status} onChange={(e) => set("status", e.target.value)}>
-              <option value="à lancer">À lancer</option>
-              <option value="en cours">En cours</option>
-              <option value="terminée">Terminée</option>
-              <option value="en retard">En retard</option>
-            </select>
+            <Select value={form.status} onChange={(v) => set("status", v)} ariaLabel="Statut"
+              options={[{ value: "à lancer", label: "À lancer" }, { value: "en cours", label: "En cours" }, { value: "terminée", label: "Terminée" }, { value: "en retard", label: "En retard" }]} />
           </div>
           <div>
             <label style={labelStyle}>Échéance</label>
-            <input type="date" style={inputStyle} value={form.dueDate} onChange={(e) => set("dueDate", e.target.value)} />
+            <DateField value={form.dueDate} onChange={(v) => set("dueDate", v)} ariaLabel="Échéance" />
           </div>
           <div>
             <label style={labelStyle}>Avancement ({form.progress}%)</label>
@@ -248,15 +236,12 @@ function NewDecisionPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Date *</label>
-            <input type="date" style={inputStyle} value={form.date} onChange={(e) => set("date", e.target.value)} required />
+            <DateField value={form.date} onChange={(v) => set("date", v)} ariaLabel="Date" required />
           </div>
           <div>
             <label style={labelStyle}>Statut</label>
-            <select style={inputStyle} value={form.statut} onChange={(e) => set("statut", e.target.value)}>
-              <option value="En attente">En attente</option>
-              <option value="En cours">En cours</option>
-              <option value="Actée">Actée</option>
-            </select>
+            <Select value={form.statut} onChange={(v) => set("statut", v)} ariaLabel="Statut"
+              options={[{ value: "En attente", label: "En attente" }, { value: "En cours", label: "En cours" }, { value: "Actée", label: "Actée" }]} />
           </div>
           <div>
             <label style={labelStyle}>Option retenue</label>
