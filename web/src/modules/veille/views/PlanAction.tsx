@@ -382,7 +382,7 @@ export function PlanAction() {
           <Card>
             <Eyebrow color={T.steel}>Plan d'action priorisé</Eyebrow>
             <div className="tbl-scroll" style={{ marginTop: 12 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse", fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ color: T.faint, fontSize: 10.5, textAlign: "left" }}>
                     <th style={{ padding: "6px 8px" }}>#</th>

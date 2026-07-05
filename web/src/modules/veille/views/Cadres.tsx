@@ -611,7 +611,7 @@ function VrioTab() {
         <Badge c={T.emerald}>Suggéré par l'IA</Badge>
       </div>
       <div style={{ overflowX: "auto", marginTop: 12 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse", fontSize: 12 }}>
           <thead>
             <tr style={{ color: T.faint, textAlign: "left" }}>
               <th style={{ padding: "6px 8px" }}>Ressource</th>

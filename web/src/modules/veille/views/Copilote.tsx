@@ -268,10 +268,10 @@ function AccountCombobox({
   }, [accounts, q]);
   const pick = (id: string) => { onChange(id); setOpen(false); setQ(""); };
   return (
-    <div style={{ position: "relative", minWidth: 240 }}>
+    <div style={{ position: "relative", minWidth: 180, flex: 1 }}>
       <input
         aria-label="Rechercher un compte commercial"
-        style={{ ...inp, minWidth: 240, cursor: "text" }}
+        style={{ ...inp, minWidth: 0, width: "100%", cursor: "text" }}
         placeholder={loading ? "Chargement du portefeuille…" : "🔎 Rechercher un compte…"}
         value={open ? q : (selected ? selected.nom : "")}
         onFocus={() => setOpen(true)}
@@ -922,7 +922,7 @@ function OwnersEditor({ account, isAdmin, onSaved }: { account: CopiloteAccount;
       </div>
       {isAdmin && editing && (
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-          <input style={{ ...inp, minWidth: 260, flex: 1 }} value={val} placeholder="e-mails séparés par des virgules" onChange={(e) => setVal(e.target.value)} />
+          <input style={{ ...inp, minWidth: 0, flex: 1 }} value={val} placeholder="e-mails séparés par des virgules" onChange={(e) => setVal(e.target.value)} />
           <button className="pill on" disabled={busy} onClick={() => void save()}>{busy ? "…" : "Enregistrer"}</button>
           <button className="pill" disabled={busy} onClick={() => { setEditing(false); setVal(owners.join(", ")); }}>Annuler</button>
         </div>

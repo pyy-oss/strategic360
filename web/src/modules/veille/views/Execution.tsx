@@ -338,7 +338,7 @@ export function Execution() {
           {loadingDec && decisions.length === 0 && <div style={{ fontSize: 12.5, color: T.faint }}>Chargement du registre…</div>}
           {!loadingDec && decisions.length === 0 && <div style={{ fontSize: 12.5, color: T.faint }}>Aucune décision enregistrée pour l'instant.</div>}
           {decisions.length > 0 && (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
                 <tr style={{ color: T.faint, fontSize: 11, textAlign: "left" }}>
                   <th style={{ padding: "6px 8px" }}>Décision</th>
