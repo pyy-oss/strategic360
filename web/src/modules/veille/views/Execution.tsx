@@ -12,6 +12,7 @@ import {
   type InitiativeHorizon,
   type InitiativeStatus,
 } from "../lib/execution";
+import { usePaged, Pager } from "../components/Pager";
 
 interface NewInitiativeForm {
   title: string;
@@ -284,6 +285,7 @@ export function Execution() {
   const isExec = useIsExec();
   const [showForm, setShowForm] = useState(false);
   const [showDecisionForm, setShowDecisionForm] = useState(false);
+  const initPaged = usePaged(initiatives, 8);
 
   const themeTitle = (id?: string) => themes.find((t) => t.id === id)?.title;
 
@@ -306,7 +308,7 @@ export function Execution() {
               Aucune initiative saisie pour l'instant. {isExec ? "Utilisez « + Nouvelle initiative » pour en créer une." : ""}
             </div>
           )}
-          {initiatives.map((it) => (
+          {initPaged.pageItems.map((it) => (
             <div key={it.id}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 5, flexWrap: "wrap", gap: 6 }}>
                 <span style={{ color: T.ink, fontWeight: 600 }}>
@@ -323,6 +325,7 @@ export function Execution() {
             </div>
           ))}
         </div>
+        <Pager {...initPaged} />
       </Card>
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>

@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { T, fmt, pct, AMBITION_LABEL } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { useQuantiSummary } from "../lib/quanti";
+import { usePaged, Pager } from "../components/Pager";
 
 /**
  * "Création de valeur" (value bridge · value-at-stake · driver tree).
@@ -26,6 +27,12 @@ export function Valeur() {
   // « menaces » et « net » sont structurellement à 0 (audit 2026-07). On ne les affiche que si des
   // menaces valorisées existent réellement — sinon une seule tuile honnête, pas deux tuiles mortes.
   const hasThreat = vas.some((v) => (v.type as string) === "threat");
+  // Longue liste (audit design) : filtre opp/menace (si pertinent) + pagination. L'échelle des
+  // barres reste calée sur le max GLOBAL pour rester comparable d'une page à l'autre.
+  const [vasFilter, setVasFilter] = useState<"all" | "opp" | "threat">("all");
+  const vasFiltered = vas.filter((v) => vasFilter === "all" || (v.type as string) === vasFilter);
+  const vasPaged = usePaged(vasFiltered, 12, vasFilter);
+  const vasMax = Math.max(...vas.map((x) => Math.abs(x.ev)), 1);
   return (
     <div>
       <div className="g3" style={{ display: "grid", gridTemplateColumns: hasThreat ? "repeat(3,1fr)" : "1fr", gap: 14, marginBottom: 14 }}>
@@ -56,24 +63,34 @@ export function Valeur() {
           {!liveVas && (
             <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente de la première synchronisation interne (nt360).</div>
           )}
+          {hasThreat && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+              {([["all", "Tout"], ["opp", "Opportunités"], ["threat", "Menaces"]] as const).map(([k, l]) => (
+                <button key={k} className={`pill ${vasFilter === k ? "on" : ""}`} onClick={() => setVasFilter(k)}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-            {vas.map((v, i) => (
-              <div key={i}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}>
-                  <span style={{ color: T.ink }}>
+            {vasPaged.pageItems.map((v, i) => (
+              <div key={`${v.n}-${vasPaged.start + i}`}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3, gap: 8 }}>
+                  <span style={{ color: T.ink, minWidth: 0, overflowWrap: "anywhere" }}>
                     {v.n} <span style={{ color: T.faint }}>· {pct(v.p)}</span>
                   </span>
-                  <span style={{ color: v.ev >= 0 ? T.emerald : T.clay, fontVariantNumeric: "tabular-nums" }}>
+                  <span style={{ color: v.ev >= 0 ? T.emerald : T.clay, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                     {v.ev >= 0 ? "+" : ""}
                     {fmt(v.ev)}
                   </span>
                 </div>
                 <div style={{ height: 6, background: T.panel2, borderRadius: 4 }}>
-                  <div style={{ width: `${Math.min((Math.abs(v.ev) / Math.max(...vas.map((x) => Math.abs(x.ev)), 1)) * 100, 100)}%`, height: "100%", background: v.ev >= 0 ? T.emerald : T.clay, borderRadius: 4 }} />
+                  <div style={{ width: `${Math.min((Math.abs(v.ev) / vasMax) * 100, 100)}%`, height: "100%", background: v.ev >= 0 ? T.emerald : T.clay, borderRadius: 4 }} />
                 </div>
               </div>
             ))}
           </div>
+          <Pager {...vasPaged} />
         </Card>
         <Card>
           <Eyebrow color={T.plum}>Arbre des leviers de valeur</Eyebrow>

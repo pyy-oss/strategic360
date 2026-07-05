@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Cell } from "recharts";
+import { usePaged, Pager } from "../components/Pager";
 import { T, RING, QUAD_TECH, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Tip, Badge } from "../../../design/ui";
 import { useClaims } from "../../../lib/rbac";
@@ -236,6 +237,11 @@ export function Innovation() {
     return { ...b, x: CX + rad * Math.cos(a), y: CY - rad * Math.sin(a) };
   });
   const rice = INNOV.map((o) => ({ ...o, rice: riceScore({ reach: o.reach, impact: o.impact, confidence: o.conf, effort: o.effort }) }));
+  // Longues listes (audit design) : pagination de la légende du radar et du classement RICE.
+  // Le radar SVG et le nuage RICE au-dessus continuent d'afficher TOUT (vue d'ensemble).
+  const blipsPaged = usePaged(liveBlips, 12);
+  const sortedBets = [...liveBets].sort((a, b) => (b.rice ?? 0) - (a.rice ?? 0));
+  const betsPaged = usePaged(sortedBets, 10);
   return (
     <div>
       {showBlipForm && canContribute && <NewBlipPanel onClose={() => setShowBlipForm(false)} />}
@@ -292,7 +298,7 @@ export function Innovation() {
                 ))}
               </div>
               <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
-                {liveBlips.map((b, i) => (
+                {blipsPaged.pageItems.map((b, i) => (
                   <div key={b.id ?? i} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12, borderTop: i > 0 ? `1px solid ${T.line}` : "none", paddingTop: i > 0 ? 4 : 0 }}>
                     <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 8, background: RING[b.ring]?.c ?? T.faint, flexShrink: 0, position: "relative", top: 0 }} />
                     <span style={{ color: T.ink, fontWeight: 600 }}>{b.name}</span>
@@ -300,6 +306,7 @@ export function Innovation() {
                   </div>
                 ))}
               </div>
+              <Pager {...blipsPaged} />
             </>
           )}
         </Card>
@@ -345,8 +352,7 @@ export function Innovation() {
           <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>Portefeuille d'innovation vide.</div>
         ) : (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-            {[...liveBets]
-              .sort((a, b) => (b.rice ?? 0) - (a.rice ?? 0))
+            {betsPaged.pageItems
               .map((o, i) => (
                 <div key={o.id ?? i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 12.5, padding: "8px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
                   <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, color: T.emerald, minWidth: 40 }}>{o.rice ?? riceScore({ reach: o.reach, impact: o.impact, confidence: o.confidence, effort: o.effort })}</div>
@@ -377,6 +383,7 @@ export function Innovation() {
                   </span>
                 </div>
               ))}
+            <Pager {...betsPaged} />
           </div>
         )}
       </Card>
