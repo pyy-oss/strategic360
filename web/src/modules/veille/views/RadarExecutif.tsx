@@ -85,7 +85,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
               <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${STANCE[s.stance].c}` }}>
                 <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16, color: STANCE[s.stance].c, minWidth: 30, textAlign: "center" }}>{s.priorityScore ?? "—"}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title}</div>
+                  <div style={{ fontSize: 12.5, color: T.ink, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{s.title}</div>
                   <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
                     <Badge c={AX[s.axis]?.c}>{AX[s.axis]?.l ?? s.axis}</Badge>
                     <Badge c={IMP[s.impact]?.c}>{IMP[s.impact]?.l ?? s.impact}</Badge>
@@ -101,7 +101,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
         </Card>
         <Card>
           <Eyebrow color={T.clay}>Carte menaces / opportunités</Eyebrow>
-          <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "70px 1fr 1fr", gap: 6, alignItems: "center" }}>
+          <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "56px minmax(0,1fr) minmax(0,1fr)", gap: 6, alignItems: "center" }}>
             <div />
             <div style={{ textAlign: "center", fontSize: 11, color: T.emerald, fontWeight: 600 }}>Opportunité</div>
             <div style={{ textAlign: "center", fontSize: 11, color: T.clay, fontWeight: 600 }}>Menace</div>
@@ -132,7 +132,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
             <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${s.prox === "imminent" ? T.clay : T.emerald}` }}>
               <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16, color: STANCE[s.stance]?.c ?? T.ink, minWidth: 30, textAlign: "center" }}>{s.priorityScore ?? "—"}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title}</div>
+                <div style={{ fontSize: 12.5, color: T.ink, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{s.title}</div>
                 <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
                   <Badge c={s.prox === "imminent" ? T.clay : T.gold}>
                     {s.dueDate ? `Échéance ${s.dueDate}` : s.prox ? PROX[s.prox]?.l ?? s.prox : "Échéance non datée"}
