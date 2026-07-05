@@ -33,6 +33,8 @@ export interface CopiloteHistoriqueItem {
 }
 export interface CopiloteOpportunite {
   nom: string;
+  /** Référence technique (oppId nt360, ex. « h1r000wt ») — traçabilité only, jamais le libellé affiché. */
+  ref?: string;
   montant: number;
   etape: string;
   bu?: string;

@@ -169,16 +169,17 @@ describe("deriveCopiloteAccounts (empreinte comptes pour le Copilote)", () => {
     const opps = [
       { client: "SGCI", bu: "FORMATION", stage: 6, amount: 200 }, // gagné
       { client: "SGCI", bu: "CYBER", stage: 6, amount: 500 },     // gagné
-      { client: "SGCI", bu: "ICT", stage: 3, amount: 400, oppId: "OPP-1", stageLabel: "3-Négociation", closingDate: "2026-09-30", probability: 60 },
+      { client: "SGCI", bu: "ICT", stage: 3, amount: 400, oppId: "OPP-1", fp: "Refonte SI SGCI", stageLabel: "3-Négociation", closingDate: "2026-09-30", probability: 60 },
       { client: "SGCI", bu: "WAN", stage: 2, amount: 900, oppId: "OPP-2", stageLabel: "2-Montage" },
       { client: "SGCI", bu: "ICT", stage: 7, amount: 999 },       // perdu → ignoré
     ];
     const sgci = deriveCopiloteAccounts([], opps).find((a) => a.slug === "sgci");
     expect(sgci.wins).toBe(2);
     expect(sgci.opportunites).toHaveLength(2);
-    // Triées par montant décroissant.
-    expect(sgci.opportunites[0]).toMatchObject({ nom: "OPP-2", montant: 900, etape: "2-Montage", bu: "WAN" });
-    expect(sgci.opportunites[1]).toMatchObject({ nom: "OPP-1", montant: 400, etape: "3-Négociation", closingDate: "2026-09-30", probability: 60 });
+    // Triées par montant décroissant. LIBELLÉ HUMAIN : `fp` (fiche projet) si présent, sinon
+    // « Opportunité <offre> » — jamais l'oppId (code technique), conservé en `ref` (traçabilité).
+    expect(sgci.opportunites[0]).toMatchObject({ nom: "Opportunité WAN", ref: "OPP-2", montant: 900, etape: "2-Montage", bu: "WAN" });
+    expect(sgci.opportunites[1]).toMatchObject({ nom: "Refonte SI SGCI", ref: "OPP-1", montant: 400, etape: "3-Négociation", closingDate: "2026-09-30", probability: 60 });
     // Jamais d'undefined : probability absente → null.
     expect(sgci.opportunites[0].probability).toBeNull();
   });

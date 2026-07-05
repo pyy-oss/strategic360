@@ -262,11 +262,17 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
       const hasWeighted = o.weighted != null && Number.isFinite(Number(o.weighted));
       a.pipelinePondere += hasWeighted ? num(o.weighted) : num(o.amount) * 0.5;
       // Opportunité RÉELLE en cours (deal en pipeline) — détail chiffré pour l'effet « portefeuille vivant ».
+      // LIBELLÉ HUMAIN (audit 2026-07) : la source ne porte pas de nom libre — le seul libellé métier est
+      // `fp` (fiche projet). On l'utilise comme libellé ; à défaut, un descriptif lisible « Opportunité <offre> »
+      // (jamais l'`oppId`, code technique « h1r000wt » illisible). `oppId` est conservé comme `ref` (traçabilité).
+      const fp = String(o.fp || "").trim();
+      const buLabel = o.bu ? String(o.bu).trim() : "";
       a.opps.push({
-        nom: String(o.oppId || o.fp || o.bu || "Opportunité").trim(),
+        nom: fp || (buLabel ? `Opportunité ${buLabel}` : "Opportunité"),
+        ref: String(o.oppId || "").trim(),
         montant: num(o.amount),
         etape: String(o.stageLabel || `Stade ${stage}`).trim(),
-        bu: o.bu ? String(o.bu) : "",
+        bu: buLabel,
         closingDate: typeof o.closingDate === "string" ? o.closingDate : "",
         probability: Number.isFinite(Number(o.probability)) ? Number(o.probability) : null,
       });

@@ -231,7 +231,7 @@ export function Copilote() {
               <Eyebrow>Opportunités réelles en cours</Eyebrow>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 7 }}>
                 {(account.nt360?.opportunites ?? []).map((o, i) => (
-                  <DealRow key={`${o.nom}-${i}`} nom={o.nom} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
+                  <DealRow key={`${o.ref || o.nom}-${i}`} nom={o.nom} dealRef={o.ref} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
                 ))}
               </div>
             </div>
@@ -332,13 +332,16 @@ function Money({ label, value, accent }: { label: string; value: number; accent?
 }
 
 /* -------- Ligne opportunité : montant + jauge de probabilité (met en avant ce qui est jouable) -------- */
-function DealRow({ nom, bu, etape, montant, probability, closingDate }: { nom: string; bu?: string; etape: string; montant: number; probability?: number | null; closingDate?: string }) {
+function DealRow({ nom, bu, etape, montant, probability, closingDate, dealRef }: { nom: string; bu?: string; etape: string; montant: number; probability?: number | null; closingDate?: string; dealRef?: string }) {
   const p = typeof probability === "number" ? Math.max(0, Math.min(100, probability)) : null;
+  // Le libellé (fiche projet ou « Opportunité <offre> ») peut déjà contenir l'offre → on n'affiche le
+  // BU en second que s'il n'y est pas déjà, pour éviter « Opportunité ICT · ICT ».
+  const showBu = bu && !nom.toLowerCase().includes(bu.toLowerCase());
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", padding: "8px 11px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${T.gold}` }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {nom}{bu ? <span style={{ color: T.dim }}> · {bu}</span> : null} <span style={{ color: T.steel }}>— {etape}</span>
+        <div title={dealRef ? `réf. ${dealRef}` : undefined} style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {nom}{showBu ? <span style={{ color: T.dim }}> · {bu}</span> : null} <span style={{ color: T.steel }}>— {etape}</span>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
           {p !== null && (
@@ -462,7 +465,7 @@ function PortfolioDashboard({
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
               {hotDeals.map((o, i) => (
                 <button key={i} onClick={() => onPick(o.accountId)} style={{ display: "block", width: "100%", padding: 0, background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
-                  <DealRow nom={`${o.compte} · ${o.nom}`} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
+                  <DealRow nom={`${o.compte} · ${o.nom}`} dealRef={o.ref} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
                 </button>
               ))}
             </div>
