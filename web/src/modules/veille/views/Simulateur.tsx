@@ -272,7 +272,7 @@ export function Simulateur() {
         <Card>
           <Eyebrow color={T.steel}>Comparaison de scénarios</Eyebrow>
           <div className="tbl-scroll" style={{ marginTop: 12 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ color: T.faint, fontSize: 10.5, textAlign: "right" }}>
                   <th style={{ textAlign: "left", padding: "5px 6px" }}>Profil</th>

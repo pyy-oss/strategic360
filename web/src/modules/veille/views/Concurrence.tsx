@@ -269,7 +269,7 @@ export function Concurrence() {
           <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
             {rows.map((c) => (
               <Card key={c.id} style={{ borderTop: `3px solid ${T.clay}` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
                   <Eyebrow color={T.clay}>{c.competitor}</Eyebrow>
                   <Badge c={c.win >= 0.5 ? T.emerald : T.clay}>
                     {c.deals > 0 ? `${pct(c.win)} · ${c.deals} deals` : "pas de win/loss"}
