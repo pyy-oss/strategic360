@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { T, fmt as fmtC } from "../../../design/tokens";
 import { Eyebrow, Card, Badge, Kpi } from "../../../design/ui";
-import { Select } from "../../../design/fields";
+import { Select, Input, Textarea } from "../../../design/fields";
+import { Modal, useToast } from "../../../design/overlay";
 import { useCan, useClaims } from "../../../lib/rbac";
 import {
   useCopiloteAccounts,
@@ -156,8 +157,8 @@ export function Copilote() {
         </Card>
       )}
 
-      {showPerim && isAdmin && <PerimetresPanel onClose={() => setShowPerim(false)} />}
-      {showNew && canWrite && <NewAccountPanel onClose={() => setShowNew(false)} onCreated={(id) => { setAccountId(id); setShowNew(false); reload(); }} />}
+      {isAdmin && <PerimetresPanel open={showPerim} onClose={() => setShowPerim(false)} />}
+      {canWrite && <NewAccountPanel open={showNew} onClose={() => setShowNew(false)} onCreated={(id) => { setAccountId(id); setShowNew(false); reload(); }} />}
 
       <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 14 }}>
         {AGENT_TABS.map((t) => (
@@ -697,7 +698,7 @@ function RedactionTab({ accountId, compte, canWrite }: { accountId: string; comp
     <Card>
       <Eyebrow color={T.emerald}>Rédaction — 2 variantes prêtes à envoyer</Eyebrow>
       <div className="g4" style={{ display: "grid", gridTemplateColumns: "1fr 130px 150px", gap: 10, marginTop: 12 }}>
-        <div><label style={lbl}>Type</label><input style={inp} value={form.kind} onChange={(e) => set("kind", e.target.value)} /></div>
+        <div><label style={lbl}>Type</label><Input value={form.kind} onChange={(v) => set("kind", v)} /></div>
         <div><label style={lbl}>Canal</label>
           <Select value={form.canal} onChange={(v) => set("canal", v)} ariaLabel="Canal"
             options={[{ value: "email", label: "E-mail" }, { value: "whatsapp", label: "WhatsApp" }, { value: "linkedin", label: "LinkedIn" }]} />
@@ -709,7 +710,7 @@ function RedactionTab({ accountId, compte, canWrite }: { accountId: string; comp
       </div>
       <div style={{ marginTop: 10 }}>
         <label style={lbl}>Contexte (sans rien inventer)</label>
-        <textarea style={{ ...inp, minHeight: 60, resize: "vertical" }} value={form.contexte} onChange={(e) => set("contexte", e.target.value)} />
+        <Textarea value={form.contexte} onChange={(v) => set("contexte", v)} />
       </div>
       <div style={{ marginTop: 10 }}>
         <GenButton busy={busy} disabled={!canWrite} onClick={() => run({ ...form, compte })} label="Rédiger" />
@@ -773,7 +774,7 @@ function ChatTab({ accountId, canWrite }: { accountId: string; canWrite: boolean
       <ReadOnlyNote show={!canWrite} />
       <ErrLine err={err} />
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <input style={inp} value={input} placeholder="Votre message…" disabled={!canWrite} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void send(); }} />
+        <Input style={{ flex: 1 }} value={input} placeholder="Votre message…" disabled={!canWrite} onChange={setInput} onKeyDown={(e) => { if (e.key === "Enter") void send(); }} />
         <button className="pill on" disabled={busy || !canWrite} onClick={() => void send()}>Envoyer</button>
       </div>
     </Card>
@@ -781,10 +782,11 @@ function ChatTab({ accountId, canWrite }: { accountId: string; canWrite: boolean
 }
 
 /* -------- Création rapide d'un compte -------- */
-function NewAccountPanel({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+function NewAccountPanel({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (id: string) => void }) {
   const [f, setF] = useState({ nom: "", secteur: "", tier: "Clé", enjeux: "", whitespace: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
   const lines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
   const submit = async () => {
@@ -796,55 +798,53 @@ function NewAccountPanel({ onClose, onCreated }: { onClose: () => void; onCreate
         enjeux: lines(f.enjeux), whitespace: lines(f.whitespace),
         enCours: [], historique: [], contacts: [], preuves: [], tendances: [],
       });
+      toast.success(`Compte « ${f.nom.trim()} » créé.`);
       onCreated(id);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Échec de la création du compte.");
     } finally { setBusy(false); }
   };
   return (
-    <Card style={{ marginBottom: 14, borderColor: T.gold }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Nouveau compte</span>
-        <button className="pill" onClick={onClose}>Fermer</button>
-      </div>
+    <Modal open={open} onClose={onClose} title="Nouveau compte" width={620}>
       <div className="g4" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px", gap: 10 }}>
-        <div><label style={lbl}>Nom *</label><input style={inp} value={f.nom} onChange={(e) => set("nom", e.target.value)} /></div>
-        <div><label style={lbl}>Secteur</label><input style={inp} value={f.secteur} onChange={(e) => set("secteur", e.target.value)} /></div>
+        <div><label style={lbl}>Nom *</label><Input value={f.nom} onChange={(v) => set("nom", v)} /></div>
+        <div><label style={lbl}>Secteur</label><Input value={f.secteur} onChange={(v) => set("secteur", v)} /></div>
         <div><label style={lbl}>Tier</label>
           <Select value={f.tier} onChange={(v) => set("tier", v)} ariaLabel="Tier"
             options={["Stratégique", "Clé", "Standard"].map((s) => ({ value: s, label: s }))} />
         </div>
       </div>
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
-        <div><label style={lbl}>Enjeux (1 par ligne)</label><textarea style={{ ...inp, minHeight: 60, resize: "vertical" }} value={f.enjeux} onChange={(e) => set("enjeux", e.target.value)} /></div>
-        <div><label style={lbl}>Whitespace (1 par ligne)</label><textarea style={{ ...inp, minHeight: 60, resize: "vertical" }} value={f.whitespace} onChange={(e) => set("whitespace", e.target.value)} /></div>
-      </div>
-      <div style={{ marginTop: 10 }}>
-        <button className="pill on" disabled={busy || !f.nom.trim()} onClick={() => void submit()}>{busy ? "Création…" : "Créer le compte"}</button>
+        <div><label style={lbl}>Enjeux (1 par ligne)</label><Textarea value={f.enjeux} onChange={(v) => set("enjeux", v)} /></div>
+        <div><label style={lbl}>Whitespace (1 par ligne)</label><Textarea value={f.whitespace} onChange={(v) => set("whitespace", v)} /></div>
       </div>
       <ErrLine err={err} />
-    </Card>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+        <button className="pill" onClick={onClose}>Annuler</button>
+        <button className="pill on" disabled={busy || !f.nom.trim()} onClick={() => void submit()}>{busy ? "Création…" : "Créer le compte"}</button>
+      </div>
+    </Modal>
   );
 }
 
 /* -------- Admin des périmètres commerciaux (AM/BU par e-mail) — direction/commercial_dir -------- */
-function PerimetresPanel({ onClose }: { onClose: () => void }) {
+function PerimetresPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [profiles, setProfiles] = useState<CopiloteProfile[]>([]);
   const [f, setF] = useState({ email: "", ams: "", bus: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const toast = useToast();
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
   const load = () => { void fetchCopiloteProfiles().then(setProfiles).catch(() => {}); };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (open) load(); }, [open]);
   const lines = (s: string) => s.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
   const save = async () => {
     const email = f.email.trim().toLowerCase();
     if (!email) return;
-    setBusy(true); setErr(null); setMsg(null);
+    setBusy(true); setErr(null);
     try {
       await setCopiloteScope(email, lines(f.ams), lines(f.bus));
-      setMsg(`Périmètre enregistré pour ${email}.`);
+      toast.success(`Périmètre enregistré pour ${email}.`);
       setF({ email: "", ams: "", bus: "" });
       load();
     } catch (e) {
@@ -853,23 +853,18 @@ function PerimetresPanel({ onClose }: { onClose: () => void }) {
   };
   const edit = (p: CopiloteProfile) => setF({ email: p.email, ams: p.ams.join(", "), bus: p.bus.join(", ") });
   return (
-    <Card style={{ marginBottom: 14, borderColor: T.plum }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: T.plum }}>Périmètres commerciaux (AM / BU par e-mail)</span>
-        <button className="pill" onClick={onClose}>Fermer</button>
-      </div>
+    <Modal open={open} onClose={onClose} title="Périmètres commerciaux (AM / BU par e-mail)" width={680}>
       <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 10, lineHeight: 1.5 }}>
         Un commercial voit un compte s'il en est <b>owner</b> (attribution), si l'un de ses <b>AM</b> ou de ses <b>BU</b>
         correspond au compte, ou s'il l'a créé. Direction et directeurs commerciaux voient tout.
       </div>
       <div className="g4" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-        <div><label style={lbl}>E-mail du commercial *</label><input style={inp} value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="jean@nt.ci" /></div>
-        <div><label style={lbl}>Account managers (AM), séparés par des virgules</label><input style={inp} value={f.ams} onChange={(e) => set("ams", e.target.value)} placeholder="K. Diallo, M. Traoré" /></div>
-        <div><label style={lbl}>BU / équipes, séparées par des virgules</label><input style={inp} value={f.bus} onChange={(e) => set("bus", e.target.value)} placeholder="ICT, CYBER" /></div>
+        <div><label style={lbl}>E-mail du commercial *</label><Input value={f.email} onChange={(v) => set("email", v)} placeholder="jean@nt.ci" /></div>
+        <div><label style={lbl}>Account managers (AM), séparés par des virgules</label><Input value={f.ams} onChange={(v) => set("ams", v)} placeholder="K. Diallo, M. Traoré" /></div>
+        <div><label style={lbl}>BU / équipes, séparées par des virgules</label><Input value={f.bus} onChange={(v) => set("bus", v)} placeholder="ICT, CYBER" /></div>
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
         <button className="pill on" disabled={busy || !f.email.trim()} onClick={() => void save()}>{busy ? "…" : "Enregistrer le périmètre"}</button>
-        {msg && <span style={{ fontSize: 11.5, color: T.faint }}>{msg}</span>}
       </div>
       <ErrLine err={err} />
       {profiles.length > 0 && (
@@ -888,7 +883,7 @@ function PerimetresPanel({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       )}
-    </Card>
+    </Modal>
   );
 }
 
@@ -920,7 +915,7 @@ function OwnersEditor({ account, isAdmin, onSaved }: { account: CopiloteAccount;
       </div>
       {isAdmin && editing && (
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-          <input style={{ ...inp, minWidth: 0, flex: 1 }} value={val} placeholder="e-mails séparés par des virgules" onChange={(e) => setVal(e.target.value)} />
+          <Input style={{ minWidth: 0, flex: 1 }} value={val} placeholder="e-mails séparés par des virgules" onChange={setVal} />
           <button className="pill on" disabled={busy} onClick={() => void save()}>{busy ? "…" : "Enregistrer"}</button>
           <button className="pill" disabled={busy} onClick={() => { setEditing(false); setVal(owners.join(", ")); }}>Annuler</button>
         </div>
