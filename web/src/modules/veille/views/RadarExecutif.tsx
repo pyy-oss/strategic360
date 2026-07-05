@@ -2,6 +2,7 @@ import React from "react";
 import { T } from "../../../design/tokens";
 import { AX, IMP, PROX, STANCE, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
+import { Toggle } from "../../../design/fields";
 import { useDecisions } from "../lib/execution";
 import { useIntelItems, useWatchlist } from "../lib/intel";
 import { isPastDue } from "../lib/freshness";
@@ -243,9 +244,8 @@ function WatchlistPanel({ entries, loading }: { entries: import("../lib/intel").
             <span style={{ fontSize: 11.5, color: T.faint }}>
               {filtered.length} entité{filtered.length > 1 ? "s" : ""} · {ordered.length} type{ordered.length > 1 ? "s" : ""}
             </span>
-            <button className="tab" style={{ color: T.steel }} onClick={() => setShowInactive((v) => !v)}>
-              {showInactive ? "Masquer les inactives" : "Afficher les inactives"}
-            </button>
+            <Toggle checked={showInactive} onChange={setShowInactive} label="Afficher les inactives" />
+
           </div>
 
           {filtered.length === 0 && <div style={{ marginTop: 12, fontSize: 12, color: T.faint }}>Aucune entité ne correspond à ce filtre.</div>}

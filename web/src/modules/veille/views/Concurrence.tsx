@@ -3,29 +3,21 @@ import { useNavigate } from "react-router-dom";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { T, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Badge, Tip } from "../../../design/ui";
-import { Select, DateField } from "../../../design/fields";
+import { Select, DateField, Input, Textarea } from "../../../design/fields";
+import { Modal, useToast } from "../../../design/overlay";
 import { useCan } from "../../../lib/rbac";
 import { createWinLossEntry, upsertBattlecard, useBattlecards, useWinLoss, winRateByCompetitor, type WinLossResult } from "../lib/execution";
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  background: T.panel2,
-  border: `1px solid ${T.line}`,
-  borderRadius: 8,
-  padding: "7px 10px",
-  color: T.ink,
-  fontSize: 12.5,
-  fontFamily: "inherit",
-};
 const labelStyle: React.CSSProperties = { fontSize: 11, color: T.faint, display: "block", marginBottom: 4 };
 
 const splitLines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
 /** "Nouvelle battlecard" — contribution commerciale (server-side gate: canWrite('veille')). */
-function NewBattlecardPanel({ onClose }: { onClose: () => void }) {
+function NewBattlecardPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form, setForm] = useState({ competitor: "", positioning: "", strengths: "", weaknesses: "", ourWinThemes: "" });
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
   const set = <K extends keyof typeof form>(k: K, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   async function submit(e: React.FormEvent) {
@@ -46,6 +38,7 @@ function NewBattlecardPanel({ onClose }: { onClose: () => void }) {
         weaknesses: splitLines(form.weaknesses),
         ourWinThemes: splitLines(form.ourWinThemes),
       });
+      toast.success("Battlecard enregistrée.");
       onClose();
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Échec de l'enregistrement.");
@@ -55,50 +48,48 @@ function NewBattlecardPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Card style={{ marginBottom: 14, borderColor: T.gold }}>
+    <Modal open={open} onClose={onClose} title="Nouvelle battlecard">
       <form onSubmit={submit}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Nouvelle battlecard</span>
-          <button type="button" className="pill" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <div>
             <label style={labelStyle}>Concurrent *</label>
-            <input style={inputStyle} value={form.competitor} onChange={(e) => set("competitor", e.target.value)} required />
+            <Input value={form.competitor} onChange={(v) => set("competitor", v)} required />
           </div>
           <div>
             <label style={labelStyle}>Positionnement</label>
-            <input style={inputStyle} value={form.positioning} onChange={(e) => set("positioning", e.target.value)} />
+            <Input value={form.positioning} onChange={(v) => set("positioning", v)} />
           </div>
           <div>
             <label style={labelStyle}>Forces (une par ligne)</label>
-            <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={form.strengths} onChange={(e) => set("strengths", e.target.value)} />
+            <Textarea value={form.strengths} onChange={(v) => set("strengths", v)} />
           </div>
           <div>
             <label style={labelStyle}>Faiblesses (une par ligne)</label>
-            <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={form.weaknesses} onChange={(e) => set("weaknesses", e.target.value)} />
+            <Textarea value={form.weaknesses} onChange={(v) => set("weaknesses", v)} />
           </div>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Comment gagner (un thème par ligne)</label>
-            <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={form.ourWinThemes} onChange={(e) => set("ourWinThemes", e.target.value)} />
+            <Textarea value={form.ourWinThemes} onChange={(v) => set("ourWinThemes", v)} />
           </div>
         </div>
         {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
-        <button type="submit" className="pill on" disabled={submitting}>
-          {submitting ? "Enregistrement…" : "Enregistrer la battlecard"}
-        </button>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" className="pill" onClick={onClose}>Annuler</button>
+          <button type="submit" className="pill on" disabled={submitting}>
+            {submitting ? "Enregistrement…" : "Enregistrer la battlecard"}
+          </button>
+        </div>
       </form>
-    </Card>
+    </Modal>
   );
 }
 
 /** "Enregistrer un win/loss" — exec-gated (server-side: exec()); alimente le taux de victoire. */
-function NewWinLossPanel({ onClose }: { onClose: () => void }) {
+function NewWinLossPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form, setForm] = useState({ competitor: "", result: "win" as WinLossResult, reason: "", amount: "", lesson: "", date: new Date().toISOString().slice(0, 10) });
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   async function submit(e: React.FormEvent) {
@@ -121,6 +112,7 @@ function NewWinLossPanel({ onClose }: { onClose: () => void }) {
         lesson: form.lesson.trim() || undefined,
         date: form.date,
       });
+      toast.success("Win/Loss enregistré.");
       onClose();
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Échec de l'enregistrement.");
@@ -130,18 +122,12 @@ function NewWinLossPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Card style={{ marginBottom: 14, borderColor: T.gold }}>
+    <Modal open={open} onClose={onClose} title="Enregistrer un win/loss" width={640}>
       <form onSubmit={submit}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Enregistrer un win/loss</span>
-          <button type="button" className="pill" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
         <div className="g4" style={{ display: "grid", gridTemplateColumns: "1fr 110px 1fr 150px", gap: 10, marginBottom: 10 }}>
           <div>
             <label style={labelStyle}>Concurrent *</label>
-            <input style={inputStyle} value={form.competitor} onChange={(e) => set("competitor", e.target.value)} required />
+            <Input value={form.competitor} onChange={(v) => set("competitor", v)} required />
           </div>
           <div>
             <label style={labelStyle}>Résultat</label>
@@ -150,7 +136,7 @@ function NewWinLossPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Raison</label>
-            <input style={inputStyle} value={form.reason} onChange={(e) => set("reason", e.target.value)} />
+            <Input value={form.reason} onChange={(v) => set("reason", v)} />
           </div>
           <div>
             <label style={labelStyle}>Date *</label>
@@ -160,19 +146,22 @@ function NewWinLossPanel({ onClose }: { onClose: () => void }) {
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 10, marginBottom: 10 }}>
           <div>
             <label style={labelStyle}>Montant (M FCFA)</label>
-            <input style={inputStyle} inputMode="decimal" placeholder="ex : 45" value={form.amount} onChange={(e) => set("amount", e.target.value)} />
+            <Input inputMode="decimal" placeholder="ex : 45" value={form.amount} onChange={(v) => set("amount", v)} />
           </div>
           <div>
             <label style={labelStyle}>Leçon capitalisée</label>
-            <input style={inputStyle} placeholder="Pourquoi gagné/perdu — à réutiliser" value={form.lesson} onChange={(e) => set("lesson", e.target.value)} />
+            <Input placeholder="Pourquoi gagné/perdu — à réutiliser" value={form.lesson} onChange={(v) => set("lesson", v)} />
           </div>
         </div>
         {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
-        <button type="submit" className="pill on" disabled={submitting}>
-          {submitting ? "Enregistrement…" : "Enregistrer"}
-        </button>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" className="pill" onClick={onClose}>Annuler</button>
+          <button type="submit" className="pill on" disabled={submitting}>
+            {submitting ? "Enregistrement…" : "Enregistrer"}
+          </button>
+        </div>
       </form>
-    </Card>
+    </Modal>
   );
 }
 
@@ -233,8 +222,8 @@ export function Concurrence() {
           </button>
         )}
       </div>
-      {showCardForm && canWrite && <NewBattlecardPanel onClose={() => setShowCardForm(false)} />}
-      {showWlForm && canWrite && <NewWinLossPanel onClose={() => setShowWlForm(false)} />}
+      {canWrite && <NewBattlecardPanel open={showCardForm} onClose={() => setShowCardForm(false)} />}
+      {canWrite && <NewWinLossPanel open={showWlForm} onClose={() => setShowWlForm(false)} />}
       {!loading && rows.length === 0 && (
         <Card>
           <Eyebrow color={T.clay}>Concurrence</Eyebrow>

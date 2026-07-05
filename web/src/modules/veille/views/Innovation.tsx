@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { usePaged, Pager } from "../components/Pager";
-import { Select } from "../../../design/fields";
+import { Select, Input } from "../../../design/fields";
+import { Modal, useToast } from "../../../design/overlay";
 import { T, RING, QUAD_TECH, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Tip, Badge } from "../../../design/ui";
 import { useClaims } from "../../../lib/rbac";
@@ -15,27 +16,18 @@ import {
   type TechRadarRing,
 } from "../lib/innovation";
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  background: T.panel2,
-  border: `1px solid ${T.line}`,
-  borderRadius: 8,
-  padding: "7px 10px",
-  color: T.ink,
-  fontSize: 12.5,
-  fontFamily: "inherit",
-};
 const labelStyle: React.CSSProperties = { fontSize: 11, color: T.faint, display: "block", marginBottom: 4 };
 
 /** "Ajouter une technologie" — gated on role ∈ {direction, innovation} (matches
  * firestore.rules' techRadar write gate), same panel convention as Execution.tsx. */
-function NewBlipPanel({ onClose }: { onClose: () => void }) {
+function NewBlipPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [name, setName] = useState("");
   const [quadrant, setQuadrant] = useState(0);
   const [ring, setRing] = useState<TechRadarRing>("evaluer");
   const [momentum, setMomentum] = useState<TechRadarMomentum>("→");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -47,6 +39,7 @@ function NewBlipPanel({ onClose }: { onClose: () => void }) {
     setErr(null);
     try {
       await createTechRadarBlip({ name: name.trim(), quadrant, ring, momentum, linkedItems: [] });
+      toast.success("Technologie ajoutée au radar.");
       onClose();
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Échec de l'enregistrement.");
@@ -56,18 +49,12 @@ function NewBlipPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Card style={{ marginBottom: 14, borderColor: T.gold }}>
+    <Modal open={open} onClose={onClose} title="Ajouter une technologie">
       <form onSubmit={submit}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Ajouter une technologie</span>
-          <button type="button" className="pill" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
         <div className="g4" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
           <div>
             <label style={labelStyle}>Nom *</label>
-            <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} required />
+            <Input value={name} onChange={setName} required />
           </div>
           <div>
             <label style={labelStyle}>Quadrant</label>
@@ -86,19 +73,23 @@ function NewBlipPanel({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
-        <button type="submit" className="pill on" disabled={submitting}>
-          {submitting ? "Enregistrement…" : "Enregistrer la technologie"}
-        </button>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" className="pill" onClick={onClose}>Annuler</button>
+          <button type="submit" className="pill on" disabled={submitting}>
+            {submitting ? "Enregistrement…" : "Enregistrer la technologie"}
+          </button>
+        </div>
       </form>
-    </Card>
+    </Modal>
   );
 }
 
 /** "Ajouter un pari" — innovationPortfolio contribution (RICE computed at write time). */
-function NewBetPanel({ onClose }: { onClose: () => void }) {
+function NewBetPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form, setForm] = useState({ title: "", reach: 5, impact: 5, confidence: 0.7, effort: 5, stage: "idée", owner: "", horizon: "H2" });
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   async function submit(e: React.FormEvent) {
@@ -120,6 +111,7 @@ function NewBetPanel({ onClose }: { onClose: () => void }) {
         owner: form.owner.trim() || undefined,
         horizon: form.horizon,
       });
+      toast.success("Pari d'innovation enregistré.");
       onClose();
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Échec de l'enregistrement.");
@@ -129,34 +121,28 @@ function NewBetPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Card style={{ marginBottom: 14, borderColor: T.gold }}>
+    <Modal open={open} onClose={onClose} title="Ajouter un pari d'innovation" width={640}>
       <form onSubmit={submit}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Ajouter un pari d'innovation</span>
-          <button type="button" className="pill" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
         <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 10 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Titre *</label>
-            <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} required />
+            <Input value={form.title} onChange={(v) => set("title", v)} required />
           </div>
           <div>
             <label style={labelStyle}>Reach (1-10)</label>
-            <input type="number" min={1} max={10} style={inputStyle} value={form.reach} onChange={(e) => set("reach", Number(e.target.value))} />
+            <Input type="number" min={1} max={10} value={String(form.reach)} onChange={(v) => set("reach", Number(v))} />
           </div>
           <div>
             <label style={labelStyle}>Impact (1-10)</label>
-            <input type="number" min={1} max={10} style={inputStyle} value={form.impact} onChange={(e) => set("impact", Number(e.target.value))} />
+            <Input type="number" min={1} max={10} value={String(form.impact)} onChange={(v) => set("impact", Number(v))} />
           </div>
           <div>
             <label style={labelStyle}>Confiance (0-1)</label>
-            <input type="number" min={0} max={1} step={0.05} style={inputStyle} value={form.confidence} onChange={(e) => set("confidence", Number(e.target.value))} />
+            <Input type="number" min={0} max={1} step={0.05} value={String(form.confidence)} onChange={(v) => set("confidence", Number(v))} />
           </div>
           <div>
             <label style={labelStyle}>Effort (1-10)</label>
-            <input type="number" min={1} max={10} style={inputStyle} value={form.effort} onChange={(e) => set("effort", Number(e.target.value))} />
+            <Input type="number" min={1} max={10} value={String(form.effort)} onChange={(v) => set("effort", Number(v))} />
           </div>
           <div>
             <label style={labelStyle}>Stade</label>
@@ -165,7 +151,7 @@ function NewBetPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Porteur</label>
-            <input style={inputStyle} value={form.owner} onChange={(e) => set("owner", e.target.value)} />
+            <Input value={form.owner} onChange={(v) => set("owner", v)} />
           </div>
           <div>
             <label style={labelStyle}>Horizon</label>
@@ -174,11 +160,14 @@ function NewBetPanel({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
-        <button type="submit" className="pill on" disabled={submitting}>
-          {submitting ? "Enregistrement…" : "Enregistrer le pari"}
-        </button>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" className="pill" onClick={onClose}>Annuler</button>
+          <button type="submit" className="pill on" disabled={submitting}>
+            {submitting ? "Enregistrement…" : "Enregistrer le pari"}
+          </button>
+        </div>
       </form>
-    </Card>
+    </Modal>
   );
 }
 
@@ -224,8 +213,8 @@ export function Innovation() {
   const betsPaged = usePaged(sortedBets, 10);
   return (
     <div>
-      {showBlipForm && canContribute && <NewBlipPanel onClose={() => setShowBlipForm(false)} />}
-      {showBetForm && canContribute && <NewBetPanel onClose={() => setShowBetForm(false)} />}
+      {canContribute && <NewBlipPanel open={showBlipForm} onClose={() => setShowBlipForm(false)} />}
+      {canContribute && <NewBetPanel open={showBetForm} onClose={() => setShowBetForm(false)} />}
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
