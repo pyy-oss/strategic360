@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { T, fmt as fmtC } from "../../../design/tokens";
 import { Eyebrow, Card, Badge, Kpi } from "../../../design/ui";
+import { Select } from "../../../design/fields";
 import { useCan, useClaims } from "../../../lib/rbac";
 import {
   useCopiloteAccounts,
@@ -698,14 +699,12 @@ function RedactionTab({ accountId, compte, canWrite }: { accountId: string; comp
       <div className="g4" style={{ display: "grid", gridTemplateColumns: "1fr 130px 150px", gap: 10, marginTop: 12 }}>
         <div><label style={lbl}>Type</label><input style={inp} value={form.kind} onChange={(e) => set("kind", e.target.value)} /></div>
         <div><label style={lbl}>Canal</label>
-          <select style={inp} value={form.canal} onChange={(e) => set("canal", e.target.value)}>
-            <option value="email">E-mail</option><option value="whatsapp">WhatsApp</option><option value="linkedin">LinkedIn</option>
-          </select>
+          <Select value={form.canal} onChange={(v) => set("canal", v)} ariaLabel="Canal"
+            options={[{ value: "email", label: "E-mail" }, { value: "whatsapp", label: "WhatsApp" }, { value: "linkedin", label: "LinkedIn" }]} />
         </div>
         <div><label style={lbl}>Ton</label>
-          <select style={inp} value={form.ton} onChange={(e) => set("ton", e.target.value)}>
-            <option>Direct</option><option>Institutionnel</option><option>Chaleureux</option>
-          </select>
+          <Select value={form.ton} onChange={(v) => set("ton", v)} ariaLabel="Ton"
+            options={["Direct", "Institutionnel", "Chaleureux"].map((s) => ({ value: s, label: s }))} />
         </div>
       </div>
       <div style={{ marginTop: 10 }}>
@@ -812,9 +811,8 @@ function NewAccountPanel({ onClose, onCreated }: { onClose: () => void; onCreate
         <div><label style={lbl}>Nom *</label><input style={inp} value={f.nom} onChange={(e) => set("nom", e.target.value)} /></div>
         <div><label style={lbl}>Secteur</label><input style={inp} value={f.secteur} onChange={(e) => set("secteur", e.target.value)} /></div>
         <div><label style={lbl}>Tier</label>
-          <select style={inp} value={f.tier} onChange={(e) => set("tier", e.target.value)}>
-            <option>Stratégique</option><option>Clé</option><option>Standard</option>
-          </select>
+          <Select value={f.tier} onChange={(v) => set("tier", v)} ariaLabel="Tier"
+            options={["Stratégique", "Clé", "Standard"].map((s) => ({ value: s, label: s }))} />
         </div>
       </div>
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>

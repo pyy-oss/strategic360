@@ -9,6 +9,7 @@ import { slugifyClient } from "../lib/copilote";
 import { actionPriority, createAction, useActions, type ActionStatus } from "../lib/execution";
 import { updateBizOpportunity, useBizOpportunities, type BizOpportunityProbability, type BizOpportunityStatus } from "../lib/intel";
 import { usePaged, Pager } from "../components/Pager";
+import { Select } from "../../../design/fields";
 
 const PROBA_META: Record<BizOpportunityProbability, { l: string; c: string }> = {
   high: { l: "Probabilité haute", c: T.emerald },
@@ -286,13 +287,8 @@ function NewActionPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Statut</label>
-            <select style={inputStyle} value={form.statut} onChange={(e) => set("statut", e.target.value as ActionStatus)}>
-              <option>À planifier</option>
-              <option>À lancer</option>
-              <option>En cours</option>
-              <option>À surveiller</option>
-              <option>Immédiat</option>
-            </select>
+            <Select value={form.statut} onChange={(v) => set("statut", v as ActionStatus)} ariaLabel="Statut"
+              options={["À planifier", "À lancer", "En cours", "À surveiller", "Immédiat"].map((s) => ({ value: s, label: s }))} />
           </div>
           <div>
             <label style={labelStyle}>Source</label>

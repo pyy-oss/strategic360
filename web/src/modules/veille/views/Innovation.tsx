@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { usePaged, Pager } from "../components/Pager";
+import { Select } from "../../../design/fields";
 import { T, RING, QUAD_TECH, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Tip, Badge } from "../../../design/ui";
 import { useClaims } from "../../../lib/rbac";
@@ -70,31 +71,18 @@ function NewBlipPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Quadrant</label>
-            <select style={inputStyle} value={quadrant} onChange={(e) => setQuadrant(Number(e.target.value))}>
-              {QUAD_TECH.map((q, i) => (
-                <option key={i} value={i}>
-                  {q}
-                </option>
-              ))}
-            </select>
+            <Select value={String(quadrant)} onChange={(v) => setQuadrant(Number(v))} ariaLabel="Quadrant"
+              options={QUAD_TECH.map((q, i) => ({ value: String(i), label: q }))} />
           </div>
           <div>
             <label style={labelStyle}>Anneau</label>
-            <select style={inputStyle} value={ring} onChange={(e) => setRing(e.target.value as TechRadarRing)}>
-              {(["adopter", "essayer", "evaluer", "suspendre"] as TechRadarRing[]).map((r) => (
-                <option key={r} value={r}>
-                  {RING[r].l}
-                </option>
-              ))}
-            </select>
+            <Select value={ring} onChange={(v) => setRing(v as TechRadarRing)} ariaLabel="Anneau"
+              options={(["adopter", "essayer", "evaluer", "suspendre"] as TechRadarRing[]).map((r) => ({ value: r, label: RING[r].l }))} />
           </div>
           <div>
             <label style={labelStyle}>Momentum</label>
-            <select style={inputStyle} value={momentum} onChange={(e) => setMomentum(e.target.value as TechRadarMomentum)}>
-              <option value="↑">↑</option>
-              <option value="→">→</option>
-              <option value="↓">↓</option>
-            </select>
+            <Select value={momentum} onChange={(v) => setMomentum(v as TechRadarMomentum)} ariaLabel="Momentum"
+              options={[{ value: "↑", label: "↑ En hausse" }, { value: "→", label: "→ Stable" }, { value: "↓", label: "↓ En baisse" }]} />
           </div>
         </div>
         {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}
@@ -172,13 +160,8 @@ function NewBetPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Stade</label>
-            <select style={inputStyle} value={form.stage} onChange={(e) => set("stage", e.target.value)}>
-              {["idée", "exploration", "poc", "pilote", "scale"].map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            <Select value={form.stage} onChange={(v) => set("stage", v)} ariaLabel="Stade"
+              options={["idée", "exploration", "poc", "pilote", "scale"].map((s) => ({ value: s, label: s }))} />
           </div>
           <div>
             <label style={labelStyle}>Porteur</label>
@@ -186,11 +169,8 @@ function NewBetPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Horizon</label>
-            <select style={inputStyle} value={form.horizon} onChange={(e) => set("horizon", e.target.value)}>
-              <option value="H1">H1</option>
-              <option value="H2">H2</option>
-              <option value="H3">H3</option>
-            </select>
+            <Select value={form.horizon} onChange={(v) => set("horizon", v)} ariaLabel="Horizon"
+              options={[{ value: "H1", label: "H1" }, { value: "H2", label: "H2" }, { value: "H3", label: "H3" }]} />
           </div>
         </div>
         {err && <div style={{ color: T.clay, fontSize: 12, marginBottom: 8 }}>{err}</div>}

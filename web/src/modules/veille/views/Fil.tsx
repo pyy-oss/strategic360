@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { usePaged, Pager } from "../components/Pager";
+import { Select, DateField } from "../../../design/fields";
 import { T, AX, IMP, STANCE, PROX } from "../../../design/tokens";
 import { Card, Badge } from "../../../design/ui";
 import { useCan } from "../../../lib/rbac";
@@ -118,37 +119,19 @@ function NewItemPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={labelStyle}>Axe</label>
-            <select style={inputStyle} value={form.axis} onChange={(e) => set("axis", e.target.value as IntelAxis)}>
-              {AXIS_KEYS.map((k) => (
-                <option key={k} value={k}>
-                  {AX[k].l}
-                </option>
-              ))}
-            </select>
+            <Select value={form.axis} onChange={(v) => set("axis", v as IntelAxis)} ariaLabel="Axe" options={AXIS_KEYS.map((k) => ({ value: k, label: AX[k].l }))} />
           </div>
           <div>
             <label style={labelStyle}>Impact</label>
-            <select style={inputStyle} value={form.impact} onChange={(e) => set("impact", e.target.value as IntelImpact)}>
-              {Object.keys(IMP).map((k) => (
-                <option key={k} value={k}>
-                  {IMP[k].l}
-                </option>
-              ))}
-            </select>
+            <Select value={form.impact} onChange={(v) => set("impact", v as IntelImpact)} ariaLabel="Impact" options={Object.keys(IMP).map((k) => ({ value: k, label: IMP[k].l }))} />
           </div>
           <div>
             <label style={labelStyle}>Posture</label>
-            <select style={inputStyle} value={form.stance} onChange={(e) => set("stance", e.target.value as IntelStance)}>
-              {Object.keys(STANCE).map((k) => (
-                <option key={k} value={k}>
-                  {STANCE[k].l}
-                </option>
-              ))}
-            </select>
+            <Select value={form.stance} onChange={(v) => set("stance", v as IntelStance)} ariaLabel="Posture" options={Object.keys(STANCE).map((k) => ({ value: k, label: STANCE[k].l }))} />
           </div>
           <div>
             <label style={labelStyle}>Date</label>
-            <input type="date" style={inputStyle} value={form.date} onChange={(e) => set("date", e.target.value)} />
+            <DateField value={form.date} onChange={(v) => set("date", v)} ariaLabel="Date" />
           </div>
           <div>
             <label style={labelStyle}>Entité</label>

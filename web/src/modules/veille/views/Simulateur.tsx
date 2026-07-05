@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, ReferenceLine, Cell, LineChart, Line } from "recharts";
 import { T, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge, Slider, Gauge } from "../../../design/ui";
+import { Select } from "../../../design/fields";
 import { SIM_BASE, SCEN_OPTS, LEVMETA, PRESETS, simCompute, SimParams, SimBase } from "../data";
 import { useQuantiSummary } from "../lib/quanti";
 
@@ -163,17 +164,8 @@ export function Simulateur() {
           <Slider label="Horizon" val={horizon} set={setHorizon} min={1} max={3} step={1} unit=" an(s)" color={T.gold} />
           <div style={{ marginTop: 8 }}>
             <div style={{ fontSize: 12, color: T.dim, marginBottom: 5 }}>Scénario</div>
-            <select
-              value={scenario}
-              onChange={(e) => setScenario(e.target.value)}
-              style={{ width: "100%", background: T.panel2, color: T.ink, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 12 }}
-            >
-              {SCEN_OPTS.map((s) => (
-                <option key={s.k} value={s.k}>
-                  {s.l}
-                </option>
-              ))}
-            </select>
+            <Select value={scenario} onChange={setScenario} ariaLabel="Scénario"
+              options={SCEN_OPTS.map((s) => ({ value: s.k, label: s.l }))} />
           </div>
         </Card>
 
