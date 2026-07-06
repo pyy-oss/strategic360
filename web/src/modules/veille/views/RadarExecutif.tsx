@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { T } from "../../../design/tokens";
 import { AX, IMP, PROX, STANCE, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
@@ -8,6 +9,32 @@ import { useIntelItems, useWatchlist } from "../lib/intel";
 import { isPastDue } from "../lib/freshness";
 import { useVeilleExecSummary } from "../lib/summaries";
 
+/** Carte KPI cliquable (drill-down vers l'onglet/vue source). */
+function KpiCard({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
+  return (
+    <Card style={{ cursor: "pointer" }}>
+      <div role="button" tabIndex={0} title={title} onClick={onClick}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}>
+        {children}
+      </div>
+    </Card>
+  );
+}
+
+/** Bouton-entité réutilisable : ouvre le Fil filtré sur l'entité (maillage inter-vues). */
+function EntityLink({ name, color = T.plum }: { name: string; color?: string }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      onClick={() => navigate(`/veille/fil?ent=${encodeURIComponent(name)}`)}
+      title={`Voir les signaux de « ${name} »`}
+      style={{ border: "none", background: color + "22", color, cursor: "pointer", fontSize: 10.5, padding: "2px 7px", borderRadius: 999, fontWeight: 600, whiteSpace: "nowrap" }}
+    >
+      {name}
+    </button>
+  );
+}
+
 export interface RadarExecutifProps {
   lens: string;
   setView: (v: string) => void;
@@ -15,6 +42,7 @@ export interface RadarExecutifProps {
 
 /** "Radar exécutif" — ported from `Radar_` in the maquette (renamed to avoid clashing with Recharts' Radar). */
 export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
+  const navigate = useNavigate();
   const { entries: watchlist, loading: watchLoading } = useWatchlist();
   const { decisions, loading: decisionsLoading } = useDecisions();
   const { items } = useIntelItems();
@@ -45,38 +73,38 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
         🎯 {intro}
       </div>
       <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 14 }}>
-        <Card>
+        <KpiCard title="Ouvrir le Copilote (comptes suivis)" onClick={() => setView("copilote")}>
           <Kpi
             label="Pipeline sur comptes suivis"
             value={exec && exec.pipelineInfluenced != null ? fmt(exec.pipelineInfluenced) : "—"}
             accent={T.emerald}
-            sub="montant brut · comptes en veille / watchlist"
+            sub="montant brut · comptes en veille / watchlist ▸"
           />
-        </Card>
-        <Card>
+        </KpiCard>
+        <KpiCard title="Voir les menaces dans le Fil" onClick={() => navigate("/veille/fil?st=threat")}>
           <Kpi
             label="Menaces (traitées / total)"
             value={exec ? `${exec.boardKpis.menacesTraitees} / ${exec.boardKpis.menacesTotal}` : "—"}
             accent={T.clay}
-            sub="couverture décisionnelle"
+            sub="couverture décisionnelle ▸"
           />
-        </Card>
-        <Card>
+        </KpiCard>
+        <KpiCard title="Ouvrir la vue Concurrence (win/loss)" onClick={() => setView("concurrence")}>
           <Kpi
             label="Taux de victoire"
             value={exec && exec.boardKpis?.winRateGlobal != null ? pct(exec.boardKpis.winRateGlobal) : "—"}
             accent={T.gold}
-            sub="vs concurrents (win/loss)"
+            sub="vs concurrents (win/loss) ▸"
           />
-        </Card>
-        <Card>
+        </KpiCard>
+        <KpiCard title="Ouvrir Exécution & OKR" onClick={() => setView("execution")}>
           <Kpi
             label="Avancement OKR"
             value={exec && exec.okrProgress != null ? pct(exec.okrProgress) : "—"}
             accent={T.steel}
-            sub="initiatives stratégiques"
+            sub="initiatives stratégiques ▸"
           />
-        </Card>
+        </KpiCard>
       </div>
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 14, marginBottom: 14 }}>
         <Card>
@@ -106,17 +134,23 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
             <div />
             <div style={{ textAlign: "center", fontSize: 11, color: T.emerald, fontWeight: 600 }}>Opportunité</div>
             <div style={{ textAlign: "center", fontSize: 11, color: T.clay, fontWeight: 600 }}>Menace</div>
-            {["high", "medium", "low"].map((imp) => (
-              <React.Fragment key={imp}>
-                <div style={{ fontSize: 11, color: IMP[imp].c, fontWeight: 600, textAlign: "right" }}>{IMP[imp].l}</div>
-                <div style={{ background: T.emerald + (imp === "high" ? "33" : imp === "medium" ? "22" : "11"), borderRadius: 8, padding: "14px 0", textAlign: "center", fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 18, color: T.emerald }}>
-                  {cell(imp, "opportunity")}
-                </div>
-                <div style={{ background: T.clay + (imp === "high" ? "33" : imp === "medium" ? "22" : "11"), borderRadius: 8, padding: "14px 0", textAlign: "center", fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 18, color: T.clay }}>
-                  {cell(imp, "threat")}
-                </div>
-              </React.Fragment>
-            ))}
+            {["high", "medium", "low"].map((imp) => {
+              // Cellule cliquable → Fil filtré sur (posture × impact). n=0 → non cliquable.
+              const goCell = (st: string) => navigate(`/veille/fil?st=${st}&imp=${imp}`);
+              const cellStyle = (c: string, shade: string): React.CSSProperties => ({ background: c + shade, borderRadius: 8, padding: "14px 0", textAlign: "center", fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 18, color: c, border: "none", cursor: "pointer", width: "100%" });
+              const shade = imp === "high" ? "33" : imp === "medium" ? "22" : "11";
+              return (
+                <React.Fragment key={imp}>
+                  <div style={{ fontSize: 11, color: IMP[imp].c, fontWeight: 600, textAlign: "right" }}>{IMP[imp].l}</div>
+                  <button title={`Voir les opportunités · impact ${IMP[imp].l}`} disabled={!cell(imp, "opportunity")} onClick={() => goCell("opportunity")} style={cellStyle(T.emerald, shade)}>
+                    {cell(imp, "opportunity")}
+                  </button>
+                  <button title={`Voir les menaces · impact ${IMP[imp].l}`} disabled={!cell(imp, "threat")} onClick={() => goCell("threat")} style={cellStyle(T.clay, shade)}>
+                    {cell(imp, "threat")}
+                  </button>
+                </React.Fragment>
+              );
+            })}
           </div>
           <div style={{ marginTop: 14, fontSize: 12, color: T.dim }}>
             {opps.length} opportunités · {menaces.length} menaces sur {items.length} signaux actifs.
@@ -138,7 +172,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
                   <Badge c={s.prox === "imminent" ? T.clay : T.gold}>
                     {s.dueDate ? `Échéance ${s.dueDate}` : s.prox ? PROX[s.prox]?.l ?? s.prox : "Échéance non datée"}
                   </Badge>
-                  {s.ent && <Badge c={T.plum}>{s.ent}</Badge>}
+                  {s.ent && <EntityLink name={s.ent} />}
                   <Badge c={AX[s.axis]?.c}>{AX[s.axis]?.l ?? s.axis}</Badge>
                 </div>
               </div>
@@ -187,6 +221,7 @@ const prioRank = (p: string) => (p === "Haute" ? 0 : p === "Moyenne" ? 1 : 2);
  * est portée par la barre de gauche colorée (plus de badge répété par ligne).
  */
 function WatchlistPanel({ entries, loading }: { entries: import("../lib/intel").IntelWatchlistEntry[]; loading: boolean }) {
+  const navigate = useNavigate();
   const [q, setQ] = React.useState("");
   const [prio, setPrio] = React.useState("all");
   const [showInactive, setShowInactive] = React.useState(false);
@@ -259,10 +294,11 @@ function WatchlistPanel({ entries, loading }: { entries: import("../lib/intel").
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 8 }}>
                 {list.map((w) => (
-                  <div
+                  <button
                     key={w.id}
-                    title={`${w.name} · ${w.priority}${w.geo ? ` · ${w.geo}` : ""}`}
-                    style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, padding: "8px 11px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${prioColor(w.priority)}`, opacity: w.active ? 1 : 0.55 }}
+                    onClick={() => navigate(`/veille/fil?ent=${encodeURIComponent(w.name)}`)}
+                    title={`Voir les signaux de « ${w.name} » · ${w.priority}${w.geo ? ` · ${w.geo}` : ""}`}
+                    style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, padding: "8px 11px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${prioColor(w.priority)}`, opacity: w.active ? 1 : 0.55, border: "none", cursor: "pointer", textAlign: "left", width: "100%" }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ color: T.ink, fontWeight: 600, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</div>
@@ -272,7 +308,7 @@ function WatchlistPanel({ entries, loading }: { entries: import("../lib/intel").
                         {!w.active ? " · inactive" : ""}
                       </div>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>

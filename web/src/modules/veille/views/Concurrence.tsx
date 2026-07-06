@@ -248,7 +248,9 @@ export function Concurrence() {
                     <XAxis dataKey="n" tick={{ fill: T.dim, fontSize: 11 }} axisLine={false} tickLine={false} />
                     <YAxis domain={[0, 100]} tickFormatter={(v) => v + "%"} tick={{ fill: T.faint, fontSize: 10 }} axisLine={false} tickLine={false} />
                     <Tooltip cursor={{ fill: T.panel2 }} content={<Tip />} />
-                    <Bar dataKey="win" name="Taux victoire" fill={T.clay} radius={[4, 4, 0, 0]} barSize={46} />
+                    <Bar dataKey="win" name="Taux victoire" fill={T.clay} radius={[4, 4, 0, 0]} barSize={46} cursor="pointer"
+                      onClick={(d: { n?: string }) => d?.n && navigate(`/veille/fil?ent=${encodeURIComponent(d.n)}`)} />
+
                   </BarChart>
                 </ResponsiveContainer>
               </div>
