@@ -9,8 +9,16 @@ import { slugifyClient } from "../lib/copilote";
 import { actionPriority, createAction, useActions, type ActionStatus } from "../lib/execution";
 import { updateBizOpportunity, useBizOpportunities, type BizOpportunityProbability, type BizOpportunityStatus } from "../lib/intel";
 import { usePaged, Pager } from "../components/Pager";
-import { Select, Input } from "../../../design/fields";
+import { Select, Input, DateField } from "../../../design/fields";
 import { Modal, useToast } from "../../../design/overlay";
+
+const MOIS_COURT = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+/** Affiche une échéance ISO (yyyy-mm-dd) en clair « 3 juil. 2026 » ; laisse tout autre texte tel quel. */
+function fmtEcheance(v: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || "");
+  if (!m) return v || "—";
+  return `${+m[3]} ${MOIS_COURT[+m[2] - 1]} ${m[1]}`;
+}
 
 const PROBA_META: Record<BizOpportunityProbability, { l: string; c: string }> = {
   high: { l: "Probabilité haute", c: T.emerald },
@@ -270,7 +278,7 @@ function NewActionPanel({ open, onClose }: { open: boolean; onClose: () => void 
           </div>
           <div>
             <label style={labelStyle}>Échéance</label>
-            <Input value={form.echeance} onChange={(v) => set("echeance", v)} placeholder="ex: T3, Immédiat" />
+            <DateField value={form.echeance} onChange={(v) => set("echeance", v)} ariaLabel="Échéance" />
           </div>
           <div>
             <label style={labelStyle}>Statut</label>
@@ -416,7 +424,7 @@ export function PlanAction() {
                       </td>
                       <td style={{ padding: "8px", textAlign: "right", color: T.emerald, fontVariantNumeric: "tabular-nums" }}>{a.ev} pts</td>
                       <td style={{ padding: "8px", color: T.dim }}>{a.owner}</td>
-                      <td style={{ padding: "8px", color: T.dim }}>{a.ech}</td>
+                      <td style={{ padding: "8px", color: T.dim }}>{fmtEcheance(a.ech)}</td>
                       <td style={{ padding: "8px" }}>
                         <Badge c={a.st === "En cours" ? T.emerald : a.st === "À surveiller" ? T.faint : T.gold}>{a.st}</Badge>
                       </td>

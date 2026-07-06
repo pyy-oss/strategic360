@@ -78,6 +78,21 @@ function CopyBtn({ text, label = "Copier" }: { text: string; label?: string }) {
   );
 }
 
+/** Boutons d'envoi direct (audit doublement CA) : en zone CI/UEMOA WhatsApp est le canal B2B dominant ;
+ * le dernier centimètre copier→coller (5 gestes) devient un tap → plus de messages réellement envoyés. */
+function MsgActions({ objet, corps }: { objet?: string; corps: string }) {
+  const body = encodeURIComponent(corps);
+  const wa = `https://wa.me/?text=${body}`;
+  const mail = `mailto:?subject=${encodeURIComponent(objet || "")}&body=${body}`;
+  return (
+    <span style={{ display: "inline-flex", gap: 6 }}>
+      <a className="pill" href={wa} target="_blank" rel="noopener noreferrer" title="Envoyer via WhatsApp" style={{ fontSize: 11.5, textDecoration: "none" }}>WhatsApp</a>
+      <a className="pill" href={mail} title="Ouvrir dans l'e-mail" style={{ fontSize: 11.5, textDecoration: "none" }}>E-mail</a>
+      <CopyBtn text={objet ? `${objet}\n\n${corps}` : corps} />
+    </span>
+  );
+}
+
 /** Copilote Commercial (add-on) — réutilise le moteur IA serveur + le PESTEL/les signaux de la veille. */
 export function Copilote() {
   const navigate = useNavigate();
@@ -90,7 +105,12 @@ export function Copilote() {
   // compte (ex. depuis une opportunité IA du Plan d'action), reliant l'opportunité externe au
   // portefeuille réel. Sans correspondance, on retombe sur le tableau de bord (inoffensif).
   const [accountId, setAccountId] = useState<string>(sp.get("account") || "");
-  const [tab, setTab] = useState<string>("prospection");
+  // Deep-link inter-vues (audit doublement CA) : ?tab=<agent> ouvre directement le bon onglet
+  // (ex. un signal chaud du Fil → copilote?account=…&tab=prospection). Débloque tout le maillage insight→action.
+  const [tab, setTab] = useState<string>(() => {
+    const t = sp.get("tab") || "";
+    return AGENT_TABS.some((x) => x.k === t) ? t : "prospection";
+  });
   const [showNew, setShowNew] = useState(false);
   const [showPerim, setShowPerim] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -482,18 +502,31 @@ function PortfolioDashboard({
 // aucune fuite inter-comptes possible. Portée session (vidé au reload) ; la persistance Firestore
 // inter-sessions reste une amélioration ultérieure.
 const AGENT_CACHE = new Map<string, unknown>();
+// Persistance offline (audit doublement CA) : les livrables générés au bureau survivent au reload et à la
+// coupure réseau → consultables en RDV/mobilité (salle d'attente). localStorage, clé portant l'accountId.
+const LS_PREFIX = "copiloteRun:";
+function lsGet<T>(key: string): T | undefined {
+  try { const v = localStorage.getItem(LS_PREFIX + key); return v ? (JSON.parse(v) as T) : undefined; } catch { return undefined; }
+}
+function lsSet(key: string, val: unknown) {
+  try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(val)); } catch { /* quota/private mode : silencieux */ }
+}
+function cacheGet<T>(key: string): T | undefined {
+  return (AGENT_CACHE.get(key) as T | undefined) ?? lsGet<T>(key);
+}
+function cacheSet(key: string, val: unknown) { AGENT_CACHE.set(key, val); lsSet(key, val); }
 
 function useAgent<T>(agent: CopiloteAgent, accountId?: string) {
   const cacheKey = `${agent}:${accountId || ""}`;
-  const [data, setData] = useState<T | null>((AGENT_CACHE.get(cacheKey) as T) ?? null);
+  const [data, setData] = useState<T | null>(() => cacheGet<T>(cacheKey) ?? null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [done, setDone] = useState(Boolean(AGENT_CACHE.get(cacheKey)));
+  const [done, setDone] = useState(Boolean(cacheGet(cacheKey)));
   // Changement de compte/agent : on réhydrate depuis le cache (livrable déjà généré ré-affiché
   // instantanément) au lieu de repartir vide — tout en garantissant que le livrable montré
   // correspond au compte courant (la clé de cache porte l'accountId).
   useEffect(() => {
-    const cached = AGENT_CACHE.get(cacheKey) as T | undefined;
+    const cached = cacheGet<T>(cacheKey);
     setData(cached ?? null); setErr(null); setDone(Boolean(cached));
   }, [cacheKey]);
   const run = async (extra?: Record<string, unknown>) => {
@@ -502,7 +535,7 @@ function useAgent<T>(agent: CopiloteAgent, accountId?: string) {
     try {
       const res = await copiloteGenerate<T>(agent, accountId || undefined, extra);
       if (forKey !== `${agent}:${accountId || ""}`) return; // course : compte changé → on jette
-      AGENT_CACHE.set(forKey, res);
+      cacheSet(forKey, res);
       setData(res); setDone(true);
     } catch (e) {
       if (forKey !== `${agent}:${accountId || ""}`) return;
@@ -603,6 +636,11 @@ function CvpTab({ accountId, disabled, canWrite }: { accountId: string; disabled
           <ul style={{ margin: "10px 0 0", paddingLeft: 18, color: T.dim, fontSize: 13, lineHeight: 1.7 }}>
             {data.differenciateurs.map((d, i) => <li key={i}>{d}</li>)}
           </ul>
+          {data.prochaineEtape && (
+            <div style={{ marginTop: 12, padding: "10px 12px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${T.gold}`, fontSize: 12.5, color: T.ink }}>
+              <b style={{ color: T.gold }}>▶ Prochaine étape :</b> {data.prochaineEtape}
+            </div>
+          )}
         </div>
       )}
     </Card>
@@ -798,7 +836,7 @@ function SequenceTab({ accountId, disabled, canWrite }: { accountId: string; dis
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 <Badge c={CANAL_C[t.canal] ?? T.faint}>{t.canal}</Badge>
                 <span style={{ fontSize: 12, color: T.steel }}>{t.objectif}</span>
-                <CopyBtn text={t.message} />
+                <MsgActions corps={t.message} />
               </div>
               <div style={{ fontSize: 12.5, color: T.ink, marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{t.message}</div>
             </div>
@@ -850,11 +888,20 @@ function MeddicTab({ accountId, disabled, canWrite }: { accountId: string; disab
     ["Identified pain", data.identifiedPain], ["Champion", data.champion], ["Concurrence", data.competition],
   ] : [];
   const scoreC = data ? (data.score >= 66 ? T.emerald : data.score >= 33 ? T.gold : T.clay) : T.faint;
+  const verdict = data?.verdict;
+  const vC = verdict === "poursuivre" ? T.emerald : verdict === "désengager" ? T.clay : T.gold;
+  const vLabel = verdict === "poursuivre" ? "POURSUIVRE" : verdict === "désengager" ? "DÉSENGAGER" : "REQUALIFIER";
   return (
     <TabShell title="Qualification MEDDIC" color={T.plum} busy={busy} disabled={disabled} canWrite={canWrite} done={done} empty={!data} onRun={() => run()} label="Qualifier le deal" hint="Sélectionnez un compte pour qualifier son opportunité.">
       <ErrLine err={err} />
       {data && (
         <div style={{ marginTop: 12 }}>
+          {verdict && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: `${vC}18`, border: `1px solid ${vC}55`, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+              <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.6, color: vC, background: `${vC}22`, padding: "3px 8px", borderRadius: 6, flexShrink: 0 }}>{vLabel}</span>
+              <span style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.45 }}>{data.blocageCritique || "Verdict de qualification du deal."}</span>
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: scoreC, fontFamily: "'Bricolage Grotesque',sans-serif" }}>{data.score}/100</div>
             <div style={{ flex: 1, height: 8, background: T.panel2, borderRadius: 4, minWidth: 0 }}>
@@ -1013,7 +1060,7 @@ function RedactionTab({ accountId, compte, canWrite }: { accountId: string; comp
           <div key={i} style={{ background: T.panel2, borderRadius: 10, padding: "12px 14px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
               <Badge c={T.gold}>{v.label}</Badge>
-              <CopyBtn text={[v.objet ? `Objet : ${v.objet}` : "", v.corps].filter(Boolean).join("\n\n")} />
+              <MsgActions objet={v.objet} corps={v.corps} />
             </div>
             {v.objet && <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, marginTop: 8 }}>Objet : {v.objet}</div>}
             <div style={{ fontSize: 12.5, color: T.dim, whiteSpace: "pre-wrap", marginTop: 6, lineHeight: 1.55 }}>{v.corps}</div>

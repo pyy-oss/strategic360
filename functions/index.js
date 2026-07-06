@@ -1690,7 +1690,14 @@ async function assembleCopiloteContext(db, accountId) {
   // SIGNAUX = leads de veille (opportunités business dérivées de la veille). Deux usages distincts :
   //  - `signaux` : échantillon générique pour la PROSPECTION (comptes cibles) ;
   //  - `signauxCompte` : ceux qui NOMMENT ce compte → déclencheurs commerciaux rattachés au portefeuille.
-  const bizAll = bizSnap.docs.map((d) => d.data()).filter((o) => o && o.name);
+  // Anti-obsolescence (audit doublement CA) : on écarte les leads de veille dont l'échéance est DÉPASSÉE —
+  // présenter un AO/déclencheur périmé comme actionnable décrédibilise toute la sortie et tue l'adoption.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const notStale = (o) => {
+    const dl = o && (o.deadline || o.dueDate || o.closingDate);
+    return !(typeof dl === "string" && /^\d{4}-\d{2}-\d{2}/.test(dl) && dl < todayIso);
+  };
+  const bizAll = bizSnap.docs.map((d) => d.data()).filter((o) => o && o.name && notStale(o));
   // Récupération légère (Vague D) : au lieu des 10 PREMIERS leads (ordre Firestore arbitraire), on
   // classe par PERTINENCE au compte (secteur + whitespace + enjeux) — la prospection voit les leads
   // qui comptent pour CE compte, pas un échantillon aveugle.
@@ -1732,7 +1739,6 @@ async function assembleCopiloteContext(db, accountId) {
   // pour ce compte : concurrents cités dans le champ `concurrence` du compte (sinon top par richesse).
   const bcAll = battlecardsSnap.docs.map((d) => d.data()).filter((b) => b && b.competitor);
   const concurrenceText = String(a.concurrence || "").toLowerCase();
-  const bcMatched = bcAll.filter((b) => concurrenceText.includes(String(b.competitor).toLowerCase()));
   const compact = (b) => ({
     competitor: String(b.competitor),
     positioning: typeof b.positioning === "string" ? b.positioning : "",
@@ -1742,9 +1748,6 @@ async function assembleCopiloteContext(db, accountId) {
     objectionHandling: (Array.isArray(b.objectionHandling) ? b.objectionHandling : []).slice(0, 3),
     theirLikelyMoves: (Array.isArray(b.theirLikelyMoves) ? b.theirLikelyMoves : []).slice(0, 2),
   });
-  const battlecards = (bcMatched.length ? bcMatched : bcAll)
-    .slice(0, 6)
-    .map(compact);
 
   // --- Win/Loss réel (audit profondeur) : taux de victoire global + par concurrent + leçons récentes.
   // Jamais injecté auparavant → aucune analyse « win-theme » data-driven n'était possible.
@@ -1771,6 +1774,18 @@ async function assembleCopiloteContext(db, accountId) {
     byCompetitor: Object.entries(wlByComp).map(([competitor, b]) => ({ competitor, winPct: b.total ? Math.round((b.wins / b.total) * 100) : 0, deals: b.total })).sort((x, y) => y.deals - x.deals).slice(0, 6),
     lessons: lessons.slice(-5).reverse(),
   };
+
+  // Sélection des battlecards PRIORISÉE (audit doublement CA) : d'abord celles matchées au compte, puis
+  // les concurrents où NT PERD LE PLUS (winPct croissant sur des deals réels) — on arme le commercial contre
+  // l'adversaire qui coûte réellement des affaires, au lieu des 6 premières au hasard.
+  const lossRank = new Map(winStats.byCompetitor.map((x) => [x.competitor.toLowerCase(), x.winPct]));
+  const bcScore = (b) => {
+    const key = String(b.competitor).toLowerCase();
+    if (concurrenceText.includes(key)) return -1000; // matché au compte : priorité absolue
+    if (lossRank.has(key)) return lossRank.get(key); // sinon, plus le winPct est BAS, plus c'est prioritaire
+    return 500; // ni matché ni tracé en win/loss : moins prioritaire
+  };
+  const battlecards = [...bcAll].sort((a2, b2) => bcScore(a2) - bcScore(b2)).slice(0, 6).map(compact);
 
   // --- Modèle de valeur CHIFFRÉ en code (audit profondeur) : la trajectoire/business case ne doit plus
   // reposer sur des montants hallucinés par l'IA. On projette depuis les VRAIS paniers de référence
@@ -1825,7 +1840,7 @@ async function assembleCopiloteContext(db, accountId) {
  */
 // Champs d'écran que le client a le droit de fournir (redaction) — tout le reste du contexte est
 // assemblé côté serveur depuis nt360/veille et ne doit PAS être surchargé par le client.
-const COPILOTE_EXTRA_ALLOWED = ["kind", "canal", "ton", "contexte", "compte", "objectif"];
+const COPILOTE_EXTRA_ALLOWED = ["kind", "canal", "ton", "contexte", "compte", "objectif", "destinataire"];
 function assertAccountId(accountId) {
   if (accountId == null || accountId === "") return;
   if (typeof accountId !== "string" || !/^[A-Za-z0-9_-]+$/.test(accountId)) {
