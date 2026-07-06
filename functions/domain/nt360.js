@@ -203,6 +203,15 @@ function slugifyClient(name) {
     .trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
+// Libellés d'offre/BU FOURRE-TOUT (audit 2026-07 : le copilote proposait « introduire l'offre AUTRE »).
+// Ces catégories techniques ne sont pas des offres vendables → on ne les propose jamais en cross-sell
+// ni comme next best offer / potentiel chiffré. Une offre RÉELLE reste toujours nommable.
+const PLACEHOLDER_BU = new Set(["autre", "autres", "divers", "div", "n/a", "na", "nc", "inconnu", "other", "others", "misc", "-", "sans bu", "non defini", "non défini"]);
+function isMeaningfulBu(name) {
+  const s = String(name == null ? "" : name).trim();
+  if (!s) return false;
+  return !PLACEHOLDER_BU.has(s.toLowerCase());
+}
 // Repli déterministe (djb2 → base36) quand slugifyClient est vide (nom purement non-latin/symboles) :
 // on ne veut PAS perdre le CAS de ce client ni fusionner tous ces clients dans une seule clé "".
 function hashName(name) {
@@ -466,6 +475,7 @@ function copiloteAccountMatchesScope(account, scope) {
 
 module.exports = {
   STAGE_TO_ETAPE,
+  isMeaningfulBu,
   mapOrders,
   mapOpportunities,
   mapInvoices,

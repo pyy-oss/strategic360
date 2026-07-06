@@ -33,7 +33,11 @@ const NO_GENERIC =
   "whitespace (jamais vendue à ce compte). Nomme les offres et cite les montants. " +
   "INTERDIT : généralités macro-économiques, copier-coller du contexte de veille/PESTEL, phrases " +
   "passe-partout applicables à n'importe quelle entreprise, jargon creux. Si la matière manque sur ce " +
-  "compte, dis-le franchement et propose une action de QUALIFICATION plutôt que d'inventer ou de meubler.";
+  "compte, dis-le franchement et propose une action de QUALIFICATION plutôt que d'inventer ou de meubler. " +
+  "RÉFÉRENCES INTERDITES SANS PREUVE : n'affirme JAMAIS une référence client, un partenariat, une " +
+  "certification ou une proximité institutionnelle (BCEAO, banque centrale, régulateurs, opérateurs, " +
+  "bailleurs…) qui ne figure pas explicitement dans « Preuves / références NT ». Si cette liste est " +
+  "« aucun », NE REVENDIQUE AUCUNE référence — propose plutôt d'en constituer une.";
 
 // Persona STRATÈGE (retour terrain « c'est superficiel, générique, zéro analyse, juste un rappel des
 // données internes »). Le copilote n'est pas un restituteur de données : c'est un stratège de vente et
@@ -52,7 +56,11 @@ const ANTI_VERBIAGE =
   "ses besoins »), phrases applicables à n'importe quel compte, remplissage, reformulation d'une donnée " +
   "déjà fournie sans y ajouter d'interprétation. Si une phrase ne contient PAS une déduction non triviale " +
   "propre à CE compte, supprime-la. Densité maximale : chaque mot doit peser. Ton d'expert direct, jamais " +
-  "de langue de bois.";
+  "de langue de bois. " +
+  "SENS DES PROPORTIONS (impératif) : calibre TOUJOURS la gravité à l'échelle du compte — exprime une " +
+  "exposition/un montant en % du CA réalisé avant de le qualifier. N'appelle pas « critique » ou " +
+  "« paralysie » une somme qui pèse < 5% du CA. Bannis les clichés dramatiques et les métaphores " +
+  "(« paralysie opérationnelle », « cheval de Troie », « bombe à retardement »…) : dis le fait et sa conséquence, point.";
 
 // Valeur ajoutée COMMERCIALE (retour terrain « zéro valeur ajoutée, historique mal exploité ») :
 // impose d'exploiter l'historique chiffré et de bâtir sur la next-best-offer data-driven.
@@ -223,6 +231,10 @@ function computeAnalytics(c) {
       .map((h) => `${coerceStr(h.offre)} (dernier achat ${h.lastYear})`);
   }
   const deals = Array.isArray(c.deals) ? c.deals : [];
+  // Exposition = somme des deals en cours, exprimée en % du CA réalisé → donne l'échelle (anti-dramatisation).
+  const exposition = deals.reduce((s, d) => s + (Number(d && d.montant) > 0 ? Number(d.montant) : 0), 0);
+  out.exposition = Math.round(exposition);
+  out.expositionPct = casTotal > 0 ? Math.round((exposition / casTotal) * 100) : null;
   out.deals = deals.map((d) => {
     if (!d || typeof d !== "object") return "";
     const nom = coerceStr(d.nom, "deal");
@@ -244,6 +256,7 @@ function analyticsBlock(c) {
     lines.push(`• Concentration : ${a.concentration}% du CA sur « ${a.topOffre} »${a.monoOffre ? " (compte mono-offre)" : ""} → dépendance à interpréter (risque si churn, mais tête de pont pour cross-seller).`);
   }
   if (a.dormantes.length) lines.push(`• Offres DORMANTES (aucun réachat ≥ 2 ans) : ${list(a.dormantes)} → churn silencieux ou fenêtre de relance.`);
+  if (a.expositionPct != null && a.exposition > 0) lines.push(`• Exposition pipeline en cours : ${xof(a.exposition)} = ${a.expositionPct}% du CA réalisé → CALIBRE la gravité là-dessus (ne dramatise pas une part < 5%).`);
   if (a.deals.length) lines.push(`• Santé des deals : ${a.deals.join(" ; ")}.`);
   if (a.reserve > 0) lines.push(`• Réserve de valeur non adressée (cross-sell chiffré) : ${xof(a.reserve)}.`);
   if (!lines.length) return "";

@@ -318,3 +318,16 @@ describe("matchSignalsToAccount — déclencheurs de veille rattachés au compte
     expect(matchSignalsToAccount("BRVM", null)).toEqual([]);
   });
 });
+
+describe("nt360 — isMeaningfulBu (offres fourre-tout exclues du cross-sell)", () => {
+  it("écarte les libellés fourre-tout, garde les vraies offres", async () => {
+    const { isMeaningfulBu } = await import("../domain/nt360.js");
+    expect(isMeaningfulBu("ICT")).toBe(true);
+    expect(isMeaningfulBu("CLOUD")).toBe(true);
+    expect(isMeaningfulBu("AUTRE")).toBe(false);
+    expect(isMeaningfulBu(" divers ")).toBe(false);
+    expect(isMeaningfulBu("N/A")).toBe(false);
+    expect(isMeaningfulBu("")).toBe(false);
+    expect(isMeaningfulBu(null)).toBe(false);
+  });
+});

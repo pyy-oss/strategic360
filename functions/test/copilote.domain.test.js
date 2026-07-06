@@ -285,6 +285,19 @@ describe("Copilote — stratège de vente : moteur d'analyse + persona (audit 20
     expect(p).toContain('"mouvements"');
     expect(p).toContain("LE coup à jouer maintenant");
   });
+
+  it("garde-fous anti-2/10 : interdiction des références inventées + sens des proportions (exposition %)", async () => {
+    const { buildCvpPrompt } = await import("../domain/copilote.js");
+    const p = buildCvpPrompt(stratCtx);
+    // Fix 2 : anti-invention des références (BCEAO/régulateurs…).
+    expect(p).toContain("RÉFÉRENCES INTERDITES SANS PREUVE");
+    expect(p).toContain("NE REVENDIQUE AUCUNE référence");
+    // Fix 3 : sens des proportions + anti-dramatisation.
+    expect(p).toContain("SENS DES PROPORTIONS");
+    expect(p).toContain("cheval de Troie"); // cliché explicitement banni
+    // exposition du pipeline exprimée en % du CA (60M sur 300M = 20%).
+    expect(p).toContain("20% du CA réalisé");
+  });
 });
 
 describe("Copilote — désambiguïsation de marque dans les contenus sortants (audit 2026-07)", () => {
