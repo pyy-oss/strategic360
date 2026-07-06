@@ -35,6 +35,25 @@ const NO_GENERIC =
   "passe-partout applicables à n'importe quelle entreprise, jargon creux. Si la matière manque sur ce " +
   "compte, dis-le franchement et propose une action de QUALIFICATION plutôt que d'inventer ou de meubler.";
 
+// Persona STRATÈGE (retour terrain « c'est superficiel, générique, zéro analyse, juste un rappel des
+// données internes »). Le copilote n'est pas un restituteur de données : c'est un stratège de vente et
+// de développement de compte. Il INTERPRÈTE, TRANCHE, et livre un coup d'avance.
+const STRATEGE =
+  "TU ES UN STRATÈGE DE VENTE ET DE DÉVELOPPEMENT DE COMPTE (senior). Le commercial connaît déjà ses " +
+  "chiffres : NE LES LUI RÉCITE PAS. Ton travail est de produire l'ANALYSE qu'il n'a pas faite : " +
+  "repérer le SCHÉMA (tendance, cadence, corrélation), l'ANOMALIE (deal au point mort, offre dormante, " +
+  "concentration risquée), le RISQUE CACHÉ et l'ASYMÉTRIE exploitable. Pose UNE thèse claire, TRANCHE " +
+  "(ne liste pas 6 options équivalentes — désigne LE mouvement prioritaire), et donne son IMPACT attendu " +
+  "chiffré. Chaque affirmation = une déduction (donnée → implication → action), pas un constat.";
+
+// Anti-verbiage (impératif) : bannit la théorie, la banalité et le remplissage.
+const ANTI_VERBIAGE =
+  "INTERDIT ABSOLU : théorie de vente générique, banalités (« il faut fidéliser le client », « comprendre " +
+  "ses besoins »), phrases applicables à n'importe quel compte, remplissage, reformulation d'une donnée " +
+  "déjà fournie sans y ajouter d'interprétation. Si une phrase ne contient PAS une déduction non triviale " +
+  "propre à CE compte, supprime-la. Densité maximale : chaque mot doit peser. Ton d'expert direct, jamais " +
+  "de langue de bois.";
+
 // Valeur ajoutée COMMERCIALE (retour terrain « zéro valeur ajoutée, historique mal exploité ») :
 // impose d'exploiter l'historique chiffré et de bâtir sur la next-best-offer data-driven.
 const HISTO_DIRECTIVE =
@@ -182,6 +201,55 @@ function contactsBlock(c) {
   return contacts.length ? `Parties prenantes connues : ${list(contacts)}.` : "Parties prenantes : aucune saisie — recommander de les cartographier.";
 }
 
+/**
+ * Moteur d'analyse PRÉ-CALCULÉE (audit « zéro analyse ») — transforme les données brutes du compte en
+ * DIAGNOSTICS interprétés (concentration, dormance/churn, santé des deals, réserve de valeur), que les
+ * agents doivent DÉPASSER (pas répéter). PUR : dérivé des faits déjà présents dans le contexte.
+ */
+function computeAnalytics(c) {
+  const histo = (Array.isArray(c.historique) ? c.historique : []).filter((h) => h && h.offre);
+  const casTotal = Number(c.casTotal) || histo.reduce((s, h) => s + (Number(h.cas) || 0), 0);
+  const out = { concentration: null, topOffre: "", dormantes: [], deals: [], reserve: 0, monoOffre: false };
+  if (histo.length && casTotal > 0) {
+    const top = histo.slice().sort((a, b) => (Number(b.cas) || 0) - (Number(a.cas) || 0))[0];
+    out.topOffre = coerceStr(top.offre);
+    out.concentration = Math.round(((Number(top.cas) || 0) / casTotal) * 100);
+    out.monoOffre = histo.filter((h) => Number(h.cas) > 0).length <= 1;
+  }
+  const year = Number(String(c.today || "").slice(0, 4)) || null;
+  if (year) {
+    out.dormantes = histo
+      .filter((h) => Number(h.lastYear) && year - Number(h.lastYear) >= 2)
+      .map((h) => `${coerceStr(h.offre)} (dernier achat ${h.lastYear})`);
+  }
+  const deals = Array.isArray(c.deals) ? c.deals : [];
+  out.deals = deals.map((d) => {
+    if (!d || typeof d !== "object") return "";
+    const nom = coerceStr(d.nom, "deal");
+    const p = Number(d.probability);
+    const prob = p > 1 ? p / 100 : p;
+    if (d.closingDate && c.today && d.closingDate < c.today) return `${nom} : clôture ${d.closingDate} DÉPASSÉE → deal fantôme, à requalifier ou sortir du pipeline`;
+    if (Number.isFinite(prob) && prob > 0 && prob < 0.2) return `${nom} : probabilité ${Math.round(prob * 100)}% → au point mort, ne pas y mettre d'énergie sans électrochoc`;
+    return "";
+  }).filter(Boolean);
+  out.reserve = Number(c.valueModel?.whitespacePotential) || 0;
+  return out;
+}
+
+/** Bloc DIAGNOSTIC pré-calculé injecté dans les agents stratégiques (socle d'analyse à dépasser). */
+function analyticsBlock(c) {
+  const a = computeAnalytics(c);
+  const lines = [];
+  if (a.concentration != null && a.concentration >= 55) {
+    lines.push(`• Concentration : ${a.concentration}% du CA sur « ${a.topOffre} »${a.monoOffre ? " (compte mono-offre)" : ""} → dépendance à interpréter (risque si churn, mais tête de pont pour cross-seller).`);
+  }
+  if (a.dormantes.length) lines.push(`• Offres DORMANTES (aucun réachat ≥ 2 ans) : ${list(a.dormantes)} → churn silencieux ou fenêtre de relance.`);
+  if (a.deals.length) lines.push(`• Santé des deals : ${a.deals.join(" ; ")}.`);
+  if (a.reserve > 0) lines.push(`• Réserve de valeur non adressée (cross-sell chiffré) : ${xof(a.reserve)}.`);
+  if (!lines.length) return "";
+  return `DIAGNOSTIC PRÉ-CALCULÉ (données DÉJÀ interprétées — sers-t'en comme socle, va PLUS LOIN, ne le répète pas mot pour mot) :\n${lines.join("\n")}`;
+}
+
 /* ------------------------------------------------------------------------------------------- *
  * §B — PROSPECTION (comptes cibles)
  * ------------------------------------------------------------------------------------------- */
@@ -254,11 +322,14 @@ function buildCvpPrompt(ctx) {
     .map((p) => `${coerceStr(p.axe, "?")} : ${coerceStr(p.texte)}`)
     .join("");
   return `${NT_ROLE}
+${STRATEGE}
+${ANTI_VERBIAGE}
 ${NO_GENERIC}
 ${HISTO_DIRECTIVE}
 
 Construis la proposition de valeur de Neurones Technologies pour CE compte, en t'appuyant STRICTEMENT sur ses faits réels :
 ${factBase(c)}
+${analyticsBlock(c)}
 
 Différenciateurs NT mobilisables (source unique — à relier chacun à UN enjeu/whitespace/deal NOMMÉ de ce compte, jamais en vrac ; Neurones Academy est un levier de cross-sell/ancrage à ne pas oublier) :
 ${NT_DIFFERENCIATEURS}.
@@ -267,8 +338,8 @@ Preuves / références NT : ${list(c.preuves)}.${pestel ? `\nAngle de marché (�
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
-  "message": string,                       // 2 phrases : cite le compte + un chiffre réel (CA réalisé OU un deal en cours) + l'offre whitespace à ouvrir
-  "differenciateurs": [string]             // 3 : chacun relie UN différenciateur NT à UN enjeu/whitespace/deal nommé de CE compte (aucun différenciateur générique)
+  "message": string,                       // 2 phrases : la THÈSE de valeur — un angle NON ÉVIDENT tiré du diagnostic (concentration, offre dormante, deal au point mort, réserve de cross-sell), ancré sur un chiffre réel. Pas un slogan, pas un rappel de données.
+  "differenciateurs": [string]             // 3 : chacun relie UN différenciateur NT à UN levier PRÉCIS de développement de CE compte (deal à débloquer, dormance à réactiver, whitespace chiffré). Aucun différenciateur générique.
 }
 JSON uniquement.`;
 }
@@ -289,12 +360,16 @@ const ANNEES = ["An 1", "An 2", "An 3"];
 function buildTriennalPrompt(ctx) {
   const c = ctx || {};
   return `${NT_ROLE}
+${STRATEGE}
+${ANTI_VERBIAGE}
 ${NO_GENERIC}
 ${HISTO_DIRECTIVE}
 
 Bâtis un plan de croissance à 3 ans pour CE compte, à partir de ses faits réels :
 ${factBase(c)}
 ${valueModelBlock(c)}
+${analyticsBlock(c)}
+La trajectoire doit RÉPONDRE au diagnostic (réduire une concentration risquée, réactiver une offre dormante, sécuriser un deal fragile), pas dérouler un plan passe-partout An1/An2/An3.
 
 Logique attendue, ancrée sur SES offres réelles : An 1 = sécuriser/renouveler ce qui est déjà vendu + convertir un deal en cours nommé ;
 An 2 = ouvrir 1 offre PRÉCISE du whitespace ci-dessus (cross-sell) ; An 3 = contrat-cadre / partenaire de référence.
@@ -336,36 +411,44 @@ const NIVEAUX = ["Élevé", "Moyen", "Faible"];
 function buildPlanComptePrompt(ctx) {
   const c = ctx || {};
   return `${NT_ROLE}
+${STRATEGE}
+${ANTI_VERBIAGE}
 ${NO_GENERIC}
 ${HISTO_DIRECTIVE}
 
-Rédige le cœur d'un plan de compte pour CE compte, à partir de ses faits réels :
+Élabore la STRATÉGIE DE DÉVELOPPEMENT de CE compte (pas une to-do list) à partir de ses faits réels :
 ${factBase(c)}
 ${contactsBlock(c)}
 ${competitorBlock(c)}
+${analyticsBlock(c)}
+
+Tu es le stratège du compte. Livre une lecture, une thèse et des mouvements tranchés — pas un catalogue d'actions équilibrées.
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
-  "actions": [ { "libelle": string, "horizon": "Court terme" | "Moyen terme" | "Continu" } ],
-  "risques": [ { "r": string, "m": string, "niv": "Élevé" | "Moyen" | "Faible" } ]
+  "diagnostic": string,     // LA lecture stratégique du compte en 1-2 phrases : le schéma/anomalie/asymétrie décisif (ex. « 78% du CA sur ICT, aucun réachat CLOUD depuis 2022 → compte capté mais sous-pénétré, exposé si l'ICT churne »). Interdit : résumé des chiffres.
+  "these": string,          // LA thèse de développement : le seul angle qui fait vraiment grandir ce compte dans les 12 mois, et pourquoi lui plutôt qu'un autre.
+  "mouvements": [ { "titre": string, "pourquoi": string, "impact": string, "horizon": "Court terme" | "Moyen terme" | "Continu" } ],
+  "risquesCaches": [ { "r": string, "m": string, "niv": "Élevé" | "Moyen" | "Faible" } ]
 }
-4 "actions" priorisées et SPÉCIFIQUES à ce compte : chacune cite une offre (déjà vendue / en cours / whitespace) ou un deal nommé ;
-au moins une action d'OUVERTURE sur une offre PRÉCISE du whitespace, et une de gouvernance/COPIL sur le compte.
-3 "risques" (r) réels du compte avec mitigation (m) et niveau (niv) — pas de risque générique ("concurrence", "budget") sans lien nommé au compte. JSON uniquement.`;
+"mouvements" = 3 mouvements PRIORITAIRES et tranchés (le 1er = LE coup à jouer maintenant) ; "pourquoi" = la déduction qui le justifie (donnée → implication) ; "impact" = le gain attendu CHIFFRÉ (montant du modèle de valeur / deal débloqué).
+"risquesCaches" = 2-3 risques NON évidents propres au compte (concentration, mono-contact, deal fantôme, dormance), avec mitigation (m) et niveau (niv). Zéro risque générique. JSON uniquement.`;
 }
 
 function parsePlanCompteResponse(raw) {
   if (!raw || typeof raw !== "object") return null;
-  const actions = (Array.isArray(raw.actions) ? raw.actions : [])
-    .filter((x) => x && typeof x === "object" && coerceStr(x.libelle))
-    .map((x) => ({ libelle: coerceStr(x.libelle), horizon: coerceEnum(x.horizon, HORIZONS, "Continu") }))
-    .slice(0, 6);
-  const risques = (Array.isArray(raw.risques) ? raw.risques : [])
+  const mouvements = (Array.isArray(raw.mouvements) ? raw.mouvements : [])
+    .filter((x) => x && typeof x === "object" && coerceStr(x.titre))
+    .map((x) => ({ titre: coerceStr(x.titre), pourquoi: coerceStr(x.pourquoi), impact: coerceStr(x.impact), horizon: coerceEnum(x.horizon, HORIZONS, "Continu") }))
+    .slice(0, 4);
+  const risquesCaches = (Array.isArray(raw.risquesCaches) ? raw.risquesCaches : [])
     .filter((x) => x && typeof x === "object" && coerceStr(x.r))
     .map((x) => ({ r: coerceStr(x.r), m: coerceStr(x.m), niv: coerceEnum(x.niv, NIVEAUX, "Moyen") }))
-    .slice(0, 5);
-  if (!actions.length && !risques.length) return null;
-  return { actions, risques };
+    .slice(0, 4);
+  const diagnostic = coerceStr(raw.diagnostic);
+  const these = coerceStr(raw.these);
+  if (!diagnostic && !these && !mouvements.length) return null;
+  return { diagnostic, these, mouvements, risquesCaches };
 }
 
 /* ------------------------------------------------------------------------------------------- *
@@ -378,12 +461,16 @@ const QUANDS = ["0–30 jours", "30–60 jours", "60–90 jours", "Continu"];
 function buildPlanActionPrompt(ctx) {
   const c = ctx || {};
   return `${NT_ROLE}
+${STRATEGE}
+${ANTI_VERBIAGE}
 ${NO_GENERIC}
 ${HISTO_DIRECTIVE}
 
 Bâtis le PLAN D'ACTION COMMERCIAL des 90 prochains jours pour CE compte, à partir de ses faits réels :
 ${factBase(c)}
 ${winStatsBlock(c)}
+${analyticsBlock(c)}
+Chaque action doit trancher un point du diagnostic (réactiver une dormance, électrochoquer ou sortir un deal au point mort, ouvrir la réserve de cross-sell) — pas des gestes commerciaux passe-partout.
 Date du jour : ${coerceStr(c.today, "aujourd'hui")}. Aligne les échéances des actions sur les DATES DE CLOSING réelles des deals ci-dessus quand elles existent (ne pas planifier après une closing).
 
 Exigences : une séquence DATÉE et concrète, pas une liste de bonnes intentions. Chaque action doit :
@@ -427,8 +514,10 @@ function buildChatSystem(ctx) {
   const c = ctx || {};
   const base =
     "Tu es le copilote commercial de Neurones Technologies (intégrateur IT/télécom/cyber, zone UEMOA/CEMAC). " +
-    "Tu aides un commercial à préparer ses RDV, bâtir ses argumentaires, ses plans de compte, qualifier ses deals " +
-    "et contrer ses concurrents. Français, concret et actionnable, structuré (puces si utile), 10 lignes max. " +
+    "Tu es un STRATÈGE de vente et de développement de compte : tu n'égrènes pas les données (le commercial les a), " +
+    "tu les INTERPRÈTES — schéma, anomalie, risque caché — tu poses une thèse, tu tranches et tu donnes le prochain coup. " +
+    "Zéro théorie, zéro banalité, zéro remplissage : si une phrase ne contient pas une déduction propre à CE compte, ne l'écris pas. " +
+    "Français, dense et actionnable, structuré (puces si utile), 10 lignes max. " +
     "Va au bout du raisonnement : quand on te demande une analyse, cite les chiffres réels, nomme l'offre/le deal/" +
     "le concurrent concerné et termine par la PROCHAINE ACTION précise. " +
     "Ne fournis AUCUNE donnée client (chiffre, contact, budget, échéance) qui ne figure pas dans le " +
@@ -452,7 +541,7 @@ function buildChatSystem(ctx) {
         deals: c.compte.deals || c.compte.signaux,
         recommendation: c.compte.recommendation,
         signauxCompte: c.compte.signauxCompte,
-      })}\n${competitorBlock(c.compte)}\n${winStatsBlock(c.compte)}\n${valueModelBlock(c.compte)}`
+      })}\n${competitorBlock(c.compte)}\n${winStatsBlock(c.compte)}\n${valueModelBlock(c.compte)}\n${analyticsBlock(c.compte)}`
     : "Aucun compte précis sélectionné : réponds au niveau méthode/portefeuille, sans inventer de compte.";
   return `${base}\n${compte}`;
 }
@@ -545,6 +634,8 @@ function parseRedactionResponse(raw, ctx) {
 function buildMeddicPrompt(ctx) {
   const c = ctx || {};
   return `${NT_ROLE}
+${STRATEGE}
+${ANTI_VERBIAGE}
 ${NO_GENERIC}
 
 Qualifie l'opportunité principale de CE compte selon MEDDIC (+ note de confiance), à partir de ses faits réels :
@@ -596,6 +687,8 @@ function buildBriefPrompt(ctx) {
   const c = ctx || {};
   const objectif = coerceStr(c.contexte) || coerceStr(c.objectif);
   return `${NT_ROLE}
+${STRATEGE}
+${ANTI_VERBIAGE}
 ${NO_GENERIC}
 
 Prépare une NOTE DE BRIEF avant un rendez-vous commercial pour CE compte, à partir de ses faits réels :
@@ -640,12 +733,15 @@ const PROBAS = ["Élevée", "Moyenne", "Faible"];
 function buildDealAnalysisPrompt(ctx) {
   const c = ctx || {};
   return `${NT_ROLE}
+${STRATEGE}
+${ANTI_VERBIAGE}
 ${NO_GENERIC}
 
 Analyse l'opportunité en cours la plus importante de CE compte et propose une STRATÉGIE DE GAIN, à partir des faits réels :
 ${factBase(c)}
 ${competitorBlock(c)}
 ${winStatsBlock(c)}
+${analyticsBlock(c)}
 Date du jour : ${coerceStr(c.today, "aujourd'hui")}.
 
 Règle : identifie le deal réel visé (nom + montant). Le "concurrent" doit provenir des battlecards/faits, sinon « inconnu — à qualifier ».
@@ -692,11 +788,14 @@ function parseDealAnalysisResponse(raw) {
 function buildBusinessCasePrompt(ctx) {
   const c = ctx || {};
   return `${NT_ROLE}
+${STRATEGE}
+${ANTI_VERBIAGE}
 ${NO_GENERIC}
 
 Construis un BUSINESS CASE chiffré pour développer CE compte, à partir de ses faits réels :
 ${factBase(c)}
 ${valueModelBlock(c)}
+${analyticsBlock(c)}
 
 RÈGLE ABSOLUE SUR LES MONTANTS : n'utilise QUE les montants du "modèle de valeur chiffré" ci-dessus (CA réalisé, next best offer,
 paniers de référence par offre, potentiel cross-sell). N'invente AUCUN autre chiffre. Chaque "gain" doit référencer une offre nommée
@@ -736,6 +835,8 @@ const SEQ_CANAUX = ["E-mail", "WhatsApp", "LinkedIn", "Appel", "RDV"];
 function buildSequencePrompt(ctx) {
   const c = ctx || {};
   return `${NT_ROLE}
+${STRATEGE}
+${ANTI_VERBIAGE}
 ${NO_GENERIC}
 
 Bâtis une SÉQUENCE DE PROSPECTION MULTI-TOUCH datée (cadence 4 à 6 points de contact sur ~3 semaines) pour CE compte, à partir de ses faits réels :
@@ -775,6 +876,8 @@ const POSTURES = ["Champion", "Favorable", "Neutre", "Sceptique", "Détracteur",
 function buildStakeholdersPrompt(ctx) {
   const c = ctx || {};
   return `${NT_ROLE}
+${STRATEGE}
+${ANTI_VERBIAGE}
 ${NO_GENERIC}
 
 Cartographie les PARTIES PRENANTES de CE compte et propose une stratégie multi-thread, à partir des faits réels :
