@@ -19,6 +19,7 @@ import { Modal, useToast } from "../../../design/overlay";
  */
 export function Detection() {
   const [cat, setCat] = useState("all");
+  const [subtype, setSubtype] = useState("all");
   const { items } = useIntelItems();
   const navigate = useNavigate();
   const { canWrite } = useCan("veille");
@@ -42,24 +43,40 @@ export function Detection() {
     const rad = PROX[e.eprox as string].r * RR;
     return { ...e, x: CX + rad * Math.cos(ang), y: CY - rad * Math.sin(ang), size: e.impact === "high" ? 7 : e.impact === "medium" ? 5.2 : 4 };
   });
-  const rows = EVENTS.filter((e) => cat === "all" || e.cat === cat).sort((a, b) => {
-    const P: Record<string, number> = { imminent: 0, court: 1, moyen: 2, horizon: 3 };
-    const I: Record<string, number> = { high: 0, medium: 1, low: 2 };
-    return P[a.eprox as string] - P[b.eprox as string] || I[a.impact] - I[b.impact];
-  });
+  const rows = EVENTS
+    .filter((e) => cat === "all" || e.cat === cat)
+    .filter((e) => subtype === "all" || e.subtype === subtype)
+    .sort((a, b) => {
+      const P: Record<string, number> = { imminent: 0, court: 1, moyen: 2, horizon: 3 };
+      const I: Record<string, number> = { high: 0, medium: 1, low: 2 };
+      return P[a.eprox as string] - P[b.eprox as string] || I[a.impact] - I[b.impact];
+    });
   const neuf = EVENTS.filter((e) => e.neuf).length;
-  const paged = usePaged(rows, 25, cat);
+  const paged = usePaged(rows, 25, `${cat}|${subtype}`);
+  // Clic sur un point du radar : drill-down vers les signaux de l'entité (même geste que la carte),
+  // sinon focalise la catégorie du point. Clic sur une carte catégorie / un type = filtre local.
+  const onBlip = (b: { ent?: string; cat?: string }) => {
+    if (b.ent) navigate(`/veille/fil?ent=${encodeURIComponent(b.ent)}`);
+    else if (b.cat) setCat((prev) => (prev === b.cat ? "all" : (b.cat as string)));
+  };
   return (
     <div>
       <div style={{ fontSize: 12, color: T.plum, marginBottom: 14, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 12px" }}>
         📡 Détection d'événements : implantations, expansions de groupe, risques/opportunités sectoriels, ruptures techno, réglementation, risque pays. Position = <b>catégorie</b> (secteur) × <b>imminence</b> (proximité du centre) ; taille = <b>impact</b> ; couleur = opportunité/menace.
       </div>
       <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
-        {Object.keys(ECAT).map((k) => (
-          <Card key={k}>
-            <Kpi label={ECAT[k].l} value={EVENTS.filter((e) => e.cat === k).length} accent={ECAT[k].c} sub="événements suivis" />
-          </Card>
-        ))}
+        {Object.keys(ECAT).map((k) => {
+          const on = cat === k;
+          return (
+            <Card key={k} style={{ cursor: "pointer", borderColor: on ? ECAT[k].c : undefined, outline: on ? `1px solid ${ECAT[k].c}` : "none" }}>
+              <div role="button" tabIndex={0} title={on ? "Retirer le filtre" : `Filtrer sur ${ECAT[k].l}`}
+                onClick={() => setCat(on ? "all" : k)}
+                onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); setCat(on ? "all" : k); } }}>
+                <Kpi label={ECAT[k].l} value={EVENTS.filter((e) => e.cat === k).length} accent={ECAT[k].c} sub={on ? "▸ filtre actif" : "événements suivis"} />
+              </div>
+            </Card>
+          );
+        })}
       </div>
       <div className="g2 g2-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <Card>
@@ -94,8 +111,11 @@ export function Detection() {
             })}
             <circle cx={CX} cy={CY} r="3" fill={T.faint} />
             {blips.map((b, i) => (
-              <g key={b.id ?? i} opacity={cat === "all" || cat === b.cat ? 1 : 0.18}>
+              <g key={b.id ?? i} opacity={cat === "all" || cat === b.cat ? 1 : 0.18} style={{ cursor: "pointer" }} onClick={() => onBlip(b)}>
+                <title>{b.title}{b.ent ? ` — ${b.ent} (voir les signaux)` : ""}</title>
                 {b.neuf && <circle cx={b.x} cy={b.y} r={b.size + 4} fill="none" stroke={STANCE[b.stance].c} strokeOpacity="0.4" />}
+                {/* Cible de clic élargie et transparente : un point de 4-7px reste facile à cliquer. */}
+                <circle cx={b.x} cy={b.y} r={b.size + 6} fill="transparent" />
                 <circle cx={b.x} cy={b.y} r={b.size} fill={STANCE[b.stance].c} />
               </g>
             ))}
@@ -117,17 +137,27 @@ export function Detection() {
           </div>
         </Card>
         <Card>
-          <Eyebrow color={T.gold}>Types d'événements détectés</Eyebrow>
-          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 7 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <Eyebrow color={T.gold}>Types d'événements détectés</Eyebrow>
+            {subtype !== "all" && <button className="pill on" onClick={() => setSubtype("all")}>✕ {subtype}</button>}
+          </div>
+          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 2 }}>
             {["Nouvelle implantation", "Expansion de groupe", "Entrée d'un concurrent", "Opportunité sectorielle", "Risque sectoriel", "Rupture / nouvelle techno", "Obsolescence / EOL", "Nouvelle réglementation", "Risque pays"].map((ty, i) => {
               const c = EVENTS.filter((e) => e.subtype === ty).length;
               const ev = EVENTS.find((e) => e.subtype === ty);
+              const on = subtype === ty;
               return (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "5px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
+                <button
+                  key={i}
+                  disabled={!c}
+                  title={c ? (on ? "Retirer le filtre" : `Filtrer sur « ${ty} »`) : "Aucun événement de ce type"}
+                  onClick={() => setSubtype(on ? "all" : ty)}
+                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "6px 8px", borderTop: i > 0 ? `1px solid ${T.line}` : "none", background: on ? T.panel2 : "none", border: "none", borderRadius: 6, cursor: c ? "pointer" : "default", textAlign: "left", width: "100%" }}
+                >
                   <span style={{ width: 8, height: 8, borderRadius: 8, background: ev ? ECAT[ev.cat as string].c : T.faint, flexShrink: 0 }} />
-                  <span style={{ flex: 1, color: c ? T.ink : T.faint }}>{ty}</span>
+                  <span style={{ flex: 1, color: on ? T.gold : c ? T.ink : T.faint, fontWeight: on ? 700 : 400 }}>{ty}</span>
                   <Badge c={c ? T.gold : T.faint}>{c}</Badge>
-                </div>
+                </button>
               );
             })}
           </div>

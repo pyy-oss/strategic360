@@ -143,16 +143,18 @@ function NewItemPanel({ open, onClose }: { open: boolean; onClose: () => void })
 
 /** "Fil de veille" — ported from `Fil` in the maquette; data source swapped to Firestore `intelItems` (V2). */
 export function Fil() {
-  const [ax, setAx] = useState("all");
-  const [st, setSt] = useState("all");
+  // Maillage inter-vues (Vague C + interactivité 2026-07) : un CTA d'une autre vue (Détection, matrice
+  // du radar, graphiques Concurrence…) ouvre le Fil pré-filtré via ?ent= / ?ax= / ?st= / ?imp=.
+  const [sp, setSp] = useSearchParams();
+  const entFilter = sp.get("ent") || "";
+  // Filtres initialisés depuis l'URL (deep-link) puis pilotés localement par les pills.
+  const [ax, setAx] = useState(() => (sp.get("ax") && AX[sp.get("ax") as string] ? (sp.get("ax") as string) : "all"));
+  const [st, setSt] = useState(() => (["opportunity", "threat", "neutral"].includes(sp.get("st") || "") ? (sp.get("st") as string) : "all"));
+  const [imp, setImp] = useState(() => (["high", "medium", "low"].includes(sp.get("imp") || "") ? (sp.get("imp") as string) : "all"));
   const [prx, setPrx] = useState("all");
   const [watchOnly, setWatchOnly] = useState(false);
   const [bizOnly, setBizOnly] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  // Maillage inter-vues (Vague C) : un CTA d'une autre vue (Detection, Concurrence…) ouvre le Fil
-  // pré-filtré sur une entité via ?ent=. On lit le paramètre et on l'expose comme filtre effaçable.
-  const [sp, setSp] = useSearchParams();
-  const entFilter = sp.get("ent") || "";
   const clearEnt = () => { const n = new URLSearchParams(sp); n.delete("ent"); setSp(n, { replace: true }); };
   const norm = (v: string) => v.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
   const { items, loading } = useIntelItems();
@@ -163,6 +165,7 @@ export function Fil() {
       (s) =>
         (ax === "all" || s.axis === ax) &&
         (st === "all" || s.stance === st) &&
+        (imp === "all" || s.impact === imp) &&
         (prx === "all" || effectiveProx(s) === prx) &&
         (!watchOnly || !!s.ent) &&
         (!entFilter || (s.ent ? norm(s.ent).includes(norm(entFilter)) || norm(entFilter).includes(norm(s.ent)) : false)) &&
@@ -178,7 +181,7 @@ export function Fil() {
     );
 
   // Pagination : le fil peut atteindre des centaines de signaux (retour à la page 1 si un filtre change).
-  const paged = usePaged(rows, 25, `${ax}|${st}|${prx}|${watchOnly}|${bizOnly}|${entFilter}`);
+  const paged = usePaged(rows, 25, `${ax}|${st}|${imp}|${prx}|${watchOnly}|${bizOnly}|${entFilter}`);
 
   return (
     <div>
@@ -197,6 +200,12 @@ export function Fil() {
           {["all", "opportunity", "threat", "neutral"].map((k) => (
             <button key={k} className={`pill ${st === k ? "on" : ""}`} onClick={() => setSt(k)}>
               {k === "all" ? "Toutes" : STANCE[k].l}
+            </button>
+          ))}
+          <span style={{ fontSize: 11.5, color: T.faint, marginLeft: 10 }}>Impact :</span>
+          {["all", "high", "medium", "low"].map((k) => (
+            <button key={k} className={`pill ${imp === k ? "on" : ""}`} onClick={() => setImp((v) => (v === k ? "all" : k))}>
+              {k === "all" ? "Tous" : IMP[k]?.l ?? k}
             </button>
           ))}
           <span style={{ fontSize: 11.5, color: T.faint, marginLeft: 10 }}>Imminence :</span>

@@ -1708,8 +1708,10 @@ async function assembleCopiloteContext(db, accountId) {
   const ownedBus = [...(Array.isArray(nt.bus) ? nt.bus : []), ...historique.map((h) => h.offre), ...enCours]
     .filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim());
   const touched = new Set(ownedBus.map((x) => x.toLowerCase()));
-  const derivedWhitespace = buCatalog.filter((bu) => typeof bu === "string" && bu.trim() && !touched.has(bu.trim().toLowerCase()));
-  const humanWhitespace = Array.isArray(a.whitespace) ? a.whitespace.filter((x) => typeof x === "string" && x.trim()) : [];
+  // On EXCLUT les libellés fourre-tout (« AUTRE », « DIVERS »…) : ce ne sont pas des offres vendables,
+  // le copilote ne doit jamais recommander « introduire l'offre AUTRE » (audit 2026-07).
+  const derivedWhitespace = buCatalog.filter((bu) => typeof bu === "string" && bu.trim() && !touched.has(bu.trim().toLowerCase()) && nt360IsMeaningfulBu(bu));
+  const humanWhitespace = Array.isArray(a.whitespace) ? a.whitespace.filter((x) => typeof x === "string" && x.trim() && nt360IsMeaningfulBu(x)) : [];
   const whitespace0 = [...new Set([...humanWhitespace, ...derivedWhitespace])];
   // Classement du whitespace par AFFINITÉ de cross-sell (market basket) + « next best offer ».
   const ranked = nt360RecommendNextOffers(ownedBus, whitespace0, affinity);
@@ -1905,6 +1907,7 @@ const {
   deriveBuBenchmark: nt360DeriveBuBenchmark,
   matchSignalsToAccount: nt360MatchSignalsToAccount,
   copiloteAccountMatchesScope: nt360AccountMatchesScope,
+  isMeaningfulBu: nt360IsMeaningfulBu,
 } = require("./domain/nt360");
 
 async function runInternalQuantiSync(db) {
