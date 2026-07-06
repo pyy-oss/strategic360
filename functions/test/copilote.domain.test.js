@@ -263,7 +263,7 @@ describe("Copilote — stratège de vente : moteur d'analyse + persona (audit 20
     const p = buildPlanComptePrompt(stratCtx);
     expect(p).toContain("DIAGNOSTIC PRÉ-CALCULÉ");
     expect(p).toContain("83% du CA sur « ICT »"); // 250M/300M
-    expect(p).toContain("CLOUD (dernier achat 2022)"); // dormante (≥2 ans avant 2026)
+    expect(p).toMatch(/CLOUD \(dernier achat 2022/); // dormante (≥2 ans avant 2026), annotée de sa part de CA
     expect(p).toMatch(/Refonte SI.*(DÉPASSÉE|point mort)/); // deal probability 10% + closing passée
     expect(p).toMatch(/75\D000\D000\D?XOF/); // réserve de valeur
   });
@@ -311,6 +311,29 @@ describe("Copilote — stratège de vente : moteur d'analyse + persona (audit 20
     // MEDDIC et Brief reçoivent maintenant le diagnostic pré-calculé (exposition %).
     expect(mod.buildMeddicPrompt(stratCtx)).toContain("20% du CA réalisé");
     expect(mod.buildBriefPrompt(stratCtx)).toContain("20% du CA réalisé");
+  });
+
+  it("CVP recentrée CLIENT (pas un mémo interne) + mots dramatiques bannis + matérialité", async () => {
+    const { buildCvpPrompt } = await import("../domain/copilote.js");
+    const marginalCtx = {
+      compte: "SGCI", casTotal: 300000000, today: "2026-07-05",
+      historique: [
+        { offre: "ICT", cas: 288000000, firstYear: 2020, lastYear: 2024 },
+        { offre: "FORMATION", cas: 1900000, firstYear: 2022, lastYear: 2023 }, // 0,6% → marginale
+      ],
+      valueModel: { whitespacePotential: 75000000 },
+    };
+    const p = buildCvpPrompt(marginalCtx);
+    // Recentrage client (le vrai bug : c'était un mémo interne « solder nos dossiers fantômes »).
+    expect(p).toContain("PRÉSENTÉ AU CLIENT");
+    expect(p).toContain("POINT DE VUE CLIENT");
+    expect(p).toContain("INTERDIT dans le message");
+    // Liste noire de mots dramatiques.
+    expect(p).toContain("MOTS BANNIS");
+    expect(p).toContain("tarissement");
+    // Matérialité : FORMATION dormante taguée « marginale, accessoire ».
+    expect(p).toContain("FORMATION (dernier achat 2023 — marginale, accessoire)");
+    expect(p).toContain("MATÉRIALITÉ");
   });
 
   it("le Chat porte les mêmes garde-fous (refs, proportions, offre réelle)", async () => {

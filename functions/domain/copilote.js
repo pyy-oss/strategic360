@@ -62,8 +62,12 @@ const ANTI_VERBIAGE =
   "de langue de bois. " +
   "SENS DES PROPORTIONS (impératif) : calibre TOUJOURS la gravité à l'échelle du compte — exprime une " +
   "exposition/un montant en % du CA réalisé avant de le qualifier. N'appelle pas « critique » ou " +
-  "« paralysie » une somme qui pèse < 5% du CA. Bannis les clichés dramatiques et les métaphores " +
-  "(« paralysie opérationnelle », « cheval de Troie », « bombe à retardement »…) : dis le fait et sa conséquence, point.";
+  "« paralysie » une somme qui pèse < 5% du CA. MOTS BANNIS (n'en emploie AUCUN) : « critique », « urgence " +
+  "absolue », « tarissement », « paralysie », « dossier(s) fantôme(s) », « en souffrance », « assainir », " +
+  "« cheval de Troie », « bombe à retardement », « alarmant ». Dis le fait et sa conséquence, sobrement. " +
+  "MATÉRIALITÉ : ne bâtis JAMAIS la recommandation centrale sur une ligne marginale (< 2% du CA réalisé) — " +
+  "une offre dormante minuscule ou un micro-deal mort sont des ACCESSOIRES (à mentionner comme nettoyage/" +
+  "détail), jamais le cœur de la stratégie. Le cœur = la plus grosse réserve de valeur adressable.";
 
 // Valeur ajoutée COMMERCIALE (retour terrain « zéro valeur ajoutée, historique mal exploité ») :
 // impose d'exploiter l'historique chiffré et de bâtir sur la next-best-offer data-driven.
@@ -229,9 +233,15 @@ function computeAnalytics(c) {
   }
   const year = Number(String(c.today || "").slice(0, 4)) || null;
   if (year) {
+    // On annote chaque dormante de sa PART de CA → distingue une dormance MATÉRIELLE d'une marginale
+    // (ex. FORMATION 1,9 M = 0,07% → accessoire, ne doit pas devenir le cœur de la stratégie).
     out.dormantes = histo
       .filter((h) => Number(h.lastYear) && year - Number(h.lastYear) >= 2)
-      .map((h) => `${coerceStr(h.offre)} (dernier achat ${h.lastYear})`);
+      .map((h) => {
+        const share = casTotal > 0 ? (Number(h.cas) || 0) / casTotal * 100 : 0;
+        const tag = share < 2 ? " — marginale, accessoire" : `${share >= 1 ? ` ≈ ${Math.round(share)}% du CA` : ""}`;
+        return `${coerceStr(h.offre)} (dernier achat ${h.lastYear}${tag})`;
+      });
   }
   const deals = Array.isArray(c.deals) ? c.deals : [];
   // Exposition = somme des deals en cours, exprimée en % du CA réalisé → donne l'échelle (anti-dramatisation).
@@ -343,7 +353,10 @@ ${ANTI_VERBIAGE}
 ${NO_GENERIC}
 ${HISTO_DIRECTIVE}
 
-Construis la proposition de valeur de Neurones Technologies pour CE compte, en t'appuyant STRICTEMENT sur ses faits réels :
+Rédige la PROPOSITION DE VALEUR de Neurones Technologies POUR CE CLIENT — un texte destiné à être PRÉSENTÉ AU CLIENT (${coerceStr(c.compte, "le compte")}), pas un mémo interne.
+POINT DE VUE CLIENT (impératif) : parle du BÉNÉFICE MÉTIER pour le client, jamais de NOTRE pipeline / NOTRE hygiène commerciale.
+INTERDIT dans le message : « notre CA », « notre pipe/pipeline », « deals en souffrance », « dossiers fantômes », « solder/assainir/nettoyer », « diversifier nos points d'ancrage », « urgence absolue », « tarissement », « critique ». Ce sont des considérations INTERNES — elles n'ont pas leur place dans une proposition de valeur.
+Les faits réels ci-dessous NOURRISSENT ton angle (ils prouvent que tu connais le client), mais le message reste tourné vers CE QUE TU APPORTES au client :
 ${factBase(c)}
 ${analyticsBlock(c)}
 
@@ -354,8 +367,8 @@ Preuves / références NT : ${list(c.preuves)}.${pestel ? `\nAngle de marché (�
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
-  "message": string,                       // 2 phrases : la THÈSE de valeur — un angle NON ÉVIDENT tiré du diagnostic (concentration, offre dormante, deal au point mort, réserve de cross-sell), ancré sur un chiffre réel. Pas un slogan, pas un rappel de données.
-  "differenciateurs": [string]             // 3 : chacun relie UN différenciateur NT à UN levier PRÉCIS de développement de CE compte (deal à débloquer, dormance à réactiver, whitespace chiffré). Aucun différenciateur générique.
+  "message": string,                       // 2 phrases ADRESSÉES AU CLIENT : le bénéfice métier concret que NT lui apporte, avec un angle qui prouve qu'on connaît son contexte (une offre déjà livrée, un enjeu réel) — SANS parler de notre pipeline. Ni slogan creux, ni diagnostic interne.
+  "differenciateurs": [string]             // 3 : chacun = un différenciateur NT (WALLIX PAM, modèle managé OPEX, Neurones Academy…) traduit en BÉNÉFICE pour le client sur un besoin PRÉCIS (sécuriser tel périmètre, passer en récurrent, monter en compétence). Formulé côté valeur client, pas côté « débloquer notre deal ».
 }
 JSON uniquement.`;
 }
