@@ -2,11 +2,13 @@ import React, { useState } from "react";
 import { T, AX, ECAT, PROX, IMP, STANCE } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { useNavigate } from "react-router-dom";
-import { useIntelItems, useSources, withDetectionFields, type IntelSource } from "../lib/intel";
+import { useIntelItems, useSources, withDetectionFields, createSource, updateSource, reactivateSource, deactivateSource, deleteSource, runSyncSourcesNow, type IntelSource, type IntelSourceKind, type IntelAxis } from "../lib/intel";
 import { createAction } from "../lib/execution";
-import { useCan } from "../../../lib/rbac";
+import { useCan, useIsExec } from "../../../lib/rbac";
 import { effectiveProx, isPastDue } from "../lib/freshness";
 import { usePaged, Pager } from "../components/Pager";
+import { Select, Input } from "../../../design/fields";
+import { Modal, useToast } from "../../../design/overlay";
 
 /** "Radar de détection" — ported from `Detection` in the maquette; data source swapped to
  * Firestore `intelItems` (V2). Rendering (sonar SVG, quadrants, badges) is unchanged.
@@ -249,15 +251,122 @@ function sourceHealth(s: IntelSource): { key: "ok" | "degraded" | "error" | "ina
   return { key: "error", label: "En échec", color: T.clay };
 }
 
+const SOURCE_KINDS: { value: IntelSourceKind; label: string }[] = [
+  { value: "rss", label: "RSS / Atom" },
+  { value: "web", label: "Page web" },
+  { value: "web-js", label: "Page web (JS / anti-bot)" },
+  { value: "newsletter", label: "Newsletter" },
+  { value: "portal", label: "Portail" },
+];
+const SOURCE_AXES: { value: IntelAxis; label: string }[] = (Object.keys(AX) as IntelAxis[]).map((k) => ({ value: k, label: AX[k].l }));
+
+/** Ligne de source problématique + actions d'administration (exec) : réactiver / éditer l'URL / désactiver / supprimer. */
+function SourceRow({ s, h, isExec }: { s: IntelSource; h: ReturnType<typeof sourceHealth>; isExec: boolean }) {
+  const toast = useToast();
+  const [editing, setEditing] = useState(false);
+  const [url, setUrl] = useState(s.url || "");
+  const [busy, setBusy] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const act = async (fn: () => Promise<void>, ok: string) => {
+    setBusy(true);
+    try { await fn(); toast.success(ok); } catch (e) { toast.error(e instanceof Error ? e.message : "Échec de l'action."); } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ padding: "8px 10px", background: T.panel2, borderRadius: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 12.5, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
+          <div style={{ fontSize: 11, color: T.faint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={s.lastStatus || s.url}>{s.lastStatus || s.url}</div>
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+          {s.consecutiveFailures ? <span style={{ fontSize: 11, color: T.faint }}>{s.consecutiveFailures}×</span> : null}
+          <Badge c={h.color}>{h.label}</Badge>
+        </div>
+      </div>
+      {isExec && (
+        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+          {(h.key === "inactive" || h.key === "error") && (
+            <button className="pill" disabled={busy} onClick={() => act(() => reactivateSource(s.id), `« ${s.name} » réactivée`)}>↺ Réactiver</button>
+          )}
+          <button className="pill" disabled={busy} onClick={() => setEditing((v) => !v)}>✏️ URL</button>
+          {s.active !== false && (
+            <button className="pill" disabled={busy} onClick={() => act(() => deactivateSource(s.id), `« ${s.name} » désactivée`)}>⏸ Désactiver</button>
+          )}
+          {!confirmDel ? (
+            <button className="pill" disabled={busy} onClick={() => setConfirmDel(true)}>🗑 Supprimer</button>
+          ) : (
+            <>
+              <button className="pill on" disabled={busy} onClick={() => act(() => deleteSource(s.id), `« ${s.name} » supprimée`)}>Confirmer</button>
+              <button className="pill" disabled={busy} onClick={() => setConfirmDel(false)}>Annuler</button>
+            </>
+          )}
+        </div>
+      )}
+      {isExec && editing && (
+        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <Input style={{ flex: "1 1 240px" }} value={url} onChange={setUrl} placeholder="https://…/feed.xml" />
+          <button className="pill on" disabled={busy || !url.trim()} onClick={() => act(async () => { await updateSource(s.id, { url: url.trim() }); await reactivateSource(s.id); }, "URL corrigée + source réactivée")}>Enregistrer</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Formulaire d'ajout de source (modale, exec). */
+function AddSourceModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const toast = useToast();
+  const [f, setF] = useState<{ name: string; url: string; kind: IntelSourceKind; axis: IntelAxis }>({ name: "", url: "", kind: "rss", axis: "reglementaire" });
+  const [busy, setBusy] = useState(false);
+  const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
+  const submit = async () => {
+    if (!f.name.trim() || !f.url.trim()) return;
+    setBusy(true);
+    try {
+      await createSource({ name: f.name.trim(), url: f.url.trim(), kind: f.kind, axis: f.axis, active: true });
+      toast.success(`Source « ${f.name.trim()} » ajoutée.`);
+      setF({ name: "", url: "", kind: "rss", axis: "reglementaire" });
+      onClose();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Échec de l'ajout."); } finally { setBusy(false); }
+  };
+  const lbl: React.CSSProperties = { fontSize: 11, color: T.faint, display: "block", marginBottom: 4 };
+  return (
+    <Modal open={open} onClose={onClose} title="Ajouter une source de veille">
+      <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div style={{ gridColumn: "1 / -1" }}><label style={lbl}>Nom *</label><Input value={f.name} onChange={(v) => set("name", v)} placeholder="ex : ARTCI — communiqués" /></div>
+        <div style={{ gridColumn: "1 / -1" }}><label style={lbl}>URL du flux *</label><Input value={f.url} onChange={(v) => set("url", v)} placeholder="https://…/rss ou page à surveiller" /></div>
+        <div><label style={lbl}>Type</label><Select value={f.kind} onChange={(v) => set("kind", v as IntelSourceKind)} ariaLabel="Type" options={SOURCE_KINDS} /></div>
+        <div><label style={lbl}>Axe</label><Select value={f.axis} onChange={(v) => set("axis", v as IntelAxis)} ariaLabel="Axe" options={SOURCE_AXES} /></div>
+      </div>
+      <div style={{ fontSize: 11, color: T.faint, marginTop: 8 }}>Astuce : pour un site sans flux RSS, choisissez « Page web » (ou « Page web (JS) » si le contenu ne s'affiche qu'après chargement JavaScript).</div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+        <button className="pill" onClick={onClose}>Annuler</button>
+        <button className="pill on" disabled={busy || !f.name.trim() || !f.url.trim()} onClick={() => void submit()}>{busy ? "Ajout…" : "Ajouter la source"}</button>
+      </div>
+    </Modal>
+  );
+}
+
 /**
  * Santé des sources (M4 audit + fiabilisation) : rend visible quelles sources alimentent réellement
- * la veille. Sans ça, l'auto-désactivation des feeds morts était totalement silencieuse. Compteurs
- * en tête + liste repliable des sources en échec/dégradées (les plus urgentes à corriger).
+ * la veille, ET permet de les CORRIGER (audit 2026-07) — réactiver, éditer l'URL, désactiver,
+ * supprimer, ajouter, relancer la synchro. Actions réservées aux rôles exec (firestore.rules).
  */
 function SourceHealthPanel() {
   const { sources, loading } = useSources();
+  const isExec = useIsExec();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
-  if (loading || sources.length === 0) return null;
+  const [showAdd, setShowAdd] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const syncNow = async () => {
+    setSyncing(true);
+    try { const r = await runSyncSourcesNow(); toast.success(`Synchronisation lancée${typeof r?.processed === "number" ? ` — ${r.processed} sources traitées` : ""}.`); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Échec de la synchro."); } finally { setSyncing(false); }
+  };
+  if (loading || sources.length === 0) {
+    // Même vide, les exec doivent pouvoir ajouter une 1re source.
+    if (!isExec) return null;
+  }
   const counts = { ok: 0, degraded: 0, error: 0, inactive: 0 };
   const problems: { s: IntelSource; h: ReturnType<typeof sourceHealth> }[] = [];
   for (const s of sources) {
@@ -266,16 +375,20 @@ function SourceHealthPanel() {
     if (h.key === "error" || h.key === "inactive" || h.key === "degraded") problems.push({ s, h });
   }
   const total = sources.length;
-  const okPct = Math.round((counts.ok / total) * 100);
+  const okPct = total ? Math.round((counts.ok / total) * 100) : 0;
   return (
     <Card style={{ marginBottom: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <Eyebrow color={T.emerald}>Santé des sources — {counts.ok}/{total} actives ({okPct}%)</Eyebrow>
-        {problems.length > 0 && (
-          <button className="pill" onClick={() => setOpen((v) => !v)}>
-            {open ? "Masquer" : `Voir ${problems.length} à corriger`}
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {isExec && <button className="pill" disabled={syncing} onClick={() => void syncNow()}>{syncing ? <><span className="cop-spin" /> Synchro…</> : "↻ Relancer la synchro"}</button>}
+          {isExec && <button className="pill on" onClick={() => setShowAdd(true)}>+ Ajouter</button>}
+          {problems.length > 0 && (
+            <button className="pill" onClick={() => setOpen((v) => !v)}>
+              {open ? "Masquer" : `${isExec ? "Corriger" : "Voir"} ${problems.length}`}
+            </button>
+          )}
+        </div>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
         <Badge c={T.emerald}>OK : {counts.ok}</Badge>
@@ -283,24 +396,20 @@ function SourceHealthPanel() {
         <Badge c={T.clay}>En échec : {counts.error}</Badge>
         <Badge c={T.faint}>Désactivées : {counts.inactive}</Badge>
       </div>
-      {open && (
-        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6, maxHeight: 280, overflowY: "auto" }}>
-          {problems
-            .sort((a, b) => (b.s.consecutiveFailures ?? 0) - (a.s.consecutiveFailures ?? 0))
-            .map(({ s, h }) => (
-              <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", padding: "6px 10px", background: T.panel2, borderRadius: 8 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
-                  <div style={{ fontSize: 11, color: T.faint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.url}</div>
-                </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-                  {s.consecutiveFailures ? <span style={{ fontSize: 11, color: T.faint }}>{s.consecutiveFailures}×</span> : null}
-                  <Badge c={h.color}>{h.label}</Badge>
-                </div>
-              </div>
-            ))}
+      {isExec && (
+        <div style={{ fontSize: 11.5, color: T.faint, marginTop: 8, lineHeight: 1.5 }}>
+          Une source est auto-désactivée après 5 échecs consécutifs. <b>Réactiver</b> lui redonne sa chance à la prochaine synchro ;
+          si l'URL a changé, <b>Éditez l'URL</b> (elle est réactivée automatiquement) ; si le flux est mort, <b>Supprimez-la</b>.
         </div>
       )}
+      {open && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6, maxHeight: 380, overflowY: "auto" }}>
+          {problems
+            .sort((a, b) => (b.s.consecutiveFailures ?? 0) - (a.s.consecutiveFailures ?? 0))
+            .map(({ s, h }) => <SourceRow key={s.id} s={s} h={h} isExec={isExec} />)}
+        </div>
+      )}
+      <AddSourceModal open={showAdd} onClose={() => setShowAdd(false)} />
     </Card>
   );
 }

@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   orderBy,
@@ -26,7 +27,8 @@ import {
   type QueryConstraint,
   type Timestamp,
 } from "firebase/firestore";
-import { auth, db } from "../../../lib/firebase";
+import { httpsCallable } from "firebase/functions";
+import { auth, db, functions } from "../../../lib/firebase";
 
 /* ---------------------------------------------------------------------------------------------
  * Types (BUILD_KIT.md §6)
@@ -310,6 +312,28 @@ export function useSources(): { sources: IntelSource[]; loading: boolean; error:
 export async function createSource(input: IntelSourceInput): Promise<string> {
   const ref = await addDoc(collection(db, "intelSources"), { ...input, lastFetch: null });
   return ref.id;
+}
+/** Édite une source (URL, nom, kind, axe, active…). Réservé exec (firestore.rules). */
+export async function updateSource(id: string, patch: Partial<IntelSourceInput>): Promise<void> {
+  await updateDoc(doc(db, "intelSources", id), patch);
+}
+/** Réactive une source désactivée : remet active=true, remet le compteur d'échecs à 0. */
+export async function reactivateSource(id: string): Promise<void> {
+  await updateDoc(doc(db, "intelSources", id), { active: true, consecutiveFailures: 0, lastStatus: "réactivée (en attente de synchro)" });
+}
+/** Désactive une source (sans la supprimer) — elle ne sera plus synchronisée. */
+export async function deactivateSource(id: string): Promise<void> {
+  await updateDoc(doc(db, "intelSources", id), { active: false });
+}
+/** Supprime définitivement une source. */
+export async function deleteSource(id: string): Promise<void> {
+  await deleteDoc(doc(db, "intelSources", id));
+}
+/** Relance la synchronisation des sources maintenant (callable exec). Retourne les compteurs. */
+export async function runSyncSourcesNow(): Promise<Record<string, unknown>> {
+  const call = httpsCallable<void, Record<string, unknown>>(functions, "syncSourcesNow");
+  const { data } = await call();
+  return data;
 }
 
 /* ---------------------------------------------------------------------------------------------
