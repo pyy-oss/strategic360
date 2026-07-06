@@ -287,7 +287,7 @@ describe("Copilote — stratège de vente : moteur d'analyse + persona (audit 20
   });
 
   it("garde-fous anti-2/10 : interdiction des références inventées + sens des proportions (exposition %)", async () => {
-    const { buildCvpPrompt } = await import("../domain/copilote.js");
+    const { buildCvpPrompt, buildMeddicPrompt } = await import("../domain/copilote.js");
     const p = buildCvpPrompt(stratCtx);
     // Fix 2 : anti-invention des références (BCEAO/régulateurs…).
     expect(p).toContain("RÉFÉRENCES INTERDITES SANS PREUVE");
@@ -295,8 +295,9 @@ describe("Copilote — stratège de vente : moteur d'analyse + persona (audit 20
     // Fix 3 : sens des proportions + anti-dramatisation.
     expect(p).toContain("SENS DES PROPORTIONS");
     expect(p).toContain("cheval de Troie"); // cliché explicitement banni
-    // exposition du pipeline exprimée en % du CA (60M sur 300M = 20%).
-    expect(p).toContain("20% du CA réalisé");
+    // exposition du pipeline exprimée en % du CA (60M sur 300M = 20%). La CVP est désormais tournée
+    // CLIENT (plus de diagnostic interne) : l'exposition est portée par les agents à socle diagnostique.
+    expect(buildMeddicPrompt(stratCtx)).toContain("20% du CA réalisé");
   });
 
   it("garde-fous GÉNÉRALISÉS à tous les agents ancrés (offre bidon + refs + proportions)", async () => {
@@ -314,7 +315,7 @@ describe("Copilote — stratège de vente : moteur d'analyse + persona (audit 20
   });
 
   it("CVP recentrée CLIENT (pas un mémo interne) + mots dramatiques bannis + matérialité", async () => {
-    const { buildCvpPrompt } = await import("../domain/copilote.js");
+    const { buildCvpPrompt, buildMeddicPrompt } = await import("../domain/copilote.js");
     const marginalCtx = {
       compte: "SGCI", casTotal: 300000000, today: "2026-07-05",
       historique: [
@@ -331,8 +332,9 @@ describe("Copilote — stratège de vente : moteur d'analyse + persona (audit 20
     // Liste noire de mots dramatiques.
     expect(p).toContain("MOTS BANNIS");
     expect(p).toContain("tarissement");
-    // Matérialité : FORMATION dormante taguée « marginale, accessoire ».
-    expect(p).toContain("FORMATION (dernier achat 2023 — marginale, accessoire)");
+    // Matérialité : FORMATION dormante taguée « marginale, accessoire » — dans le socle diagnostique
+    // (agents internes), plus dans la CVP client-facing.
+    expect(buildMeddicPrompt(marginalCtx)).toContain("FORMATION (dernier achat 2023 — marginale, accessoire)");
     expect(p).toContain("MATÉRIALITÉ");
   });
 

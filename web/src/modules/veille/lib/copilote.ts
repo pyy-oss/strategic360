@@ -180,7 +180,7 @@ export type CopiloteAgent =
 export interface ProspectionCible { nom: string; source?: string; angle: string; accroche: string; offre?: string; chaleur: "Chaud" | "Tiède" | "Froid" }
 export interface ProspectionResult { cibles: ProspectionCible[] }
 
-export interface CvpResult { message: string; differenciateurs: string[] }
+export interface CvpResult { message: string; differenciateurs: string[]; prochaineEtape?: string }
 
 export interface TriennalItem { an: "An 1" | "An 2" | "An 3"; titre: string; offres: string[]; caCible?: string; jalon: string }
 export interface TriennalResult { roadmap: TriennalItem[] }
@@ -199,6 +199,7 @@ export interface RedactionResult { variantes: RedactionVariante[] }
 export interface MeddicResult {
   metrics: string; economicBuyer: string; decisionCriteria: string; decisionProcess: string;
   identifiedPain: string; champion: string; competition: string; score: number;
+  verdict?: "poursuivre" | "requalifier" | "désengager"; blocageCritique?: string;
   trous: string[]; prochainesActions: string[];
 }
 export interface QaPair { objection: string; reponse: string }

@@ -2,8 +2,17 @@ import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import VeilleApp from "./modules/veille/App";
 import Login from "./modules/auth/Login";
-import { AuthProvider, RequireAuth, RequireCan } from "./lib/AuthProvider";
+import { AuthProvider, RequireAuth, RequireCan, useAuthClaims } from "./lib/AuthProvider";
 import { ToastProvider } from "./design/overlay";
+
+/** Role-aware landing: commercial roles work from the Copilote first; everyone else from the radar.
+ * Waits for claims to resolve so the redirect targets the right home instead of flashing the radar. */
+function Landing() {
+  const { role, loading } = useAuthClaims();
+  if (loading) return null;
+  const commercial = role === "commercial" || role === "commercial_dir";
+  return <Navigate to={commercial ? "/veille/copilote" : "/veille/radar"} replace />;
+}
 
 /** Top-level app router. V0: single module (Veille Stratégique) mounted at /veille/:view.
  * Default route redirects to the executive radar view.
@@ -16,7 +25,7 @@ export default function App() {
       <ToastProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/" element={<Navigate to="/veille/radar" replace />} />
+        <Route path="/" element={<Landing />} />
         <Route
           path="/veille/:view"
           element={

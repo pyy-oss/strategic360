@@ -358,7 +358,8 @@ POINT DE VUE CLIENT (impératif) : parle du BÉNÉFICE MÉTIER pour le client, j
 INTERDIT dans le message : « notre CA », « notre pipe/pipeline », « deals en souffrance », « dossiers fantômes », « solder/assainir/nettoyer », « diversifier nos points d'ancrage », « urgence absolue », « tarissement », « critique ». Ce sont des considérations INTERNES — elles n'ont pas leur place dans une proposition de valeur.
 Les faits réels ci-dessous NOURRISSENT ton angle (ils prouvent que tu connais le client), mais le message reste tourné vers CE QUE TU APPORTES au client :
 ${factBase(c)}
-${analyticsBlock(c)}
+${valueModelBlock(c)}
+Quand tu proposes d'ouvrir une offre, CHIFFRE-la au panier de référence réel ci-dessus (jamais un montant inventé ; « à chiffrer » si absent).
 
 Différenciateurs NT mobilisables (source unique — à relier chacun à UN enjeu/whitespace/deal NOMMÉ de ce compte, jamais en vrac ; Neurones Academy est un levier de cross-sell/ancrage à ne pas oublier) :
 ${NT_DIFFERENCIATEURS}.
@@ -368,7 +369,8 @@ Preuves / références NT : ${list(c.preuves)}.${pestel ? `\nAngle de marché (�
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
   "message": string,                       // 2 phrases ADRESSÉES AU CLIENT : le bénéfice métier concret que NT lui apporte, avec un angle qui prouve qu'on connaît son contexte (une offre déjà livrée, un enjeu réel) — SANS parler de notre pipeline. Ni slogan creux, ni diagnostic interne.
-  "differenciateurs": [string]             // 3 : chacun = un différenciateur NT (WALLIX PAM, modèle managé OPEX, Neurones Academy…) traduit en BÉNÉFICE pour le client sur un besoin PRÉCIS (sécuriser tel périmètre, passer en récurrent, monter en compétence). Formulé côté valeur client, pas côté « débloquer notre deal ».
+  "differenciateurs": [string],            // 3 : chacun = un différenciateur NT (WALLIX PAM, modèle managé OPEX, Neurones Academy…) traduit en BÉNÉFICE pour le client sur un besoin PRÉCIS, chiffré au panier réel si une offre est visée. Formulé côté valeur client.
+  "prochaineEtape": string                 // LA prochaine action commerciale concrète pour matérialiser cette valeur (RDV de cadrage, chiffrage d'une offre nommée, atelier…) — courte, actionnable.
 }
 JSON uniquement.`;
 }
@@ -377,8 +379,9 @@ function parseCvpResponse(raw) {
   if (!raw || typeof raw !== "object") return null;
   const message = coerceStr(raw.message);
   const differenciateurs = coerceStrArray(raw.differenciateurs);
+  const prochaineEtape = coerceStr(raw.prochaineEtape);
   if (!message && !differenciateurs.length) return null;
-  return { message, differenciateurs };
+  return { message, differenciateurs, prochaineEtape };
 }
 
 /* ------------------------------------------------------------------------------------------- *
@@ -450,6 +453,8 @@ ${factBase(c)}
 ${contactsBlock(c)}
 ${competitorBlock(c)}
 ${analyticsBlock(c)}
+${valueModelBlock(c)}
+L'"impact" de chaque mouvement DOIT être chiffré au panier de référence réel ci-dessus (montant XOF), jamais inventé.
 
 Tu es le stratège du compte. Livre une lecture, une thèse et des mouvements tranchés — pas un catalogue d'actions équilibrées.
 
@@ -631,10 +636,17 @@ function buildRedactionPrompt(ctx) {
   const faits = hasCompte
     ? `${NO_GENERIC}\n\nFaits réels du compte (ancrer l'accroche sur UN chiffre réel — CA réalisé / deal en cours — une offre du whitespace, ou un déclencheur de veille rattaché ; ne rien inventer au-delà) :\n${factBase(c)}\n`
     : "";
+  // Destinataire nominatif (audit doublement CA) : un message adressé au bon décideur, calé sur la douleur
+  // de son rôle, convertit un multiple d'un message générique. La donnée contact est déjà en base.
+  const dest = coerceStr(c.destinataire);
+  const destBlock = dest
+    ? `Destinataire : ${dest}. Ouvre par une salutation NOMINATIVE et cale l'accroche sur la douleur de son rôle (DSI → continuité/sécurité/dette technique ; DAF → coût/ROI/cash ; Achats → conditions/TCO ; DG → impact métier/risque).`
+    : `${contactsBlock(c)} Si un décideur est connu ci-dessus, adresse-lui le message nominativement et cale l'angle sur son rôle ; sinon reste au niveau compte sans inventer de nom.`;
   return `${NT_ROLE}
 Tu rédiges des messages commerciaux prêts à envoyer.
 ${faits}
 Rédige un message de type "${coerceStr(c.kind, "prise de contact")}" pour le compte ${coerceStr(c.compte, "le compte")}.
+${destBlock}
 Canal — ${CANAL[canal]}
 Ton — ${TON[ton]}.
 Contexte fourni (à utiliser SANS rien inventer) : ${coerceStr(c.contexte) || (hasCompte ? "aucun contexte libre — appuie-toi sur les faits réels du compte ci-dessus." : "AUCUN — indique clairement ce qu'il manque au lieu d'inventer.")}
@@ -690,11 +702,14 @@ Réponds UNIQUEMENT avec un objet JSON valide :
   "champion": string,           // relais interne (contact réel) ou « à identifier »
   "competition": string,        // concurrent en place (battlecard) ou « inconnu »
   "score": number,              // 0-100 : maturité de qualification
+  "verdict": "poursuivre" | "requalifier" | "désengager",  // recommandation TRANCHÉE en croisant le score MEDDIC ET la probabilité/étape réelle du deal
+  "blocageCritique": string,    // LE seul critère dont la fermeture fait le plus avancer le deal (le prochain jalon débloquant)
   "trous": [string],            // informations manquantes à combler (2-5)
   "prochainesActions": [string] // 2-4 actions de qualification concrètes et datables
 }
 JSON uniquement.`;
 }
+const MEDDIC_VERDICTS = ["poursuivre", "requalifier", "désengager"];
 function parseMeddicResponse(raw) {
   if (!raw || typeof raw !== "object") return null;
   const s = Number(raw.score);
@@ -707,6 +722,8 @@ function parseMeddicResponse(raw) {
     champion: coerceStr(raw.champion, "à identifier"),
     competition: coerceStr(raw.competition, "inconnu"),
     score: Number.isFinite(s) ? Math.max(0, Math.min(100, Math.round(s))) : 0,
+    verdict: coerceEnum(raw.verdict, MEDDIC_VERDICTS, "requalifier"),
+    blocageCritique: coerceStr(raw.blocageCritique),
     trous: coerceStrArray(raw.trous).slice(0, 6),
     prochainesActions: coerceStrArray(raw.prochainesActions).slice(0, 5),
   };
@@ -876,6 +893,7 @@ ${NO_GENERIC}
 
 Bâtis une SÉQUENCE DE PROSPECTION MULTI-TOUCH datée (cadence 4 à 6 points de contact sur ~3 semaines) pour CE compte, à partir de ses faits réels :
 ${factBase(c)}
+${coerceStr(c.destinataire) ? `Destinataire : ${coerceStr(c.destinataire)} — chaque touche s'adresse nominativement à lui, angle calé sur son rôle.` : contactsBlock(c)}
 Date du jour : ${coerceStr(c.today, "aujourd'hui")}. Date chaque touche en jours à partir d'aujourd'hui (J0, J+3, J+7…).
 
 Règle : alterne les canaux, chaque touche a un OBJECTIF distinct (accroche → valeur → preuve → relance → alternative → rupture), et un
