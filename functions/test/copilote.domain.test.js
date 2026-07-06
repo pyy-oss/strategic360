@@ -298,6 +298,28 @@ describe("Copilote — stratège de vente : moteur d'analyse + persona (audit 20
     // exposition du pipeline exprimée en % du CA (60M sur 300M = 20%).
     expect(p).toContain("20% du CA réalisé");
   });
+
+  it("garde-fous GÉNÉRALISÉS à tous les agents ancrés (offre bidon + refs + proportions)", async () => {
+    const mod = await import("../domain/copilote.js");
+    const agents = [mod.buildTriennalPrompt, mod.buildPlanActionPrompt, mod.buildDealAnalysisPrompt, mod.buildBusinessCasePrompt, mod.buildMeddicPrompt, mod.buildBriefPrompt, mod.buildStakeholdersPrompt];
+    for (const build of agents) {
+      const p = build(stratCtx);
+      expect(p).toContain("OFFRES RÉELLES UNIQUEMENT"); // anti offre fourre-tout
+      expect(p).toContain("RÉFÉRENCES INTERDITES SANS PREUVE"); // anti-invention refs
+      expect(p).toContain("SENS DES PROPORTIONS"); // calibrage
+    }
+    // MEDDIC et Brief reçoivent maintenant le diagnostic pré-calculé (exposition %).
+    expect(mod.buildMeddicPrompt(stratCtx)).toContain("20% du CA réalisé");
+    expect(mod.buildBriefPrompt(stratCtx)).toContain("20% du CA réalisé");
+  });
+
+  it("le Chat porte les mêmes garde-fous (refs, proportions, offre réelle)", async () => {
+    const { buildChatSystem } = await import("../domain/copilote.js");
+    const sys = buildChatSystem({ ecran: "Copilote", compte: { nom: "SGCI", casTotal: 300000000, deals: stratCtx.deals, historique: stratCtx.historique, today: "2026-07-05", valueModel: stratCtx.valueModel } });
+    expect(sys).toContain("GARDE-FOUS");
+    expect(sys).toContain("n'invente AUCUNE référence");
+    expect(sys).toContain("offre fourre-tout");
+  });
 });
 
 describe("Copilote — désambiguïsation de marque dans les contenus sortants (audit 2026-07)", () => {

@@ -37,7 +37,10 @@ const NO_GENERIC =
   "RÉFÉRENCES INTERDITES SANS PREUVE : n'affirme JAMAIS une référence client, un partenariat, une " +
   "certification ou une proximité institutionnelle (BCEAO, banque centrale, régulateurs, opérateurs, " +
   "bailleurs…) qui ne figure pas explicitement dans « Preuves / références NT ». Si cette liste est " +
-  "« aucun », NE REVENDIQUE AUCUNE référence — propose plutôt d'en constituer une.";
+  "« aucun », NE REVENDIQUE AUCUNE référence — propose plutôt d'en constituer une. " +
+  "OFFRES RÉELLES UNIQUEMENT : ne construis JAMAIS une recommandation, un cross-sell ou un chiffrage sur un " +
+  "libellé fourre-tout (« AUTRE », « DIVERS », « N/A » ou toute catégorie technique) — même s'il apparaît " +
+  "dans l'historique. Nomme une offre concrète et vendable ; à défaut, propose de préciser l'offre.";
 
 // Persona STRATÈGE (retour terrain « c'est superficiel, générique, zéro analyse, juste un rappel des
 // données internes »). Le copilote n'est pas un restituteur de données : c'est un stratège de vente et
@@ -537,6 +540,10 @@ function buildChatSystem(ctx) {
     "contexte ci-dessous : si elle manque, dis-le explicitement au lieu de l'estimer. " +
     "Ancre tes réponses sur les FAITS RÉELS du compte ci-dessous (montants, offres vendues, whitespace, deals, " +
     "concurrents, taux de victoire) : cite-les. Pas de généralités macro ni de copier-coller de veille. " +
+    "GARDE-FOUS (impératifs) : (1) n'invente AUCUNE référence/partenariat/proximité institutionnelle (BCEAO, " +
+    "régulateurs…) absente du contexte ; (2) calibre la gravité à l'échelle — exprime une exposition en % du CA, " +
+    "ne dramatise pas une part < 5%, pas de métaphores ; (3) ne recommande jamais une offre fourre-tout (AUTRE, " +
+    "DIVERS) : nomme une offre réelle. " +
     `Contexte : écran « ${coerceStr(c.ecran, "Copilote")} ». `;
   // Réutilise la même fiche de faits + l'intelligence concurrentielle/valeur que les autres agents.
   const compte = c.compte
@@ -655,6 +662,7 @@ Qualifie l'opportunité principale de CE compte selon MEDDIC (+ note de confianc
 ${factBase(c)}
 ${contactsBlock(c)}
 ${winStatsBlock(c)}
+${analyticsBlock(c)}
 
 Règle : chaque critère MEDDIC s'appuie sur un FAIT réel du compte (montant, deal nommé, contact, offre). Si l'information
 n'existe pas dans les faits, écris « à qualifier » (jamais d'invention) et ajoute-la dans "trous" + "prochainesActions".
@@ -708,6 +716,7 @@ Prépare une NOTE DE BRIEF avant un rendez-vous commercial pour CE compte, à pa
 ${factBase(c)}
 ${contactsBlock(c)}
 ${competitorBlock(c)}
+${analyticsBlock(c)}
 Objectif du rendez-vous (si fourni) : ${objectif || "non précisé — proposer l'objectif le plus utile au vu du pipeline"}.
 
 Réponds UNIQUEMENT avec un objet JSON valide :

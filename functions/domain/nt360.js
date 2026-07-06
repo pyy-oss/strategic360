@@ -277,7 +277,8 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
       const fp = String(o.fp || "").trim();
       const buLabel = o.bu ? String(o.bu).trim() : "";
       a.opps.push({
-        nom: fp || (buLabel ? `Opportunité ${buLabel}` : "Opportunité"),
+        // Libellé fourre-tout (« AUTRE »…) → « Opportunité (offre à préciser) » plutôt que « Opportunité AUTRE ».
+        nom: fp || (isMeaningfulBu(buLabel) ? `Opportunité ${buLabel}` : "Opportunité (offre à préciser)"),
         ref: String(o.oppId || "").trim(),
         montant: num(o.amount),
         etape: String(o.stageLabel || `Stade ${stage}`).trim(),
