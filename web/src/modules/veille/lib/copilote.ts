@@ -185,9 +185,9 @@ export interface CvpResult { message: string; differenciateurs: string[] }
 export interface TriennalItem { an: "An 1" | "An 2" | "An 3"; titre: string; offres: string[]; caCible?: string; jalon: string }
 export interface TriennalResult { roadmap: TriennalItem[] }
 
-export interface PlanCompteAction { libelle: string; horizon: "Court terme" | "Moyen terme" | "Continu" }
+export interface PlanCompteMouvement { titre: string; pourquoi: string; impact: string; horizon: "Court terme" | "Moyen terme" | "Continu" }
 export interface PlanCompteRisque { r: string; m: string; niv: "Élevé" | "Moyen" | "Faible" }
-export interface PlanCompteResult { actions: PlanCompteAction[]; risques: PlanCompteRisque[] }
+export interface PlanCompteResult { diagnostic: string; these: string; mouvements: PlanCompteMouvement[]; risquesCaches: PlanCompteRisque[] }
 
 export interface PlanActionItem { quand: "0–30 jours" | "30–60 jours" | "60–90 jours" | "Continu"; echeance?: string; action: string; objet: string; preuve: string }
 export interface PlanActionResult { plan: PlanActionItem[] }

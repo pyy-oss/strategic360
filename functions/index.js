@@ -1812,7 +1812,7 @@ async function assembleCopiloteContext(db, accountId) {
     winStats,      // taux de victoire réel (global + par concurrent + leçons)
     valueModel,    // modèle de valeur chiffré (paniers de référence réels) — pour le business case
     today: new Date().toISOString().slice(0, 10), // ancrage temporel des séquences/plans datés
-    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte, battlecards, winStats, valueModel },
+    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte, battlecards, winStats, valueModel, today: new Date().toISOString().slice(0, 10) },
   };
 }
 

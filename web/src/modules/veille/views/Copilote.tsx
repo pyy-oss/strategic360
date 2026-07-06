@@ -46,7 +46,7 @@ const AGENT_TABS: { k: string; l: string; icon: string }[] = [
   { k: "stakeholders", l: "Parties prenantes", icon: "🕸️" },
   { k: "brief", l: "Brief RDV", icon: "📑" },
   { k: "triennal", l: "Plan triennal", icon: "🗺️" },
-  { k: "planCompte", l: "Plan de compte", icon: "📋" },
+  { k: "planCompte", l: "Stratégie de compte", icon: "📋" },
   { k: "planAction", l: "Plan d'action 90 j", icon: "⚡" },
   { k: "redaction", l: "Rédaction", icon: "✍️" },
   { k: "chat", l: "Chat", icon: "💬" },
@@ -642,43 +642,58 @@ function TriennalTab({ accountId, disabled, canWrite }: { accountId: string; dis
 
 function PlanCompteTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
   const { data, busy, err, done, run } = useAgent<PlanCompteResult>("planCompte", accountId);
+  const HZ_C: Record<string, string> = { "Court terme": T.clay, "Moyen terme": T.gold, Continu: T.steel };
   return (
-    <Card>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <Eyebrow color={T.emerald}>Plan de compte — actions & risques</Eyebrow>
-        <GenButton busy={busy} disabled={disabled || !canWrite} onClick={() => run()} label="Générer le plan de compte" />
-      </div>
-      <PickHint show={disabled} />
-      <ReadOnlyNote show={!canWrite} />
+    <TabShell title="Stratégie de développement du compte" busy={busy} disabled={disabled} canWrite={canWrite} done={done} empty={!data} onRun={() => run()} label="Élaborer la stratégie" hint="Sélectionnez un compte pour sa stratégie de développement.">
       <ErrLine err={err} />
-      <GenSkeleton show={busy} />
-      <EmptyLine show={done && !busy && !data} />
       {data && (
-        <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 12 }}>
-          <div>
-            <div style={{ fontSize: 12, color: T.emerald, fontWeight: 600, marginBottom: 8 }}>Actions priorisées</div>
-            {data.actions.map((a, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "7px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}>
-                <span style={{ fontSize: 12.5, color: T.ink }}>{a.libelle}</span>
-                <Badge c={T.steel}>{a.horizon}</Badge>
+        <div style={{ marginTop: 12 }}>
+          {data.diagnostic && (
+            <div style={{ padding: "12px 14px", background: T.panel2, borderRadius: 10, borderLeft: `3px solid ${T.plum}` }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", color: T.plum }}>Diagnostic</div>
+              <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.55, marginTop: 4 }}>{data.diagnostic}</div>
+            </div>
+          )}
+          {data.these && (
+            <div style={{ marginTop: 10, padding: "12px 14px", background: T.panel2, borderRadius: 10, borderLeft: `3px solid ${T.gold}` }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", color: T.gold }}>Thèse de développement</div>
+              <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.55, marginTop: 4 }}>{data.these}</div>
+            </div>
+          )}
+          {data.mouvements.length > 0 && (
+            <Section title="Mouvements prioritaires (tranchés)" color={T.emerald}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+                {data.mouvements.map((m, i) => (
+                  <div key={i} style={{ background: T.panel2, borderRadius: 9, padding: "10px 12px" }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{i === 0 ? "① " : `${i + 1}. `}{m.titre}</span>
+                      <Badge c={HZ_C[m.horizon] ?? T.faint}>{m.horizon}</Badge>
+                    </div>
+                    {m.pourquoi && <div style={{ fontSize: 12, color: T.dim, marginTop: 3 }}><b style={{ color: T.steel }}>Pourquoi :</b> {m.pourquoi}</div>}
+                    {m.impact && <div style={{ fontSize: 12.5, color: T.emerald, marginTop: 2, fontWeight: 600 }}>📈 {m.impact}</div>}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div>
-            <div style={{ fontSize: 12, color: T.clay, fontWeight: 600, marginBottom: 8 }}>Risques & mitigation</div>
-            {data.risques.map((r, i) => (
-              <div key={i} style={{ padding: "7px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <span style={{ fontSize: 12.5, color: T.ink }}>{r.r}</span>
-                  <Badge c={NIV_C[r.niv] ?? T.faint}>{r.niv}</Badge>
-                </div>
-                <div style={{ fontSize: 11.5, color: T.dim, marginTop: 2 }}><b style={{ color: T.emerald }}>Mitigation :</b> {r.m}</div>
+            </Section>
+          )}
+          {data.risquesCaches.length > 0 && (
+            <Section title="Risques cachés" color={T.clay}>
+              <div style={{ marginTop: 6 }}>
+                {data.risquesCaches.map((r, i) => (
+                  <div key={i} style={{ padding: "7px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <span style={{ fontSize: 12.5, color: T.ink }}>{r.r}</span>
+                      <Badge c={NIV_C[r.niv] ?? T.faint}>{r.niv}</Badge>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: T.dim, marginTop: 2 }}><b style={{ color: T.emerald }}>Parade :</b> {r.m}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </Section>
+          )}
         </div>
       )}
-    </Card>
+    </TabShell>
   );
 }
 

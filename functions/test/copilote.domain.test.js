@@ -41,14 +41,18 @@ describe("Copilote — parsers (coercition, jamais d'undefined)", () => {
     expect(r.roadmap[0].an).toBe("An 1"); // invalide → défaut
     expect(r.roadmap[0].offres).toEqual(["support"]);
   });
-  it("parsePlanCompteResponse : horizon/niveau coercés, null si vide", async () => {
+  it("parsePlanCompteResponse (stratégie) : diagnostic/thèse/mouvements/risquesCachés coercés, null si vide", async () => {
     const { parsePlanCompteResponse } = await import("../domain/copilote.js");
     const r = parsePlanCompteResponse({
-      actions: [{ libelle: "COPIL trimestriel", horizon: "Toujours" }],
-      risques: [{ r: "sponsor unique", m: "multiplier les contacts", niv: "Critique" }],
+      diagnostic: "78% du CA sur ICT, CLOUD dormant",
+      these: "Convertir la captation ICT en compte multi-offres",
+      mouvements: [{ titre: "Ouvrir CLOUD", pourquoi: "dormance", impact: "≈ 45M", horizon: "Toujours" }],
+      risquesCaches: [{ r: "mono-contact DSI", m: "multi-threader", niv: "Critique" }],
     });
-    expect(r.actions[0].horizon).toBe("Continu");
-    expect(r.risques[0].niv).toBe("Moyen");
+    expect(r.diagnostic).toContain("78%");
+    expect(r.mouvements[0].horizon).toBe("Continu"); // enum coercé
+    expect(r.mouvements[0].impact).toBe("≈ 45M");
+    expect(r.risquesCaches[0].niv).toBe("Moyen"); // enum coercé
     expect(parsePlanCompteResponse({})).toBeNull();
   });
   it("parseChatResponse / parseRedactionResponse : null si inexploitable", async () => {
@@ -240,6 +244,46 @@ describe("Copilote — profondeur : données réelles branchées + nouveaux agen
     const seq = buildSequencePrompt(richCtx);
     expect(seq).toContain("2026-07-05"); // ancrage temporel
     expect(seq).toContain("MULTI-TOUCH");
+  });
+});
+
+describe("Copilote — stratège de vente : moteur d'analyse + persona (audit 2026-07)", () => {
+  const stratCtx = {
+    compte: "SGCI", casTotal: 300000000, today: "2026-07-05",
+    historique: [
+      { offre: "ICT", cas: 250000000, firstYear: 2020, lastYear: 2024 },
+      { offre: "CLOUD", cas: 50000000, firstYear: 2021, lastYear: 2022 },
+    ],
+    deals: [{ nom: "Refonte SI", montant: 60000000, probability: 0.1, closingDate: "2025-01-01", etape: "1-Qualification" }],
+    valueModel: { whitespacePotential: 75000000 },
+  };
+
+  it("le DIAGNOSTIC pré-calculé détecte concentration, dormance et deal fantôme (données interprétées)", async () => {
+    const { buildPlanComptePrompt } = await import("../domain/copilote.js");
+    const p = buildPlanComptePrompt(stratCtx);
+    expect(p).toContain("DIAGNOSTIC PRÉ-CALCULÉ");
+    expect(p).toContain("83% du CA sur « ICT »"); // 250M/300M
+    expect(p).toContain("CLOUD (dernier achat 2022)"); // dormante (≥2 ans avant 2026)
+    expect(p).toMatch(/Refonte SI.*(DÉPASSÉE|point mort)/); // deal probability 10% + closing passée
+    expect(p).toMatch(/75\D000\D000\D?XOF/); // réserve de valeur
+  });
+
+  it("la persona STRATÈGE + anti-verbiage sont injectées et exigent l'analyse (pas la restitution)", async () => {
+    const { buildPlanComptePrompt, buildCvpPrompt, buildDealAnalysisPrompt } = await import("../domain/copilote.js");
+    for (const p of [buildPlanComptePrompt(stratCtx), buildCvpPrompt(stratCtx), buildDealAnalysisPrompt(stratCtx)]) {
+      expect(p).toContain("STRATÈGE DE VENTE");
+      expect(p).toContain("NE LES LUI RÉCITE PAS");
+      expect(p).toContain("INTERDIT ABSOLU");
+    }
+  });
+
+  it("la stratégie de compte demande diagnostic/thèse/mouvements tranchés (pas une to-do list)", async () => {
+    const { buildPlanComptePrompt } = await import("../domain/copilote.js");
+    const p = buildPlanComptePrompt(stratCtx);
+    expect(p).toContain('"diagnostic"');
+    expect(p).toContain('"these"');
+    expect(p).toContain('"mouvements"');
+    expect(p).toContain("LE coup à jouer maintenant");
   });
 });
 
