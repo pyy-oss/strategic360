@@ -1406,6 +1406,7 @@ const {
   buildScenariosPrompt,
   parseScenariosResponse,
   pickSignalsForEnrichment,
+  diversifySignals,
   slugId: enrichSlugId,
 } = require("./domain/enrich");
 
@@ -1734,7 +1735,6 @@ async function runEnrichment(db) {
     ["ansoff", buildAnsoffPrompt, parseAnsoffResponse],
     ["vrio", buildVrioPrompt, parseVrioResponse],
     ["valueChain", buildValueChainPrompt, parseValueChainResponse],
-    ["scenarios", buildScenariosPrompt, parseScenariosResponse],
   ]) {
     try {
       const parsed = parse(await generateJson(build(signals, companyContext)));
@@ -1748,6 +1748,24 @@ async function runEnrichment(db) {
       summary[key] = "failed";
       logger.error(`runEnrichment: ${key} generation FAILED — ${err.message}`, { err });
     }
+  }
+
+  // 7d. Scénarios prospectifs — cas particulier : l'exercice était « obsédé » par le thème dominant
+  // du cycle d'actu (le top-N de `signals` est monothématique car classé par priorité). On lui
+  // fournit un échantillon ENTRELACÉ PAR AXE (diversifySignals) pour qu'il explore des incertitudes
+  // variées et indépendantes, pas la seule actualité chaude.
+  try {
+    const scenarioSignals = diversifySignals(signals, { key: "axis" });
+    const parsed = parseScenariosResponse(await generateJson(buildScenariosPrompt(scenarioSignals, companyContext)));
+    if (!parsed) {
+      summary.scenarios = "parse-failed";
+      logger.error("runEnrichment: scenarios response unusable (parse returned null)");
+    } else {
+      summary.scenarios = await writeFrameworkDoc(db, "scenarios", parsed);
+    }
+  } catch (err) {
+    summary.scenarios = "failed";
+    logger.error(`runEnrichment: scenarios generation FAILED — ${err.message}`, { err });
   }
 
   // 8. Three Horizons — suggestions d'initiatives (frameworks/horizons). L'humain adopte une

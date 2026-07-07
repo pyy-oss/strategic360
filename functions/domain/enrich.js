@@ -104,6 +104,43 @@ function pickSignalsForEnrichment(items, options) {
     });
 }
 
+/**
+ * Réordonne un lot de signaux (déjà triés par priorité) pour MAXIMISER la DIVERSITÉ THÉMATIQUE :
+ * round-robin par `key` (par défaut l'axe) de sorte qu'aucun thème ne monopolise la tête du lot.
+ * Motif : la planification par scénarios était « obsédée » par le sujet dominant du cycle d'actu
+ * récent (ex. le CADA/réglementaire) parce que `pickSignalsForEnrichment` classe par score de
+ * priorité — le top-N devient monothématique. En entrelaçant les axes, l'exercice de prospective
+ * voit un échantillon équilibré (réglementaire, techno, concurrents, clients, macro…). PUR.
+ * @param {Array<object>} signals Signaux déjà distillés (sortie de pickSignalsForEnrichment).
+ * @param {{maxTotal?: number, key?: string}} [options]
+ * @returns {Array<object>}
+ */
+function diversifySignals(signals, options) {
+  const list = Array.isArray(signals) ? signals.filter((s) => s && typeof s === "object") : [];
+  const maxTotal = options && Number.isFinite(options.maxTotal) ? options.maxTotal : list.length;
+  const key = (options && options.key) || "axis";
+  // Groupes stables dans l'ordre d'apparition (donc par priorité au sein d'un thème).
+  const groups = new Map();
+  for (const s of list) {
+    const g = typeof s[key] === "string" && s[key].trim() ? s[key] : "?";
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(s);
+  }
+  const buckets = [...groups.values()];
+  const out = [];
+  let progressed = true;
+  while (out.length < maxTotal && progressed) {
+    progressed = false;
+    for (const b of buckets) {
+      if (!b.length) continue;
+      out.push(b.shift());
+      progressed = true;
+      if (out.length >= maxTotal) break;
+    }
+  }
+  return out;
+}
+
 /** Renders the signals block shared by all three prompts. */
 function signalsBlock(items) {
   const list = Array.isArray(items) ? items : [];
@@ -1257,6 +1294,17 @@ ${companyContext}
 Construis un exercice de scénarios à partir des incertitudes clés révélées par les signaux.
 Réponds UNIQUEMENT avec un objet JSON valide :
 
+DIVERSITÉ (impérative — un bon exercice de scénarios explore des incertitudes VARIÉES, pas une
+seule) :
+- Les 2 axes doivent relever de DIMENSIONS STRATÉGIQUES DIFFÉRENTES et être MUTUELLEMENT
+  INDÉPENDANTS. N'ancre PAS les deux axes sur le même thème (ex. deux axes réglementaires, ou deux
+  axes tous deux centrés sur une seule loi ou un seul concurrent). Puise dans des registres
+  distincts : réglementaire, technologique/rupture, dynamique concurrentielle, demande/marché
+  client, macro-économie/financement, talents/compétences, souveraineté/géopolitique régionale.
+- Un SEUL sujet (une loi, un concurrent, un secteur) ne doit PAS dominer les 4 mondes. Chaque
+  monde met en avant une combinaison et des enjeux qui lui sont propres ; évite que les 4 narratifs
+  répètent le même thème central.
+
 {
   "axisX": string,   // 1re incertitude structurante (ex: "Rythme d'application des obligations PASSI")
   "axisY": string,   // 2e incertitude structurante et INDÉPENDANTE (ex: "Arrivée directe des hyperscalers")
@@ -1339,6 +1387,7 @@ module.exports = {
   parsePorterResponse,
   CONTEXT_REQUIRED_MARKERS,
   pickSignalsForEnrichment,
+  diversifySignals,
   slugId,
   SWOT_KEYS,
   CANVAS_BLOCKS,

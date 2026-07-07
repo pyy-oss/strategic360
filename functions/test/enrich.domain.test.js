@@ -20,6 +20,8 @@ import {
   buildOpportunitiesPrompt,
   parseOpportunitiesResponse,
   pickSignalsForEnrichment,
+  diversifySignals,
+  buildScenariosPrompt,
   slugId,
   SWOT_KEYS,
 } from "../domain/enrich.js";
@@ -352,6 +354,44 @@ describe("pickSignalsForEnrichment", () => {
     ]);
     expect(picked).toHaveLength(1);
     expect(picked[0].summary.length).toBeLessThanOrEqual(301); // 300 + ellipsis
+  });
+});
+
+describe("diversifySignals — anti-obsession thématique (round-robin par axe)", () => {
+  const many = [
+    { title: "cada1", axis: "tech" }, { title: "cada2", axis: "tech" }, { title: "cada3", axis: "tech" },
+    { title: "cada4", axis: "tech" }, { title: "conc1", axis: "concurrents" }, { title: "cli1", axis: "clients_prospects" },
+  ];
+
+  it("entrelace les axes : ne laisse pas un seul thème monopoliser la tête du lot", () => {
+    // Sans diversité, les 4 premiers seraient tous 'tech'. Après entrelacement, les 3 axes
+    // apparaissent dans les 3 premiers éléments.
+    const out = diversifySignals(many);
+    expect(out.slice(0, 3).map((s) => s.axis)).toEqual(["tech", "concurrents", "clients_prospects"]);
+    expect(out).toHaveLength(many.length); // aucune perte de signal
+  });
+
+  it("préserve l'ordre de priorité AU SEIN d'un axe et respecte maxTotal", () => {
+    const out = diversifySignals(many, { maxTotal: 4 });
+    expect(out).toHaveLength(4);
+    // Les 'tech' restent dans leur ordre d'entrée (priorité) : cada1 avant cada2.
+    const techTitles = out.filter((s) => s.axis === "tech").map((s) => s.title);
+    expect(techTitles).toEqual(techTitles.slice().sort((a, b) => a.localeCompare(b)));
+    expect(out[0].title).toBe("cada1");
+  });
+
+  it("tolère un lot vide / non-tableau", () => {
+    expect(diversifySignals([])).toEqual([]);
+    expect(diversifySignals(null)).toEqual([]);
+  });
+});
+
+describe("buildScenariosPrompt — contraintes de diversité", () => {
+  it("exige des axes indépendants de dimensions différentes et interdit un thème dominant", () => {
+    const p = buildScenariosPrompt([{ title: "x", axis: "tech" }]);
+    expect(p).toContain("DIVERSITÉ");
+    expect(p).toContain("INDÉPENDANTS");
+    expect(p).toMatch(/ne doit PAS dominer les 4 mondes/i);
   });
 });
 
