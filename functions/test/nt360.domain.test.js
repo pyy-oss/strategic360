@@ -290,6 +290,25 @@ describe("deriveAccountValue — réserve de valeur chiffrée et persistée (aud
     expect(v.upsellByOffre[0]).toEqual({ offre: "ICT", montant: 30 });
   });
 
+  it("recommande la bascule managé/OPEX quand le compte n'achète que du projet ponctuel", async () => {
+    const { isManagedOffer } = await import("../domain/nt360.js");
+    expect(isManagedOffer("SOC managé")).toBe(true);
+    expect(isManagedOffer("Infogérance")).toBe(true);
+    expect(isManagedOffer("Vente de matériel")).toBe(false);
+    // Compte 100% projet (ICT) ; le whitespace inclut une offre managée fiable → reco de passage récurrent.
+    const metaManaged = {
+      buCatalog: ["ICT", "SOC managé"],
+      affinity: { cooc: { ICT: { "SOC managé": 4 } }, buCount: { ICT: 4 } },
+      buBenchmark: { ICT: { count: 6, medianCas: 40 }, "SOC managé": { count: 4, medianCas: 60 } },
+    };
+    const acc = { bus: ["ICT"], historique: [{ offre: "ICT", cas: 10, firstYear: 2024, lastYear: 2024 }], enCours: [], opportunites: [], casTotal: 10 };
+    const v = deriveAccountValue(acc, metaManaged, "2026-07-07");
+    expect(v.managedReco).toEqual({ offre: "SOC managé", arr: 60 });
+    // Un compte détenant déjà une offre managée → pas de reco (déjà récurrent).
+    const acc2 = { bus: ["SOC managé"], historique: [{ offre: "SOC managé", cas: 50, firstYear: 2023, lastYear: 2025 }], enCours: [], opportunites: [], casTotal: 50 };
+    expect(deriveAccountValue(acc2, metaManaged, "2026-07-07").managedReco).toBeNull();
+  });
+
   it("signale dormance matérielle, deal fantôme et deal au point mort ; part récurrente sur ≥2 ans", () => {
     const acc = {
       bus: ["ICT"], enCours: [], casTotal: 1000,
