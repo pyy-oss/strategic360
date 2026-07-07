@@ -378,6 +378,20 @@ describe("matchOffersToEvents — la veille déclenche le cross-sell (offre oppo
     expect(matchOffersToEvents([{ title: "X", subtype: "macro" }], [{ offre: "Cyber", montant: 5, kind: "cross-sell" }])).toEqual([]);
     expect(matchOffersToEvents([{ title: "X", subtype: "vulnerability" }], [])).toEqual([]);
   });
+
+  it("rapprochement par MOT, pas sous-chaîne : « soc » (SOC) ne matche pas « Société », « ia » ne matche pas « fiabilité »", async () => {
+    const { matchOffersToEvents, isManagedOffer } = await import("../domain/nt360.js");
+    // Faux positifs corrigés : une offre au libellé contenant « soc »/« ia » par hasard n'est PAS déclenchée.
+    expect(matchOffersToEvents([{ title: "faille", subtype: "vulnerability" }], [{ offre: "Société de conseil", montant: 9, kind: "cross-sell" }])).toEqual([]);
+    expect(matchOffersToEvents([{ title: "levée", subtype: "funding" }], [{ offre: "Fiabilité réseau", montant: 9, kind: "cross-sell" }])).toEqual([]);
+    // Vrais positifs conservés : acronyme mot entier (SOC, WAN) + racine (managé).
+    expect(matchOffersToEvents([{ title: "faille", subtype: "vulnerability" }], [{ offre: "SOC managé", montant: 9, kind: "cross-sell" }]).map((x) => x.offre)).toEqual(["SOC managé"]);
+    expect(matchOffersToEvents([{ title: "impl.", subtype: "implantation" }], [{ offre: "Réseau WAN", montant: 9, kind: "cross-sell" }]).map((x) => x.offre)).toEqual(["Réseau WAN"]);
+    // isManagedOffer : idem, plus de faux positif « soc » ⊂ « société ».
+    expect(isManagedOffer("Société de conseil")).toBe(false);
+    expect(isManagedOffer("SOC managé")).toBe(true);
+    expect(isManagedOffer("Infogérance")).toBe(true);
+  });
 });
 
 describe("armDormantSignals — relance churn armée par la veille (levier RÉCURRENCE)", () => {

@@ -8,6 +8,8 @@
   "type": "commonjs",
   "scripts": {
     "test": "vitest run",
+    "test:unit": "vitest run --exclude '**/firestore.rules.test.js'",
+    "test:rules": "firebase emulators:exec --only firestore --config ../firebase.json --project demo-veille \"vitest run test/firestore.rules.test.js\"",
     "serve": "firebase emulators:start --only functions"
   },
   "dependencies": {
