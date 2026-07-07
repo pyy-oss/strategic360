@@ -353,6 +353,33 @@ describe("deriveAccountVeille — boucle veille → action (direction intégrée
   });
 });
 
+describe("matchOffersToEvents — la veille déclenche le cross-sell (offre opportune maintenant)", () => {
+  it("croise un signal de veille avec l'offre pertinente de la réserve du compte", async () => {
+    const { matchOffersToEvents } = await import("../domain/nt360.js");
+    const veilleTop = [
+      { title: "Faille critique Fortinet chez SGCI", subtype: "vulnerability", impact: "high" },
+      { title: "Nouvelle implantation à Abidjan", subtype: "implantation", impact: "medium" },
+    ];
+    const offers = [
+      { offre: "SOC managé", montant: 60, kind: "cross-sell" },   // matche vulnerability (soc/secur)
+      { offre: "Réseau WAN", montant: 40, kind: "cross-sell" },   // matche implantation (reseau/wan)
+      { offre: "Formation", montant: 10, kind: "upsell" },        // ne matche aucun événement
+    ];
+    const out = matchOffersToEvents(veilleTop, offers);
+    const offres = out.map((o) => o.offre);
+    expect(offres).toContain("SOC managé");
+    expect(offres).toContain("Réseau WAN");
+    expect(offres).not.toContain("Formation");
+    expect(out.find((o) => o.offre === "SOC managé").event).toBe("Faille critique Fortinet chez SGCI");
+  });
+
+  it("subtype sans affinité d'offre ou réserve vide → aucun déclenchement (pas d'exception)", async () => {
+    const { matchOffersToEvents } = await import("../domain/nt360.js");
+    expect(matchOffersToEvents([{ title: "X", subtype: "macro" }], [{ offre: "Cyber", montant: 5, kind: "cross-sell" }])).toEqual([]);
+    expect(matchOffersToEvents([{ title: "X", subtype: "vulnerability" }], [])).toEqual([]);
+  });
+});
+
 describe("copiloteAccountMatchesScope (cloisonnement « mix des 3 »)", () => {
   it("matche par owner (e-mail), par am, ou par BU — insensible casse/espaces ; sinon false", async () => {
     const { copiloteAccountMatchesScope } = await import("../domain/nt360.js");

@@ -1953,6 +1953,7 @@ const {
   deriveBuBenchmark: nt360DeriveBuBenchmark,
   deriveAccountValue: nt360DeriveAccountValue,
   deriveAccountVeille: nt360DeriveAccountVeille,
+  matchOffersToEvents: nt360MatchOffersToEvents,
   matchSignalsToAccount: nt360MatchSignalsToAccount,
   copiloteAccountMatchesScope: nt360AccountMatchesScope,
   isMeaningfulBu: nt360IsMeaningfulBu,
@@ -2127,17 +2128,31 @@ async function runSyncCopiloteAccounts(db) {
           ...val.signals,
         ].slice(0, 5);
       }
+      // Cross-sell/upsell DÉCLENCHÉ PAR ÉVÉNEMENT : croise les signaux de veille avec les offres de
+      // réserve du compte → une offre devient « opportune maintenant » (la veille pilote la vente).
+      const offersForEvents = [
+        ...val.whitespaceValue.map((w) => ({ offre: w.offre, montant: w.montant, kind: "cross-sell" })),
+        ...val.upsellByOffre.map((u) => ({ offre: u.offre, montant: u.montant, kind: "upsell" })),
+      ];
+      const eventOffers = nt360MatchOffersToEvents(veille.top, offersForEvents).slice(0, 3);
+      val.eventOffers = eventOffers;
+      const eventByOffre = new Map(eventOffers.map((e) => [e.offre, e.event]));
       // Agrégat de churn (dormance matérielle) pour la bannière « récurrent qui s'éteint ».
       const dormantes = (val.signals || []).filter((s) => s.type === "dormante");
       if (dormantes.length) { churnCount += 1; churnMontant += dormantes.reduce((s, x) => s + (x.montant || 0), 0); }
       // Candidats d'opportunités PROACTIVES (Phase 4) : la meilleure offre de cross-sell et le meilleur
       // upsell chiffrés du compte deviennent des leads du pipeline suivi (qualifiable → action).
       const topXs = (val.whitespaceValue || [])[0];
-      if (topXs && topXs.montant >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: "cross-sell", slug: acc.slug, client: acc.nom, offre: topXs.offre, montant: topXs.montant });
+      if (topXs && topXs.montant >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: "cross-sell", slug: acc.slug, client: acc.nom, offre: topXs.offre, montant: topXs.montant, event: eventByOffre.get(topXs.offre) || null });
       const topUp = (val.upsellByOffre || [])[0];
-      if (topUp && topUp.montant >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: "upsell", slug: acc.slug, client: acc.nom, offre: topUp.offre, montant: topUp.montant });
+      if (topUp && topUp.montant >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: "upsell", slug: acc.slug, client: acc.nom, offre: topUp.offre, montant: topUp.montant, event: eventByOffre.get(topUp.offre) || null });
       // Bascule vers le récurrent (levier RÉCURRENCE) : le meilleur passage managé/OPEX chiffré en ARR.
-      if (val.managedReco && val.managedReco.arr >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: "managed", slug: acc.slug, client: acc.nom, offre: val.managedReco.offre, montant: val.managedReco.arr });
+      if (val.managedReco && val.managedReco.arr >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: "managed", slug: acc.slug, client: acc.nom, offre: val.managedReco.offre, montant: val.managedReco.arr, event: eventByOffre.get(val.managedReco.offre) || null });
+      // Offres DÉCLENCHÉES par un événement de veille : émises même si ce n'est pas le plus gros montant
+      // du compte (le timing externe prime). Dédupliquées à l'émission par id déterministe.
+      for (const eo of eventOffers) {
+        if (eo.montant >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: eo.kind, slug: acc.slug, client: acc.nom, offre: eo.offre, montant: eo.montant, event: eo.event });
+      }
       batch.set(
         db.doc(`copiloteAccounts/${acc.slug}`),
         {
@@ -2160,6 +2175,7 @@ async function runSyncCopiloteAccounts(db) {
             signals: val.signals, // dormance/deal fantôme/point mort + signal de veille → file « à traiter »
             managedReco: val.managedReco ?? null, // bascule projet ponctuel → récurrent managé/OPEX
             veille, // déclencheurs de veille externes rattachés (boucle veille → action)
+            eventOffers: val.eventOffers || [], // offres rendues opportunes par un événement de veille
             updatedAt: FieldValue.serverTimestamp(),
           },
         },
@@ -2185,30 +2201,41 @@ async function runSyncCopiloteAccounts(db) {
   // le pipeline SUIVI (bizOpportunities) → elles rejoignent la boucle qualifier → convertir en action.
   // Garde-fous (risques audit) : plafond global pour ne pas noyer le commercial ; plancher de
   // matérialité ; statut humain (qualified/dropped) JAMAIS écrasé (merge sans `status` si le doc existe).
-  const autoOpps = autoOppCandidates
-    .sort((a, b) => b.montant - a.montant)
+  // Dédup par id déterministe (un événement peut repousser une offre déjà candidate) — on garde la
+  // variante qui porte un événement (timing externe). Puis tri : DÉCLENCHÉ PAR LA VEILLE d'abord
+  // (le timing prime sur le montant), ensuite par montant.
+  const byId = new Map();
+  for (const c of autoOppCandidates) {
+    const offreSlug = String(c.offre).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const id = `auto-${c.kind}-${c.slug}-${offreSlug}`.slice(0, 250);
+    const prev = byId.get(id);
+    if (!prev || (!prev.event && c.event)) byId.set(id, { ...c, id });
+  }
+  const autoOpps = [...byId.values()]
+    .sort((a, b) => (b.event ? 1 : 0) - (a.event ? 1 : 0) || b.montant - a.montant)
     .slice(0, AUTO_OPP_MAX);
   let oppsWritten = 0;
   for (const cand of autoOpps) {
-    const offreSlug = String(cand.offre).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    const id = `auto-${cand.kind}-${cand.slug}-${offreSlug}`.slice(0, 250);
-    const ref = db.doc(`bizOpportunities/${id}`);
+    const ref = db.doc(`bizOpportunities/${cand.id}`);
     const existing = await ref.get();
     const kindLabel = cand.kind === "upsell" ? "Upsell" : cand.kind === "managed" ? "Passage en managé" : "Cross-sell";
-    const nextAction = cand.kind === "upsell"
+    const baseAction = cand.kind === "upsell"
       ? `Étendre ${cand.offre} (compte sous-pénétré vs panier de référence)`
       : cand.kind === "managed"
         ? `Convertir en récurrent : proposer ${cand.offre} en managé/OPEX (ARR ≈ panier de référence)`
         : `Chiffrer et proposer ${cand.offre} (panier de référence réel)`;
+    // Déclenchée par un événement de veille : on référence l'événement et on relève l'urgence.
+    const nextAction = cand.event ? `⚡ ${cand.event} → ${baseAction}` : baseAction;
     const payload = {
       name: `${kindLabel} ${cand.offre} — ${cand.client}`,
       client: cand.client,
       bu: cand.offre,
       offering: cand.offre,
       estAmount: String(Math.round(cand.montant)),
-      horizon: "moyen",
-      probability: "medium",
+      horizon: cand.event ? "court" : "moyen",       // événement → fenêtre plus courte
+      probability: cand.event ? "high" : "medium",    // événement → probabilité relevée (timing)
       nextAction,
+      triggerEvent: cand.event || null,               // événement de veille déclencheur (traçabilité)
       source: cand.kind,       // 'cross-sell' | 'upsell' | 'managed' — origine du lead
       generatedBy: "sync",     // ni IA (enrichissement veille) ni humain : dérivé du portefeuille
       updatedAt: FieldValue.serverTimestamp(),
