@@ -228,6 +228,33 @@ export function Copilote() {
             </div>
           )}
 
+          {/* Réserve de valeur CHIFFRÉE (audit doubler-CA) : cross-sell + upsell visibles d'un coup
+              d'œil, sans lancer de génération IA — chiffrés au panier de référence réel fiable. */}
+          {((account.nt360?.whitespaceValue ?? []).length > 0 || (account.nt360?.upsellHeadroom ?? 0) > 0) && (
+            <div style={{ marginTop: 14, background: T.panel2, borderRadius: 10, padding: "11px 13px", borderLeft: `3px solid ${T.emerald}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                <Eyebrow color={T.emerald}>Réserve de valeur non captée</Eyebrow>
+                <span style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 17, fontWeight: 700, color: T.emerald }}>
+                  ≈ {fmtC((account.nt360?.whitespacePotential ?? 0) + (account.nt360?.upsellHeadroom ?? 0))} XOF
+                </span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
+                {(account.nt360?.whitespaceValue ?? []).map((w, i) => (
+                  <div key={`ws${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12 }}>
+                    <span style={{ color: T.ink }}>↗ Cross-sell <b>{w.offre}</b></span>
+                    <span style={{ color: T.emerald, fontVariantNumeric: "tabular-nums" }}>{fmtC(w.montant)}</span>
+                  </div>
+                ))}
+                {(account.nt360?.upsellByOffre ?? []).map((u, i) => (
+                  <div key={`up${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12 }}>
+                    <span style={{ color: T.ink }}>⤴ Upsell <b>{u.offre}</b> (sous-pénétré)</span>
+                    <span style={{ color: T.gold, fontVariantNumeric: "tabular-nums" }}>{fmtC(u.montant)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {((account.enjeux ?? []).length > 0 || (account.whitespace ?? []).length > 0) && (
             <div style={{ marginTop: 14 }}>
               <Eyebrow>Enjeux &amp; espaces à conquérir</Eyebrow>
@@ -493,10 +520,24 @@ function PortfolioDashboard({
   onPick: (id: string) => void;
 }) {
   // Mémoïsé : recalculer reduces + flatMap + sort sur ~800 comptes à chaque rendu serait du gaspillage.
-  const { totalCas, totalPipe, totalWins, hotDeals } = useMemo(() => {
+  const { totalCas, totalPipe, hotDeals, reserveTotale, topPotential, worklist } = useMemo(() => {
     const totalCas = accounts.reduce((s, a) => s + (a.nt360?.casTotal ?? 0), 0);
     const totalPipe = accounts.reduce((s, a) => s + (a.nt360?.pipelinePondere ?? 0), 0);
-    const totalWins = accounts.reduce((s, a) => s + (a.nt360?.wins ?? 0), 0);
+    // Réserve de valeur non captée (audit doubler-CA — leviers PANIER/COUVERTURE) : cross-sell + upsell
+    // chiffrés au panier réel, persistés au sync. Rend visible « où il reste du CA à aller chercher ».
+    const reserveTotale = accounts.reduce((s, a) => s + (a.nt360?.whitespacePotential ?? 0) + (a.nt360?.upsellHeadroom ?? 0), 0);
+    // Classement par POTENTIEL non capté (pas par taille actuelle) : les comptes à plus fort headroom.
+    const topPotential = accounts
+      .filter((a) => (a.nt360?.scorePotentiel ?? 0) > 0)
+      .slice()
+      .sort((x, y) => (y.nt360?.scorePotentiel ?? 0) - (x.nt360?.scorePotentiel ?? 0))
+      .slice(0, 8);
+    // File « à traiter cette semaine » : signaux d'action pré-calculés (dormance, deal fantôme, point
+    // mort) agrégés sur tout le portefeuille, triés par € en jeu — la réponse à « qui relancer ».
+    const worklist = accounts
+      .flatMap((a) => (a.nt360?.signals ?? []).map((sig) => ({ ...sig, compte: a.nom, accountId: a.id })))
+      .sort((x, y) => (y.montant ?? 0) - (x.montant ?? 0))
+      .slice(0, 8);
     // Deals chauds = opportunités en cours triées par valeur pondérée. Correctif audit 2026-07 : une
     // probabilité INCONNUE ne vaut plus 100 % (elle faisait passer les deals non qualifiés devant des
     // deals qualifiés à 90 %) — repli conservateur à 50 %, probabilité connue bornée 0-100.
@@ -518,7 +559,7 @@ function PortfolioDashboard({
       .flatMap((a) => (a.nt360?.opportunites ?? []).map((o) => ({ ...o, compte: a.nom, accountId: a.id })))
       .sort((x, y) => dealWeight(y) - dealWeight(x))
       .slice(0, 8);
-    return { totalCas, totalPipe, totalWins, hotDeals };
+    return { totalCas, totalPipe, hotDeals, reserveTotale, topPotential, worklist };
   }, [accounts]);
 
   if (accounts.length === 0) {
@@ -543,7 +584,7 @@ function PortfolioDashboard({
           <Kpi label="Comptes actifs" value={accounts.length} accent={T.steel} />
           <Kpi label="CAS réalisé" value={<>{fmt(totalCas)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></>} accent={T.emerald} />
           <Kpi label="Pipeline pondéré" value={<>{fmt(totalPipe)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></>} accent={T.gold} />
-          <Kpi label="Affaires gagnées" value={totalWins} accent={T.plum} />
+          <Kpi label="Réserve cross-sell + upsell" value={<>{fmt(reserveTotale)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></>} accent={T.emerald} />
         </div>
       </Card>
 
@@ -579,6 +620,59 @@ function PortfolioDashboard({
                   <DealRow nom={`${o.compte} · ${o.nom}`} dealRef={o.ref} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
                 </button>
               ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        {/* COUVERTURE : classer par potentiel non capté, pas par taille — orienter l'effort vers le CA
+            adressable (audit doubler-CA). Le tri « Top comptes » ci-dessus met en tête les comptes déjà
+            pénétrés ; celui-ci met en tête ceux où il reste le plus à aller chercher. */}
+        <Card>
+          <Eyebrow color={T.emerald}>Comptes à plus fort potentiel non capté</Eyebrow>
+          {topPotential.length === 0 ? (
+            <div style={{ fontSize: 12, color: T.dim, marginTop: 10 }}>Réserve de valeur en cours de calcul (synchro nt360).</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+              {topPotential.map((a) => {
+                const reserve = (a.nt360?.whitespacePotential ?? 0) + (a.nt360?.upsellHeadroom ?? 0);
+                const top = a.nt360?.whitespaceValue?.[0]?.offre;
+                return (
+                  <button key={a.id} onClick={() => onPick(a.id)}
+                    style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "9px 11px", background: T.panel2, borderRadius: 9, border: `1px solid ${T.line}`, cursor: "pointer", textAlign: "left", minHeight: 44 }}>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: 12.5, color: T.ink, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nom}</span>
+                      {top ? <span style={{ fontSize: 10.5, color: T.faint }}>↗ {top}</span> : null}
+                    </span>
+                    <span style={{ fontSize: 12, color: T.emerald, fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{fmt(reserve)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        {/* File « à traiter cette semaine » — signaux d'action pré-calculés au sync (dormance/deal
+            fantôme/point mort), triés par € en jeu. La réponse concrète à « qui relancer, et pourquoi ». */}
+        <Card>
+          <Eyebrow color={T.clay}>À traiter cette semaine</Eyebrow>
+          {worklist.length === 0 ? (
+            <div style={{ fontSize: 12, color: T.dim, marginTop: 10 }}>Aucun signal d'action en attente — portefeuille à jour.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+              {worklist.map((s, i) => {
+                const c = s.type === "fantome" ? T.clay : s.type === "pointmort" ? T.gold : T.steel;
+                return (
+                  <button key={i} onClick={() => onPick(s.accountId)} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "9px 11px", background: T.panel2, borderRadius: 9, border: `1px solid ${T.line}`, cursor: "pointer", textAlign: "left", minHeight: 44 }}>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: 12.5, color: T.ink, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.compte}</span>
+                      <span style={{ fontSize: 10.5, color: c }}>{s.label}</span>
+                    </span>
+                    {s.montant > 0 ? <span style={{ fontSize: 11.5, color: T.dim, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{fmt(s.montant)}</span> : null}
+                  </button>
+                );
+              })}
             </div>
           )}
         </Card>

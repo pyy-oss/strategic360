@@ -1951,6 +1951,7 @@ const {
   deriveBuAffinity: nt360DeriveBuAffinity,
   recommendNextOffers: nt360RecommendNextOffers,
   deriveBuBenchmark: nt360DeriveBuBenchmark,
+  deriveAccountValue: nt360DeriveAccountValue,
   matchSignalsToAccount: nt360MatchSignalsToAccount,
   copiloteAccountMatchesScope: nt360AccountMatchesScope,
   isMeaningfulBu: nt360IsMeaningfulBu,
@@ -2061,16 +2062,38 @@ async function runSyncCopiloteAccounts(db) {
     ordersSnap.docs.map((d) => d.data()),
     oppsSnap.docs.map((d) => d.data())
   );
+  // Méta portefeuille calculée AVANT la persistance des comptes (audit doubler-CA) : on en a besoin
+  // pour chiffrer et persister la réserve de valeur PAR compte (whitespace/upsell/score), plus seulement
+  // à la volée dans un prompt. Catalogue d'offres = union des BU réelles ; affinité market-basket ;
+  // panier de référence médian par offre.
+  const buCatalog = [...new Set(derived.flatMap((acc) => Array.isArray(acc.bus) ? acc.bus : []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()))].sort();
+  const affinity = nt360DeriveBuAffinity(derived);
+  const buBenchmark = nt360DeriveBuBenchmark(derived);
+  const meta = { buCatalog, affinity, buBenchmark };
+  const todayIso = new Date().toISOString().slice(0, 10);
+  await db.doc("summaries/copiloteMeta").set(
+    { buCatalog, affinity, buBenchmark, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true }
+  );
+
   // Écriture par lots (audit Copilote 2026-07) : le portefeuille réel compte ~800 comptes. Un
   // `await set()` par compte = ~800 allers-retours séquentiels (lent, et fragile à mesure que le
   // portefeuille grossit). On commit par lots de 400 (< la limite Firestore de 500 ops/commit) :
   // 2 allers-retours au lieu de 800. Merge additif inchangé (les champs qualitatifs restent intacts).
   const CHUNK = 400;
   let written = 0;
+  let reserveTotale = 0; // Σ potentiel cross-sell chiffré du portefeuille (KPI « réserve »)
+  let recurrentCasTot = 0;
+  let casTot = 0;
   for (let i = 0; i < derived.length; i += CHUNK) {
     const slice = derived.slice(i, i + CHUNK);
     const batch = db.batch();
     for (const acc of slice) {
+      // Réserve de valeur chiffrée et PERSISTÉE (visible sans lancer une génération IA).
+      const val = nt360DeriveAccountValue(acc, meta, todayIso);
+      reserveTotale += val.whitespacePotential;
+      recurrentCasTot += val.recurrentCas;
+      casTot += Number(acc.casTotal) || 0;
       batch.set(
         db.doc(`copiloteAccounts/${acc.slug}`),
         {
@@ -2084,6 +2107,13 @@ async function runSyncCopiloteAccounts(db) {
             opportunites: acc.opportunites,
             ams: acc.ams,
             bus: acc.bus,
+            // Réserve de valeur chiffrée (audit doubler-CA — leviers PANIER/COUVERTURE) :
+            whitespaceValue: val.whitespaceValue, // [{offre, montant}] cross-sell chiffré au panier fiable
+            whitespacePotential: val.whitespacePotential,
+            upsellHeadroom: val.upsellHeadroom, // marge d'upsell sur offres déjà détenues
+            upsellByOffre: val.upsellByOffre,
+            scorePotentiel: val.scorePotentiel, // classe par potentiel non capté, pas par taille
+            signals: val.signals, // dormance/deal fantôme/point mort → file « à traiter »
             updatedAt: FieldValue.serverTimestamp(),
           },
         },
@@ -2093,20 +2123,14 @@ async function runSyncCopiloteAccounts(db) {
     await batch.commit();
     written += slice.length;
   }
-  // Catalogue d'offres NT = union de toutes les BU réelles observées dans le pipeline. Sert au calcul
-  // du whitespace RÉEL par compte (catalogue − BU déjà touchées) → livrables IA spécifiques, non génériques.
-  const buCatalog = [...new Set(derived.flatMap((acc) => Array.isArray(acc.bus) ? acc.bus : []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()))].sort();
-  // Affinité de cross-sell (market basket) sur tout le portefeuille : « les comptes qui achètent X
-  // achètent aussi Y » → base de la recommandation « next best offer » par compte.
-  const affinity = nt360DeriveBuAffinity(derived);
-  // Panier de référence par offre (médiane du CAS cumulé par compte) → CHIFFRE la « next best offer ».
-  const buBenchmark = nt360DeriveBuBenchmark(derived);
+  // Agrégats portefeuille exposés au dashboard (réserve cross-sell totale + part récurrente estimée).
+  const recurrentShare = casTot > 0 ? Math.round((recurrentCasTot / casTot) * 100) : null;
   await db.doc("summaries/copiloteMeta").set(
-    { buCatalog, affinity, buBenchmark, updatedAt: FieldValue.serverTimestamp() },
+    { reserveCrossSell: Math.round(reserveTotale), recurrentShare, updatedAt: FieldValue.serverTimestamp() },
     { merge: true }
   );
-  logger.info(`runSyncCopiloteAccounts: ${written} comptes copilote pré-remplis depuis nt360 (catalogue ${buCatalog.length} offres)`);
-  return { accounts: written, buCatalog: buCatalog.length };
+  logger.info(`runSyncCopiloteAccounts: ${written} comptes copilote pré-remplis depuis nt360 (catalogue ${buCatalog.length} offres ; réserve cross-sell ≈ ${Math.round(reserveTotale)} ; récurrent ${recurrentShare ?? "n.c."}%)`);
+  return { accounts: written, buCatalog: buCatalog.length, reserveCrossSell: Math.round(reserveTotale), recurrentShare };
 }
 
 exports.syncCopiloteAccounts = onSchedule(

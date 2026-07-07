@@ -70,6 +70,13 @@ export interface CopiloteAccount {
     opportunites?: CopiloteOpportunite[];
     ams?: string[];
     bus?: string[];
+    // Réserve de valeur chiffrée, persistée au sync (audit doubler-CA — leviers PANIER/COUVERTURE).
+    whitespaceValue?: { offre: string; montant: number }[];
+    whitespacePotential?: number;
+    upsellHeadroom?: number;
+    upsellByOffre?: { offre: string; montant: number }[];
+    scorePotentiel?: number;
+    signals?: { type: string; montant: number; label: string }[];
     updatedAt?: Timestamp | FieldValue;
   };
   updatedAt?: Timestamp | FieldValue;
