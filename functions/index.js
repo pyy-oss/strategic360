@@ -25,7 +25,7 @@ const { parseFiche } = require("./parsers/fiche");
 const { computePorterForces, computeBcg, computeCasSummary, computePipeline, computeKris, computeValueAtStake, computePipelineInfluenced, computeGranularite } = require("./domain/quanti");
 const { intelItemId } = require("./domain/ids");
 const { buildClassificationPrompt, parseClassificationResponse } = require("./domain/classify");
-const { dedupeByTitle } = require("./domain/dedupe");
+const { dedupeByTitle, isNearDuplicate, clusterNearDuplicates } = require("./domain/dedupe");
 const { pickRelevant } = require("./domain/retrieve");
 const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
 const { buildBriefingPdf } = require("./domain/pdf");
@@ -596,13 +596,26 @@ async function classifyRawText(rawText, watchlistEntities, context) {
  * it), the AI-sourced update is skipped entirely rather than merged — the human decision stands.
  * Roadmap: V7 IA & sync — BUILD_KIT.md §1 "Rien n'est publié par l'IA sans revue humaine".
  */
-async function upsertClassifiedItem(db, classified) {
+async function upsertClassifiedItem(db, classified, dedupeIndex) {
   const id = intelItemId({ url: classified.url, title: classified.title, date: classified.date });
   const ref = db.doc(`intelItems/${id}`);
   const existing = await ref.get();
   if (existing.exists && existing.data().status !== "new") {
     logger.info(`syncSources: skip ${id} — already reviewed/actioned/archived (human decision stands)`);
     return { id, written: false };
+  }
+  // Anti-QUASI-doublon (bug « doublons dans les signaux ») : le même événement vu par deux sources aux
+  // URLs différentes a un id déterministe différent. Avant de créer un NOUVEAU signal, on écarte s'il
+  // recoupe un signal récent du MÊME axe déjà présent (titre quasi identique). L'id exact reste la garde
+  // primaire (re-merge idempotent d'une même source) ; ceci couvre le cross-source.
+  if (!existing.exists && Array.isArray(dedupeIndex)) {
+    const axis = classified.axis || "";
+    const dup = dedupeIndex.find((e) => (e.axis || "") === axis && isNearDuplicate(e.title, classified.title || ""));
+    if (dup) {
+      logger.info(`syncSources: skip near-duplicate « ${String(classified.title).slice(0, 60)} » ~ « ${String(dup.title).slice(0, 60)} »`);
+      return { id, written: false, duplicate: true };
+    }
+    dedupeIndex.push({ title: classified.title || "", axis });
   }
   await ref.set(
     {
@@ -634,6 +647,20 @@ async function runSyncSources(db) {
     db.collection("intelWatchlist").where("active", "==", true).get(),
   ]);
   const watchlistEntities = watchlistSnap.docs.map((d) => ({ name: d.data().name, type: d.data().type }));
+
+  // Index anti-quasi-doublon (bug « doublons dans les signaux ») : titres+axes des signaux NON archivés
+  // déjà présents. Partagé (mutable) entre les sources d'un même run pour aussi capter les doublons
+  // intra-run (best-effort : les lots parallèles peuvent se croiser, l'id exact reste la garde dure).
+  let dedupeIndex = [];
+  try {
+    const existingSnap = await db.collection("intelItems").get();
+    dedupeIndex = existingSnap.docs
+      .map((d) => d.data())
+      .filter((x) => x && (x.status || "new") !== "archived" && x.title)
+      .map((x) => ({ title: x.title, axis: x.axis || "" }));
+  } catch (e) {
+    logger.warn(`syncSources: index anti-doublon indisponible (${e.message}) — dédup par id seulement`);
+  }
 
   let sourcesProcessed = 0;
   let itemsCreated = 0;
@@ -671,7 +698,7 @@ async function runSyncSources(db) {
               defaultDate: rssItem.pubDate || undefined,
             });
             if (!classified) return false;
-            const { written } = await upsertClassifiedItem(db, classified);
+            const { written } = await upsertClassifiedItem(db, classified, dedupeIndex);
             return written;
           })
         );
@@ -693,7 +720,7 @@ async function runSyncSources(db) {
                 url: perItemLink,
               });
               if (!classified) return false;
-              const { written } = await upsertClassifiedItem(db, classified);
+              const { written } = await upsertClassifiedItem(db, classified, dedupeIndex);
               return written;
             })
           );
@@ -705,7 +732,7 @@ async function runSyncSources(db) {
           if (rawText && !degraded) {
             const classified = await classifyRawText(rawText, watchlistEntities, { ...context });
             if (classified) {
-              const { written } = await upsertClassifiedItem(db, classified);
+              const { written } = await upsertClassifiedItem(db, classified, dedupeIndex);
               if (written) created = 1;
             }
           }
@@ -781,6 +808,52 @@ exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abid
 exports.syncSourcesNow = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "2GiB" }, async (request) => {
   requireExecCaller(request, "lancer une synchronisation de la veille");
   const result = await runSyncSources(firestoreDb());
+  return result;
+});
+
+/**
+ * runDedupeIntelItems — NETTOIE les quasi-doublons déjà présents (le même événement vu par deux
+ * sources aux URLs différentes). Regroupe les signaux NON archivés par titre+axe (clusterNearDuplicates)
+ * et ARCHIVE les doublons en gardant le meilleur de chaque grappe. Prudence : on ne garde JAMAIS un
+ * signal en écartant une revue humaine — dans une grappe, on préfère garder un item déjà revu, et on
+ * n'archive QUE les doublons encore « new » (jamais un item actionné/archivé par un humain).
+ */
+async function runDedupeIntelItems(db) {
+  const snap = await db.collection("intelItems").get();
+  const items = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((x) => (x.status || "new") !== "archived");
+  const clusters = clusterNearDuplicates(items);
+  // Ordre de préférence pour le « gardé » : revu par un humain d'abord, puis meilleur score, puis le
+  // plus ancien (premier vu). Les doublons « new » restants sont archivés (mergés vers le gardé).
+  const rank = (x) => (x.status && x.status !== "new" ? 1 : 0);
+  let archived = 0;
+  for (const cluster of clusters) {
+    const sorted = [...cluster].sort(
+      (a, b) => rank(b) - rank(a) ||
+        (Number(b.priorityScore) || 0) - (Number(a.priorityScore) || 0) ||
+        String(a.date || "").localeCompare(String(b.date || ""))
+    );
+    const keep = sorted[0];
+    for (const dup of sorted.slice(1)) {
+      if ((dup.status || "new") !== "new") continue; // ne jamais toucher une décision humaine
+      await db.doc(`intelItems/${dup.id}`).update({
+        status: "archived",
+        dedupedInto: keep.id,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      archived += 1;
+    }
+  }
+  logger.info(`runDedupeIntelItems: ${clusters.length} grappes de doublons, ${archived} signaux archivés`);
+  return { clusters: clusters.length, archived };
+}
+
+/** dedupeIntelItemsNow — callable exec-gated : nettoie à la demande les quasi-doublons existants. */
+exports.dedupeIntelItemsNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  requireExecCaller(request, "dédoublonner les signaux de veille");
+  const result = await runDedupeIntelItems(firestoreDb());
+  logger.info(`dedupeIntelItemsNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
   return result;
 });
 

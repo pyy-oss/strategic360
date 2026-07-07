@@ -349,6 +349,13 @@ export async function runSyncSourcesNow(): Promise<Record<string, unknown>> {
   return data;
 }
 
+/** Nettoie les quasi-doublons existants dans les signaux (callable exec). Retourne { clusters, archived }. */
+export async function runDedupeIntelItemsNow(): Promise<{ clusters?: number; archived?: number }> {
+  const call = httpsCallable<void, { clusters?: number; archived?: number }>(functions, "dedupeIntelItemsNow");
+  const { data } = await call();
+  return data;
+}
+
 /* ---------------------------------------------------------------------------------------------
  * bizOpportunities (pipeline d'opportunités business détectées par l'IA — plan d'audit §6.1/§6.2)
  *

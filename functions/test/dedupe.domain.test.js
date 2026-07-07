@@ -3,7 +3,7 @@
 /** Pure-function tests for functions/domain/dedupe.js (dédoublonnage intelligent — Vague C). */
 
 import { describe, it, expect } from "vitest";
-import { normalizeTitle, titleSimilarity, isNearDuplicate, dedupeByTitle } from "../domain/dedupe.js";
+import { normalizeTitle, titleSimilarity, isNearDuplicate, dedupeByTitle, clusterNearDuplicates } from "../domain/dedupe.js";
 
 describe("dedupe — similarité de titres", () => {
   it("normalizeTitle : minuscule, sans accents, ponctuation → espaces", () => {
@@ -40,5 +40,21 @@ describe("dedupe — similarité de titres", () => {
       "Sujet totalement différent présenté ailleurs",
     ]).length).toBe(2);
     expect(dedupeByTitle([])).toEqual([]);
+  });
+
+  it("clusterNearDuplicates : regroupe les doublons même axe, sépare les axes, ignore les singletons", () => {
+    const items = [
+      { id: "a1", title: "La BRVM lance un appel d'offres refonte SI", axis: "clients_prospects" },
+      { id: "a2", title: "Appel d'offres BRVM refonte du SI", axis: "clients_prospects" }, // doublon de a1
+      { id: "b1", title: "Fortinet augmente ses tarifs de 8%", axis: "tech" },              // singleton → écarté
+      { id: "a3", title: "BRVM refonte SI appel d'offres publié", axis: "tech" },           // titre proche MAIS autre axe → PAS fusionné avec a1/a2
+    ];
+    const clusters = clusterNearDuplicates(items);
+    // Une seule grappe (a1+a2) ; b1 et a3 restent seuls (non retournés).
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].map((x) => x.id).sort()).toEqual(["a1", "a2"]);
+    // Liste vide / sans doublon → aucune grappe.
+    expect(clusterNearDuplicates([])).toEqual([]);
+    expect(clusterNearDuplicates([{ id: "x", title: "Sujet unique", axis: "tech" }])).toEqual([]);
   });
 });
