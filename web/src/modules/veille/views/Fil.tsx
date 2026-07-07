@@ -151,6 +151,7 @@ export function Fil() {
   const [prx, setPrx] = useState("all");
   const [watchOnly, setWatchOnly] = useState(false);
   const [bizOnly, setBizOnly] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const clearEnt = () => { const n = new URLSearchParams(sp); n.delete("ent"); setSp(n, { replace: true }); };
   const norm = (v: string) => v.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
@@ -166,7 +167,9 @@ export function Fil() {
         (prx === "all" || effectiveProx(s) === prx) &&
         (!watchOnly || !!s.ent) &&
         (!entFilter || (s.ent ? norm(s.ent).includes(norm(entFilter)) || norm(entFilter).includes(norm(s.ent)) : false)) &&
-        (!bizOnly || BUSINESS_SUBTYPES.has(s.subtype ?? ""))
+        (!bizOnly || BUSINESS_SUBTYPES.has(s.subtype ?? "")) &&
+        // Les signaux archivés (dont les doublons dédoublonnés) sortent du fil actif par défaut.
+        (showArchived || s.status !== "archived")
     )
     // Tri stable : score de priorité desc, puis échéance la plus proche (items sans dueDate en
     // dernier), puis date de signal desc.
@@ -178,7 +181,7 @@ export function Fil() {
     );
 
   // Pagination : le fil peut atteindre des centaines de signaux (retour à la page 1 si un filtre change).
-  const paged = usePaged(rows, 25, `${ax}|${st}|${imp}|${prx}|${watchOnly}|${bizOnly}|${entFilter}`);
+  const paged = usePaged(rows, 25, `${ax}|${st}|${imp}|${prx}|${watchOnly}|${bizOnly}|${showArchived}|${entFilter}`);
 
   return (
     <div>
@@ -216,6 +219,9 @@ export function Fil() {
           </button>
           <button className={`pill ${bizOnly ? "on" : ""}`} onClick={() => setBizOnly((v) => !v)}>
             💼 Business
+          </button>
+          <button className={`pill ${showArchived ? "on" : ""}`} onClick={() => setShowArchived((v) => !v)} title="Inclure les signaux archivés (doublons, traités)">
+            Archivés
           </button>
           {entFilter && (
             <button className="pill on" onClick={clearEnt} title="Retirer le filtre entité" style={{ marginLeft: 10 }}>

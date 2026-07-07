@@ -785,8 +785,17 @@ async function runSyncSources(db) {
     }
   }
 
-  logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourcesSnap.size} itemsCreated=${itemsCreated}`);
-  return { sourcesTotal: sourcesSnap.size, sourcesProcessed, itemsCreated };
+  // Auto-nettoyage des quasi-doublons résiduels (le même événement vu par plusieurs sources) : rendu
+  // AUTOMATIQUE à chaque synchro — plus besoin d'action manuelle. Best-effort (n'échoue jamais la synchro).
+  let deduped = { clusters: 0, archived: 0 };
+  try {
+    deduped = await runDedupeIntelItems(db);
+  } catch (e) {
+    logger.warn(`syncSources: auto-dédoublonnage ignoré (${e.message})`);
+  }
+
+  logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourcesSnap.size} itemsCreated=${itemsCreated} deduped=${deduped.archived}`);
+  return { sourcesTotal: sourcesSnap.size, sourcesProcessed, itemsCreated, deduped: deduped.archived };
 }
 
 /**
