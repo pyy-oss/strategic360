@@ -76,8 +76,10 @@ export interface CopiloteAccount {
     upsellHeadroom?: number;
     upsellByOffre?: { offre: string; montant: number }[];
     scorePotentiel?: number;
-    signals?: { type: string; montant: number; label: string }[];
+    signals?: { type: string; montant: number; label: string; hot?: boolean; prox?: string; impact?: string }[];
     managedReco?: { offre: string; arr: number } | null; // bascule projet ponctuel → récurrent managé/OPEX
+    // Boucle veille → action : déclencheurs de veille externes rattachés au compte (direction « intégré »).
+    veille?: { count: number; hot: boolean; top: { title: string; axis: string; impact: string; prox: string; subtype: string; soWhat: string; date: string }[] };
     updatedAt?: Timestamp | FieldValue;
   };
   updatedAt?: Timestamp | FieldValue;

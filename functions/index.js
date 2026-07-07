@@ -1952,6 +1952,7 @@ const {
   recommendNextOffers: nt360RecommendNextOffers,
   deriveBuBenchmark: nt360DeriveBuBenchmark,
   deriveAccountValue: nt360DeriveAccountValue,
+  deriveAccountVeille: nt360DeriveAccountVeille,
   matchSignalsToAccount: nt360MatchSignalsToAccount,
   copiloteAccountMatchesScope: nt360AccountMatchesScope,
   isMeaningfulBu: nt360IsMeaningfulBu,
@@ -2082,6 +2083,18 @@ async function runSyncCopiloteAccounts(db) {
     { merge: true }
   );
 
+  // BOUCLE VEILLE → ACTION (direction C, « de la veille à la vente ») : on lit les signaux de veille
+  // externes du strategic360 pour les RATTACHER à chaque compte au sync. C'est ce qui rebranche les
+  // moteurs commerciaux sur la veille (au lieu de tourner sur la seule donnée interne). Borné aux plus
+  // prioritaires pour le coût (le matching est ensuite fait par compte).
+  let intelItems = [];
+  try {
+    const intelSnap = await db.collection("intelItems").orderBy("priorityScore", "desc").limit(500).get();
+    intelItems = intelSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (e) {
+    logger.warn(`runSyncCopiloteAccounts: lecture intelItems impossible (${e.message}) — comptes sans déclencheurs de veille`);
+  }
+
   // Écriture par lots (audit Copilote 2026-07) : le portefeuille réel compte ~800 comptes. Un
   // `await set()` par compte = ~800 allers-retours séquentiels (lent, et fragile à mesure que le
   // portefeuille grossit). On commit par lots de 400 (< la limite Firestore de 500 ops/commit) :
@@ -2103,6 +2116,17 @@ async function runSyncCopiloteAccounts(db) {
       reserveTotale += val.whitespacePotential;
       recurrentCasTot += val.recurrentCas;
       casTot += Number(acc.casTotal) || 0;
+      // Boucle veille → action : rattache les signaux de veille externes au compte et les FUSIONNE
+      // dans la file « à traiter » (un déclencheur externe fait remonter le compte). C'est ce qui
+      // pilote la vente PAR la veille, pas seulement par la donnée interne.
+      const veille = nt360DeriveAccountVeille(acc.nom, intelItems, todayIso);
+      if (veille.top.length) {
+        const t = veille.top[0];
+        val.signals = [
+          { type: "veille", montant: 0, hot: veille.hot, prox: t.prox, impact: t.impact, label: `Signal de veille : ${t.title}` },
+          ...val.signals,
+        ].slice(0, 5);
+      }
       // Agrégat de churn (dormance matérielle) pour la bannière « récurrent qui s'éteint ».
       const dormantes = (val.signals || []).filter((s) => s.type === "dormante");
       if (dormantes.length) { churnCount += 1; churnMontant += dormantes.reduce((s, x) => s + (x.montant || 0), 0); }
@@ -2133,8 +2157,9 @@ async function runSyncCopiloteAccounts(db) {
             upsellHeadroom: val.upsellHeadroom, // marge d'upsell sur offres déjà détenues
             upsellByOffre: val.upsellByOffre,
             scorePotentiel: val.scorePotentiel, // classe par potentiel non capté, pas par taille
-            signals: val.signals, // dormance/deal fantôme/point mort → file « à traiter »
+            signals: val.signals, // dormance/deal fantôme/point mort + signal de veille → file « à traiter »
             managedReco: val.managedReco ?? null, // bascule projet ponctuel → récurrent managé/OPEX
+            veille, // déclencheurs de veille externes rattachés (boucle veille → action)
             updatedAt: FieldValue.serverTimestamp(),
           },
         },
