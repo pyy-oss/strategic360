@@ -401,6 +401,104 @@ function deriveBuBenchmark(accounts) {
   return out;
 }
 
+/**
+ * deriveAccountValue(acc, meta, todayIso) -> { whitespaceValue, whitespacePotential, upsellHeadroom,
+ *   upsellByOffre, scorePotentiel, signals } — RÉSERVE DE VALEUR d'un compte, PERSISTÉE au sync pour
+ *   être VISIBLE d'un coup d'œil (au lieu d'être recalculée à la volée dans le prompt d'un seul compte
+ *   ouvert). Rend visible « où cross-seller/upseller » sur tout le portefeuille (audit doubler-CA,
+ *   leviers PANIER/COUVERTURE). PUR : dérivé de l'empreinte du compte + du méta portefeuille.
+ *
+ * Garde-fou n<3 : un panier de référence (medianCas) calculé sur moins de 3 comptes n'est PAS fiable
+ * → on ne chiffre pas dessus (sinon un chiffrage faux détruit la confiance dans tout le business case).
+ */
+function deriveAccountValue(acc, meta, todayIso) {
+  const a = acc || {};
+  const buCatalog = Array.isArray(meta && meta.buCatalog) ? meta.buCatalog : [];
+  const affinity = meta && meta.affinity && typeof meta.affinity === "object" ? meta.affinity : {};
+  const benchmark = meta && meta.buBenchmark && typeof meta.buBenchmark === "object" ? meta.buBenchmark : {};
+  const historique = Array.isArray(a.historique) ? a.historique : [];
+  const enCours = Array.isArray(a.enCours) ? a.enCours : [];
+  const casTotal = Number(a.casTotal) || 0;
+  const pipelinePondere = Number(a.pipelinePondere) || 0;
+
+  const RELIABLE = 3;
+  const median = (offre) => {
+    const b = benchmark[offre];
+    return b && Number(b.count) >= RELIABLE ? Number(b.medianCas) || 0 : 0;
+  };
+
+  const ownedBus = [...(Array.isArray(a.bus) ? a.bus : []), ...historique.map((h) => h && h.offre), ...enCours]
+    .filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim());
+  const touched = new Set(ownedBus.map((x) => x.toLowerCase()));
+
+  // Cross-sell chiffré : offres NON détenues (catalogue − touchées, hors fourre-tout), classées par
+  // affinité market-basket, chiffrées au panier de référence FIABLE.
+  const derivedWs = buCatalog.filter((bu) => typeof bu === "string" && bu.trim() && !touched.has(bu.trim().toLowerCase()) && isMeaningfulBu(bu));
+  const ranked = recommendNextOffers(ownedBus, derivedWs, affinity);
+  const whitespaceValue = (ranked.length ? ranked.map((r) => r.offre) : derivedWs)
+    .slice(0, 5)
+    .map((offre) => ({ offre, montant: median(offre) }))
+    .filter((x) => x.montant > 0);
+  const whitespacePotential = whitespaceValue.reduce((s, x) => s + x.montant, 0);
+
+  // Upsell headroom : sur une offre DÉJÀ détenue, écart (panier de référence − CAS réalisé) quand positif
+  // → la vente la plus probable (offre déjà éprouvée, compte sous-pénétré). Jamais chiffrée jusqu'ici.
+  let upsellHeadroom = 0;
+  const upsellByOffre = [];
+  for (const h of historique) {
+    if (!h || !h.offre) continue;
+    const m = median(h.offre);
+    const gap = m - (Number(h.cas) || 0);
+    if (m > 0 && gap > 0) { upsellHeadroom += gap; upsellByOffre.push({ offre: String(h.offre), montant: Math.round(gap) }); }
+  }
+  upsellByOffre.sort((x, y) => y.montant - x.montant);
+
+  // Score de potentiel = réserve NON captée (cross-sell + upsell) + demi-pipeline en cours (récence) →
+  // classe les comptes par POTENTIEL à croître, pas par taille actuelle (audit levier COUVERTURE).
+  const scorePotentiel = Math.round(whitespacePotential + upsellHeadroom + 0.5 * pipelinePondere);
+
+  // Signaux d'action pré-calculés (alimentent la file « à traiter cette semaine » côté client) :
+  // dormance MATÉRIELLE (≥ 2% du CA), deal fantôme (clôture dépassée), deal au point mort (< 20%).
+  const fy = Number(String(todayIso || "").slice(0, 4)) || null;
+  const signals = [];
+  if (fy) {
+    for (const h of historique) {
+      if (!h || !h.offre || !Number(h.lastYear)) continue;
+      const share = casTotal > 0 ? (Number(h.cas) || 0) / casTotal * 100 : 0;
+      if (fy - Number(h.lastYear) >= 2 && share >= 2) {
+        signals.push({ type: "dormante", montant: Math.round(Number(h.cas) || 0), label: `Offre dormante : ${h.offre} (dernier achat ${h.lastYear})` });
+      }
+    }
+  }
+  for (const o of Array.isArray(a.opportunites) ? a.opportunites : []) {
+    if (!o) continue;
+    const nom = o.nom || "deal";
+    const montant = Math.round(Number(o.montant) || 0);
+    if (o.closingDate && todayIso && String(o.closingDate) < todayIso) {
+      signals.push({ type: "fantome", montant, label: `Deal à requalifier : ${nom} (clôture ${o.closingDate} dépassée)` });
+    } else if (Number.isFinite(o.probability) && o.probability > 0 && o.probability < 20) {
+      signals.push({ type: "pointmort", montant, label: `Deal au point mort : ${nom} (${o.probability}%)` });
+    }
+  }
+
+  // Part récurrente : CAS provenant d'offres achetées sur ≥ 2 ans (firstYear < lastYear) — proxy de MRR
+  // sans retoucher le mapping N/N-1 (les cohortes fines restent un chantier ultérieur).
+  let recurrentCas = 0;
+  for (const h of historique) {
+    if (h && Number(h.firstYear) && Number(h.lastYear) && Number(h.lastYear) > Number(h.firstYear)) recurrentCas += Number(h.cas) || 0;
+  }
+
+  return {
+    whitespaceValue,
+    whitespacePotential: Math.round(whitespacePotential),
+    upsellHeadroom: Math.round(upsellHeadroom),
+    upsellByOffre: upsellByOffre.slice(0, 3),
+    scorePotentiel,
+    signals: signals.slice(0, 4),
+    recurrentCas: Math.round(recurrentCas),
+  };
+}
+
 // Mots trop génériques pour rattacher un signal à un compte (éviteraient les faux positifs « Banque… »
 // matchant toutes les banques). On ne rattache que sur des jetons distinctifs.
 const SIGNAL_STOPWORDS = new Set([
@@ -487,6 +585,7 @@ module.exports = {
   deriveBuAffinity,
   recommendNextOffers,
   deriveBuBenchmark,
+  deriveAccountValue,
   matchSignalsToAccount,
   copiloteAccountMatchesScope,
   slugifyClient,

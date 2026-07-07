@@ -8,6 +8,7 @@ import {
   pickObjectives,
   pickCurrentFy,
   deriveBuBenchmark,
+  deriveAccountValue,
   matchSignalsToAccount,
 } from "../domain/nt360.js";
 import { computeBcg, computeCasSummary, computePipeline, computePorterForces } from "../domain/quanti.js";
@@ -259,6 +260,53 @@ describe("deriveBuAffinity + recommendNextOffers (next best offer data-driven)",
     const { recommendNextOffers } = await import("../domain/nt360.js");
     const ranked = recommendNextOffers([], ["X", "Y"], {});
     expect(ranked.every((r) => r.csPct === 0)).toBe(true);
+  });
+});
+
+describe("deriveAccountValue — réserve de valeur chiffrée et persistée (audit doubler-CA)", () => {
+  const meta = {
+    buCatalog: ["ICT", "CYBER", "FORMATION", "AUTRE"],
+    affinity: { cooc: { ICT: { CYBER: 5, FORMATION: 2 } }, buCount: { ICT: 5 } },
+    buBenchmark: {
+      ICT: { count: 6, avgCas: 40, medianCas: 40 },       // fiable (≥3)
+      CYBER: { count: 5, avgCas: 50, medianCas: 50 },      // fiable
+      FORMATION: { count: 2, avgCas: 30, medianCas: 30 },  // n<3 → garde-fou : NON chiffré
+    },
+  };
+
+  it("chiffre le cross-sell des offres non détenues au panier FIABLE et applique le garde-fou n<3", () => {
+    const acc = { bus: ["ICT"], historique: [{ offre: "ICT", cas: 10, firstYear: 2020, lastYear: 2024 }], enCours: [], opportunites: [], casTotal: 10 };
+    const v = deriveAccountValue(acc, meta, "2026-07-07");
+    // CYBER non détenu, benchmark fiable → chiffré à 50 ; FORMATION n<3 → écarté ; AUTRE fourre-tout → écarté.
+    expect(v.whitespaceValue).toEqual([{ offre: "CYBER", montant: 50 }]);
+    expect(v.whitespacePotential).toBe(50);
+  });
+
+  it("upsell headroom = panier de référence − CAS détenu (offre déjà éprouvée, compte sous-pénétré)", () => {
+    const acc = { bus: ["ICT"], historique: [{ offre: "ICT", cas: 10, firstYear: 2024, lastYear: 2024 }], enCours: [], opportunites: [], casTotal: 10 };
+    const v = deriveAccountValue(acc, meta, "2026-07-07");
+    // médiane ICT 40 − 10 réalisé = 30 de headroom.
+    expect(v.upsellHeadroom).toBe(30);
+    expect(v.upsellByOffre[0]).toEqual({ offre: "ICT", montant: 30 });
+  });
+
+  it("signale dormance matérielle, deal fantôme et deal au point mort ; part récurrente sur ≥2 ans", () => {
+    const acc = {
+      bus: ["ICT"], enCours: [], casTotal: 1000,
+      historique: [
+        { offre: "ICT", cas: 900, firstYear: 2020, lastYear: 2025 },   // récurrent (multi-années), récent
+        { offre: "CYBER", cas: 100, firstYear: 2022, lastYear: 2022 }, // dormante ≥2 ans, 10% du CA → matérielle
+      ],
+      opportunites: [
+        { nom: "Refonte", montant: 500, closingDate: "2026-01-01", probability: 60 }, // clôture dépassée → fantôme
+        { nom: "WAN", montant: 200, probability: 10 },                                  // point mort <20%
+      ],
+    };
+    const v = deriveAccountValue(acc, meta, "2026-07-07");
+    const types = v.signals.map((s) => s.type).sort();
+    expect(types).toEqual(["dormante", "fantome", "pointmort"]);
+    // Part récurrente : ICT (2020→2025, multi-années) = 900 sur 1000 = 90 %.
+    expect(v.recurrentCas).toBe(900);
   });
 });
 
