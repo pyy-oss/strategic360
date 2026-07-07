@@ -116,6 +116,7 @@ function BizOpportunitiesSection({ isExec }: { isExec: boolean }) {
                 {o.source === "cross-sell" && <Badge c={T.emerald}>↗ Cross-sell</Badge>}
                 {o.source === "upsell" && <Badge c={T.gold}>⤴ Upsell</Badge>}
                 {o.source === "managed" && <Badge c={T.plum}>♻ Récurrent</Badge>}
+                {o.triggerEvent && <Badge c={T.gold}>⚡ Déclenché par la veille</Badge>}
                 <Badge c={T.plum}>{o.client}</Badge>
                 <Badge c={T.steel}>BU {o.bu}</Badge>
                 <Badge c={T.gold}>Montant estimé : {o.estAmount || "—"}</Badge>

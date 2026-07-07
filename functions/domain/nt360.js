@@ -603,6 +603,52 @@ function deriveAccountVeille(accountName, intelItems, todayIso) {
   return { count: matched.length, hot, top };
 }
 
+// Affinité ÉVÉNEMENT (subtype de veille) → FAMILLE D'OFFRE (mots-clés du libellé). C'est le cœur de
+// la boucle « la veille déclenche la vente » : un signal externe rend une offre PRÉCISE opportune
+// MAINTENANT (une faille → cyber, une implantation → réseau, une réglementation → conformité, une
+// levée de fonds → transformation/data). Mapping DÉTERMINISTE et prudent. PUR.
+const SUBTYPE_OFFER_MARKERS = {
+  vulnerability: ["cyber", "soc", "wallix", "secur", "pentest", "siem", "edr", "audit"],
+  cve: ["cyber", "soc", "wallix", "secur", "pentest", "siem", "edr"],
+  regulation: ["conform", "passi", "audit", "gouvernance", "rgpd", "risk", "secur", "cyber"],
+  eol: ["refresh", "renouvel", "infra", "reseau", "wan", "serveur", "migration", "cloud"],
+  implantation: ["reseau", "wan", "infra", "lan", "cabl", "connect", "ict", "site"],
+  market_entry: ["reseau", "wan", "infra", "ict", "cloud"],
+  expansion: ["reseau", "wan", "infra", "ict", "cloud", "manage"],
+  supply: ["infoger", "manage", "sourcing", "tma", "maintenance", "support"],
+  hire: ["formation", "academy", "certif", "competence"],
+  leadership: ["formation", "academy", "conduite", "change"],
+  funding: ["data", "ia", "cloud", "transformation", "erp", "digital"],
+  budget: ["data", "ia", "cloud", "transformation", "erp", "digital"],
+  product_launch: ["data", "ia", "innovation", "appli", "dev"],
+  trend: ["data", "ia", "innovation"],
+};
+
+/**
+ * matchOffersToEvents(veilleTop, offers) -> [{ offre, montant, kind, event, subtype }] — croise les
+ * signaux de veille rattachés au compte avec ses offres de réserve (cross-sell/upsell) : une offre
+ * devient « opportune maintenant » quand un événement externe la rend pertinente. C'est ce qui fait
+ * que la VEILLE déclenche le cross-sell (au lieu d'un simple market-basket interne). PUR.
+ */
+function matchOffersToEvents(veilleTop, offers) {
+  const norm = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const out = [];
+  const seen = new Set();
+  for (const ev of Array.isArray(veilleTop) ? veilleTop : []) {
+    const markers = SUBTYPE_OFFER_MARKERS[ev && ev.subtype];
+    if (!markers) continue;
+    for (const o of Array.isArray(offers) ? offers : []) {
+      if (!o || !o.offre || seen.has(o.offre)) continue;
+      const label = norm(o.offre);
+      if (markers.some((m) => label.includes(m))) {
+        seen.add(o.offre);
+        out.push({ offre: o.offre, montant: o.montant, kind: o.kind, event: ev.title || "", subtype: ev.subtype });
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * copiloteAccountMatchesScope(account, scope) -> bool — un compte est visible par un commercial si
  * l'UNE des trois sources de rattachement correspond (« mix des 3 ») :
@@ -645,6 +691,7 @@ module.exports = {
   deriveBuBenchmark,
   deriveAccountValue,
   deriveAccountVeille,
+  matchOffersToEvents,
   matchSignalsToAccount,
   copiloteAccountMatchesScope,
   slugifyClient,

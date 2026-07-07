@@ -80,6 +80,8 @@ export interface CopiloteAccount {
     managedReco?: { offre: string; arr: number } | null; // bascule projet ponctuel → récurrent managé/OPEX
     // Boucle veille → action : déclencheurs de veille externes rattachés au compte (direction « intégré »).
     veille?: { count: number; hot: boolean; top: { title: string; axis: string; impact: string; prox: string; subtype: string; soWhat: string; date: string }[] };
+    // Cross-sell/upsell rendu opportun MAINTENANT par un événement de veille (la veille déclenche la vente).
+    eventOffers?: { offre: string; montant: number; kind: string; event: string; subtype: string }[];
     updatedAt?: Timestamp | FieldValue;
   };
   updatedAt?: Timestamp | FieldValue;

@@ -289,6 +289,22 @@ export function Copilote() {
             </div>
           )}
 
+          {/* Cross-sell/upsell DÉCLENCHÉ par un événement de veille : l'offre opportune MAINTENANT, avec
+              son déclencheur externe. C'est le point de jonction veille ↔ vente (direction intégrée). */}
+          {(account.nt360?.eventOffers ?? []).length > 0 && (
+            <div style={{ marginTop: 12, background: `${T.gold}14`, borderRadius: 10, padding: "10px 13px", borderLeft: `3px solid ${T.gold}` }}>
+              <Eyebrow color={T.gold}>⚡ Opportun maintenant (déclenché par la veille)</Eyebrow>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                {(account.nt360?.eventOffers ?? []).map((e, i) => (
+                  <div key={i} style={{ fontSize: 12, color: T.ink, lineHeight: 1.45 }}>
+                    <b>{e.kind === "upsell" ? "Upsell" : "Cross-sell"} {e.offre}</b> {e.montant > 0 ? <span style={{ color: T.emerald, fontVariantNumeric: "tabular-nums" }}>({fmtC(e.montant)} XOF)</span> : null}
+                    <div style={{ fontSize: 11, color: T.dim, marginTop: 1 }}>↳ déclenché par : {e.event}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {((account.enjeux ?? []).length > 0 || (account.whitespace ?? []).length > 0) && (
             <div style={{ marginTop: 14 }}>
               <Eyebrow>Enjeux &amp; espaces à conquérir</Eyebrow>
