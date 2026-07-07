@@ -481,7 +481,7 @@ function deriveAccountValue(acc, meta, todayIso) {
       if (!h || !h.offre || !Number(h.lastYear)) continue;
       const share = casTotal > 0 ? (Number(h.cas) || 0) / casTotal * 100 : 0;
       if (fy - Number(h.lastYear) >= 2 && share >= 2) {
-        signals.push({ type: "dormante", montant: Math.round(Number(h.cas) || 0), label: `Offre dormante : ${h.offre} (dernier achat ${h.lastYear})` });
+        signals.push({ type: "dormante", offre: String(h.offre), montant: Math.round(Number(h.cas) || 0), label: `Offre dormante : ${h.offre} (dernier achat ${h.lastYear})` });
       }
     }
   }
@@ -650,6 +650,28 @@ function matchOffersToEvents(veilleTop, offers) {
 }
 
 /**
+ * armDormantSignals(signals, veille, eventOffers) -> signals — ARME la relance d'une offre dormante
+ * quand la VEILLE rouvre une fenêtre (levier RÉCURRENCE, pendant « rétention » du cross-sell
+ * événementiel). Une offre récurrente qui s'éteint devient PRIORITAIRE si :
+ *   (a) un événement rend précisément cette offre opportune (match dans eventOffers), ou
+ *   (b) le compte a un signal de veille chaud (une fenêtre commerciale s'ouvre, quelle qu'elle soit).
+ * Annote la dormante concernée { armed:true, triggerEvent } sans toucher aux autres signaux. PUR.
+ */
+function armDormantSignals(signals, veille, eventOffers) {
+  const list = Array.isArray(signals) ? signals : [];
+  const eventByOffre = new Map((Array.isArray(eventOffers) ? eventOffers : []).map((e) => [e.offre, e.event]));
+  const hot = !!(veille && veille.hot);
+  const hotTitle = veille && Array.isArray(veille.top) && veille.top[0] ? veille.top[0].title : "";
+  return list.map((s) => {
+    if (!s || s.type !== "dormante") return s;
+    const evt = eventByOffre.get(s.offre);
+    if (evt) return { ...s, armed: true, triggerEvent: evt };
+    if (hot) return { ...s, armed: true, triggerEvent: hotTitle };
+    return s;
+  });
+}
+
+/**
  * copiloteAccountMatchesScope(account, scope) -> bool — un compte est visible par un commercial si
  * l'UNE des trois sources de rattachement correspond (« mix des 3 ») :
  *   1. override manuel : son e-mail figure dans account.owners ;
@@ -692,6 +714,7 @@ module.exports = {
   deriveAccountValue,
   deriveAccountVeille,
   matchOffersToEvents,
+  armDormantSignals,
   matchSignalsToAccount,
   copiloteAccountMatchesScope,
   slugifyClient,
