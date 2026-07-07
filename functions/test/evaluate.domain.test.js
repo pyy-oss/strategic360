@@ -22,14 +22,42 @@ describe("evaluate — porte de pertinence des signaux de veille", () => {
     expect(p).toContain("intégrateur IT/cyber");
   });
 
-  it("parseEvaluateResponse : borne le score 0-100, respecte `publier`, garde la raison", () => {
+  it("buildEvaluatePrompt surface les champs d'actionnabilité (so-what, action, businessAngle) et demande de fonder le verdict dessus", () => {
+    const p = buildEvaluatePrompt(
+      {
+        title: "AO refonte SI", summary: "x", axis: "clients_prospects", subtype: "tender", ent: "BCEAO", geo: "ci",
+        impact: "high", stance: "opportunity", prox: "imminent", dueDate: "2026-08-15",
+        soWhat: "fenêtre pour un SOC managé", recommendedAction: "Constituer le dossier avant le 15/08",
+        businessAngle: { buyer: "BCEAO", estAmount: "152 M XOF", deadline: "2026-08-15", tenderRef: "AO-2026-07" },
+      },
+      ""
+    );
+    expect(p).toContain("ACTIONNABILITÉ");
+    expect(p).toContain("fenêtre pour un SOC managé"); // so-what
+    expect(p).toContain("Constituer le dossier avant le 15/08"); // action
+    expect(p).toContain("2026-08-15"); // échéance
+    expect(p).toContain("acheteur : BCEAO"); // businessAngle sérialisé
+    expect(p).toContain("152 M XOF");
+    expect(p).toContain("AO-2026-07");
+    expect(p).toMatch(/GÉNÉRIQUE/); // consigne de pénalisation du générique
+  });
+
+  it("parseEvaluateResponse : borne le score 0-100, garde la raison", () => {
     expect(parseEvaluateResponse({ pertinence: 82, publier: true, raison: "AO imminent" })).toEqual({ pertinence: 82, publier: true, raison: "AO imminent" });
     expect(parseEvaluateResponse({ pertinence: 150, publier: false, raison: "hors sujet" }).pertinence).toBe(100);
     expect(parseEvaluateResponse({ pertinence: -5, publier: false, raison: "x" }).pertinence).toBe(0);
   });
 
-  it("fail-open : `publier` absent → déduit du seuil ; score absent → publie ; réponse nulle → null", () => {
-    // publier absent → score >= seuil publie, sinon non.
+  it("publication COUPLÉE au score : un `publier:true` sous le seuil est requalifié non publié ; `publier:false` respecté", () => {
+    // publier:true mais score < seuil → NON publié (la porte mord).
+    expect(parseEvaluateResponse({ pertinence: RELEVANCE_MIN - 5, publier: true, raison: "médiocre" }).publier).toBe(false);
+    // publier:true et score >= seuil → publié.
+    expect(parseEvaluateResponse({ pertinence: RELEVANCE_MIN + 5, publier: true, raison: "ok" }).publier).toBe(true);
+    // publier:false explicite → toujours rejeté, même score élevé.
+    expect(parseEvaluateResponse({ pertinence: 95, publier: false, raison: "doublon" }).publier).toBe(false);
+  });
+
+  it("fail-open borné : `publier` absent → déduit du seuil ; score absent → publie ; réponse nulle → null", () => {
     expect(parseEvaluateResponse({ pertinence: RELEVANCE_MIN + 10, raison: "" }).publier).toBe(true);
     expect(parseEvaluateResponse({ pertinence: RELEVANCE_MIN - 10, raison: "" }).publier).toBe(false);
     // score ET publier absents → fail-open (publie).
