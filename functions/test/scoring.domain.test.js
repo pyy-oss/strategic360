@@ -301,6 +301,22 @@ describe("computePriorityScore (barème audité)", () => {
     expect(score).toBe(35);
   });
 
+  it("accountValueFactor : bonus multiplicatif hors barème (neutre à 0, +15% au max), sans casser le barème", () => {
+    const item = { impact: "high", sourceRating: "A1", axis: "clients_prospects", dueDate: "2026-07-03" };
+    const base = computePriorityScore(item, now);
+    // accountValue=0 (défaut) → identique au barème.
+    expect(computePriorityScore(item, now, { accountValue: 0 })).toBe(base);
+    expect(computePriorityScore(item, now, {})).toBe(base);
+    // Gros compte (accountValue=1) → score relevé (+ jusqu'à 15%), borné à 100.
+    const boosted = computePriorityScore(item, now, { accountValue: 1 });
+    expect(boosted).toBeGreaterThan(base);
+    expect(boosted).toBeLessThanOrEqual(100);
+    // Valeur intermédiaire → boost intermédiaire (monotone).
+    const mid = computePriorityScore(item, now, { accountValue: 0.5 });
+    expect(mid).toBeGreaterThanOrEqual(base);
+    expect(mid).toBeLessThanOrEqual(boosted);
+  });
+
   it("higher impact strictly increases the score, all else equal", () => {
     const base = { sourceRating: "B3", axis: "tech", dueDate: "2026-07-03" };
     const low = computePriorityScore({ ...base, impact: "low" }, now);

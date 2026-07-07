@@ -415,6 +415,28 @@ describe("armDormantSignals — relance churn armée par la veille (levier RÉCU
   });
 });
 
+describe("deriveClientValueIndex / resolveAccountValue — la valeur compte priorise la veille", () => {
+  it("classe les clients par tier quantile de CAS et résout une entité de veille", async () => {
+    const { deriveClientValueIndex, resolveAccountValue } = await import("../domain/nt360.js");
+    const accounts = [
+      { nom: "Petit Client", casTotal: 10 },
+      { nom: "Client Médian", casTotal: 100 },
+      { nom: "Orange Côte d'Ivoire", casTotal: 1000 },
+      { nom: "Sans CAS", casTotal: 0 }, // écarté (pas de valeur)
+    ];
+    const idx = deriveClientValueIndex(accounts);
+    // Le plus gros → tier 1.0, le plus petit → 0.0.
+    expect(idx["orange cote d ivoire"]).toBe(1);
+    expect(idx["petit client"]).toBe(0);
+    expect(idx["sans cas"]).toBeUndefined();
+    // Résolution par inclusion bornée : « Orange CI » retrouve « Orange Côte d'Ivoire ».
+    expect(resolveAccountValue("Orange CI", idx)).toBe(1);
+    // Entité inconnue → 0 (neutre).
+    expect(resolveAccountValue("Inconnu SARL", idx)).toBe(0);
+    expect(resolveAccountValue("", idx)).toBe(0);
+  });
+});
+
 describe("copiloteAccountMatchesScope (cloisonnement « mix des 3 »)", () => {
   it("matche par owner (e-mail), par am, ou par BU — insensible casse/espaces ; sinon false", async () => {
     const { copiloteAccountMatchesScope } = await import("../domain/nt360.js");

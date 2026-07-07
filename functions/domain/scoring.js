@@ -241,7 +241,7 @@ function proximiteFactor(item, now = Date.now()) {
  *          date?:string, dueDate?:string}} item
  * @param {number} [now] injectable clock (ms epoch) for deterministic tests.
  */
-function computePriorityScore(item, now = Date.now()) {
+function computePriorityScore(item, now = Date.now(), opts = {}) {
   const impact = impactFactor(item && item.impact);
   const credibilite = credibiliteFactor(item && item.sourceRating);
   const potentielBusiness = businessFactor(item);
@@ -253,7 +253,14 @@ function computePriorityScore(item, now = Date.now()) {
     100 *
     (0.4 + 0.6 * credibilite) *
     (0.3 * impact + 0.25 * proximite + 0.2 * potentielBusiness + 0.15 * alignement + 0.1 * probabilite);
-  return Math.round(Math.max(0, Math.min(100, raw)));
+
+  // accountValueFactor (audit doubler-CA) : un signal qui concerne un COMPTE À FORTE VALEUR
+  // commerciale (CAS réalisé élevé) doit remonter — la valeur interne priorise la veille externe.
+  // Bonus MULTIPLICATIF HORS BARÈME (n'altère pas la pondération des 5 facteurs) : neutre à 0
+  // (barème inchangé, tous les tests existants passent), +15 % au maximum pour le compte le mieux valorisé.
+  const av = Math.max(0, Math.min(1, Number(opts && opts.accountValue) || 0));
+  const boosted = raw * (1 + 0.15 * av);
+  return Math.round(Math.max(0, Math.min(100, boosted)));
 }
 
 module.exports = {
