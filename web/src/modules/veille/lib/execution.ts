@@ -192,7 +192,12 @@ export async function createDecision(input: DecisionInput): Promise<string> {
  * actions
  * ------------------------------------------------------------------------------------------- */
 
-export type ActionStatus = "À planifier" | "À lancer" | "En cours" | "À surveiller" | "Immédiat" | string;
+export type ActionStatus = "À planifier" | "À lancer" | "En cours" | "À surveiller" | "Immédiat" | "Terminé" | "Gagné" | "Abandonné" | string;
+
+/** Statuts terminaux (audit doubler-CA) : une action dans un de ces états sort de la file « à faire ». */
+export const ACTION_TERMINAL: ReadonlySet<string> = new Set(["Terminé", "Gagné", "Abandonné"]);
+/** Statuts éditables en ligne dans le plan d'action. */
+export const ACTION_STATUSES: ActionStatus[] = ["À planifier", "À lancer", "En cours", "À surveiller", "Immédiat", "Terminé", "Gagné", "Abandonné"];
 
 export interface StrategicAction {
   id: string;
@@ -208,6 +213,8 @@ export interface StrategicAction {
   statut: ActionStatus;
   source?: string;
   linkedItemId?: string;
+  createdBy?: string; // uid du créateur — imposé par les règles (adoption : chacun gère ses actions)
+  accountId?: string; // compte Copilote rattaché (deep-link depuis « Ma journée »)
 }
 
 export type ActionInput = Omit<StrategicAction, "id">;
@@ -237,7 +244,8 @@ export function useActions(): { actions: StrategicAction[]; loading: boolean; er
 }
 
 export async function createAction(input: ActionInput): Promise<string> {
-  const ref = await addDoc(collection(db, "actions"), input);
+  // createdBy imposé par les règles (adoption : ouvert aux commerciaux, chacun ne gère que les siennes).
+  const ref = await addDoc(collection(db, "actions"), { ...input, createdBy: auth.currentUser?.uid ?? "" });
   return ref.id;
 }
 

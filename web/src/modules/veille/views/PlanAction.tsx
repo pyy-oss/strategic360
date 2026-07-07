@@ -5,8 +5,9 @@ import { T, PROX } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge, Tip } from "../../../design/ui";
 import { quadrant } from "../data";
 import { useIsExec } from "../../../lib/rbac";
+import { useAuthClaims } from "../../../lib/AuthProvider";
 import { slugifyClient } from "../lib/copilote";
-import { actionPriority, createAction, useActions, type ActionStatus } from "../lib/execution";
+import { actionPriority, createAction, updateAction, useActions, ACTION_STATUSES, type ActionStatus } from "../lib/execution";
 import { updateBizOpportunity, useBizOpportunities, type BizOpportunityProbability, type BizOpportunityStatus } from "../lib/intel";
 import { usePaged, Pager } from "../components/Pager";
 import { Select, Input, DateField } from "../../../design/fields";
@@ -211,8 +212,8 @@ const EMPTY_FORM: NewActionForm = {
  * `ev` (valeur attendue) is derived on submit from the impact×urgence/effort formula (BUILD_KIT.md
  * §8.3) as a proxy — the action's own fields carry no independent monetary base, so this mirrors
  * the same priority formula used for the quadrant/sort rather than an unrelated manual estimate. */
-function NewActionPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [form, setForm] = useState<NewActionForm>(EMPTY_FORM);
+function NewActionPanel({ open, onClose, defaultOwner = "" }: { open: boolean; onClose: () => void; defaultOwner?: string }) {
+  const [form, setForm] = useState<NewActionForm>({ ...EMPTY_FORM, owner: defaultOwner });
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const toast = useToast();
@@ -240,7 +241,7 @@ function NewActionPanel({ open, onClose }: { open: boolean; onClose: () => void 
         statut: form.statut,
         source: form.source.trim() || undefined,
       });
-      setForm(EMPTY_FORM);
+      setForm({ ...EMPTY_FORM, owner: defaultOwner });
       toast.success("Action enregistrée.");
       onClose();
     } catch (e2) {
@@ -307,6 +308,12 @@ function NewActionPanel({ open, onClose }: { open: boolean; onClose: () => void 
 export function PlanAction() {
   const { actions, loading } = useActions();
   const isExec = useIsExec();
+  const { user, role } = useAuthClaims();
+  // Adoption (audit doubler-CA) : la création d'action n'est plus réservée aux exec — un commercial
+  // doit pouvoir enregistrer ce qu'il a à faire (miroir de la règle Firestore `commercial()`).
+  const canContribute = isExec || role === "commercial" || role === "commercial_dir";
+  const myUid = user?.uid ?? "";
+  const defaultOwner = user?.displayName || user?.email || "";
   const [showForm, setShowForm] = useState(false);
 
   const acts = actions
@@ -332,17 +339,17 @@ export function PlanAction() {
       <BizOpportunitiesSection isExec={isExec} />
       <div style={{ fontSize: 12, color: T.plum, marginBottom: 14, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <span>✅ La boucle « et maintenant ? » : chaque signal et événement converge en actions priorisées (impact × urgence, effort, valeur attendue), avec porteur et échéance. C'est ce qui relie l'intelligence à la valeur.</span>
-        {isExec && (
+        {canContribute && (
           <button className="pill on" onClick={() => setShowForm((v) => !v)}>
             + Nouvelle action
           </button>
         )}
       </div>
-      {isExec && <NewActionPanel open={showForm} onClose={() => setShowForm(false)} />}
+      {canContribute && <NewActionPanel open={showForm} onClose={() => setShowForm(false)} defaultOwner={defaultOwner} />}
       {loading && actions.length === 0 && <div style={{ fontSize: 12.5, color: T.faint, marginBottom: 10 }}>Chargement du plan d'action…</div>}
       {!loading && actions.length === 0 && (
         <div style={{ fontSize: 12.5, color: T.faint, marginBottom: 10 }}>
-          Aucune action enregistrée pour l'instant. {isExec ? "Utilisez « + Nouvelle action » pour en créer une." : ""}
+          Aucune action enregistrée pour l'instant. {canContribute ? "Utilisez « + Nouvelle action » pour en créer une." : ""}
         </div>
       )}
       {actions.length > 0 && (
@@ -426,7 +433,16 @@ export function PlanAction() {
                       <td style={{ padding: "8px", color: T.dim }}>{a.owner}</td>
                       <td style={{ padding: "8px", color: T.dim }}>{fmtEcheance(a.ech)}</td>
                       <td style={{ padding: "8px" }}>
-                        <Badge c={a.st === "En cours" ? T.emerald : a.st === "À surveiller" ? T.faint : T.gold}>{a.st}</Badge>
+                        {isExec || a.createdBy === myUid ? (
+                          <Select
+                            value={a.st}
+                            onChange={(v) => { void updateAction(a.id, { statut: v as ActionStatus }); }}
+                            ariaLabel={`Statut de ${a.t}`}
+                            options={ACTION_STATUSES.map((s) => ({ value: s, label: s }))}
+                          />
+                        ) : (
+                          <Badge c={a.st === "En cours" ? T.emerald : a.st === "À surveiller" ? T.faint : T.gold}>{a.st}</Badge>
+                        )}
                       </td>
                     </tr>
                   ))}
