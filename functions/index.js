@@ -2112,6 +2112,8 @@ async function runSyncCopiloteAccounts(db) {
       if (topXs && topXs.montant >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: "cross-sell", slug: acc.slug, client: acc.nom, offre: topXs.offre, montant: topXs.montant });
       const topUp = (val.upsellByOffre || [])[0];
       if (topUp && topUp.montant >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: "upsell", slug: acc.slug, client: acc.nom, offre: topUp.offre, montant: topUp.montant });
+      // Bascule vers le récurrent (levier RÉCURRENCE) : le meilleur passage managé/OPEX chiffré en ARR.
+      if (val.managedReco && val.managedReco.arr >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: "managed", slug: acc.slug, client: acc.nom, offre: val.managedReco.offre, montant: val.managedReco.arr });
       batch.set(
         db.doc(`copiloteAccounts/${acc.slug}`),
         {
@@ -2132,6 +2134,7 @@ async function runSyncCopiloteAccounts(db) {
             upsellByOffre: val.upsellByOffre,
             scorePotentiel: val.scorePotentiel, // classe par potentiel non capté, pas par taille
             signals: val.signals, // dormance/deal fantôme/point mort → file « à traiter »
+            managedReco: val.managedReco ?? null, // bascule projet ponctuel → récurrent managé/OPEX
             updatedAt: FieldValue.serverTimestamp(),
           },
         },
@@ -2166,18 +2169,22 @@ async function runSyncCopiloteAccounts(db) {
     const id = `auto-${cand.kind}-${cand.slug}-${offreSlug}`.slice(0, 250);
     const ref = db.doc(`bizOpportunities/${id}`);
     const existing = await ref.get();
+    const kindLabel = cand.kind === "upsell" ? "Upsell" : cand.kind === "managed" ? "Passage en managé" : "Cross-sell";
+    const nextAction = cand.kind === "upsell"
+      ? `Étendre ${cand.offre} (compte sous-pénétré vs panier de référence)`
+      : cand.kind === "managed"
+        ? `Convertir en récurrent : proposer ${cand.offre} en managé/OPEX (ARR ≈ panier de référence)`
+        : `Chiffrer et proposer ${cand.offre} (panier de référence réel)`;
     const payload = {
-      name: `${cand.kind === "upsell" ? "Upsell" : "Cross-sell"} ${cand.offre} — ${cand.client}`,
+      name: `${kindLabel} ${cand.offre} — ${cand.client}`,
       client: cand.client,
       bu: cand.offre,
       offering: cand.offre,
       estAmount: String(Math.round(cand.montant)),
       horizon: "moyen",
       probability: "medium",
-      nextAction: cand.kind === "upsell"
-        ? `Étendre ${cand.offre} (compte sous-pénétré vs panier de référence)`
-        : `Chiffrer et proposer ${cand.offre} (panier de référence réel)`,
-      source: cand.kind,       // 'cross-sell' | 'upsell' — distingue l'origine du lead
+      nextAction,
+      source: cand.kind,       // 'cross-sell' | 'upsell' | 'managed' — origine du lead
       generatedBy: "sync",     // ni IA (enrichissement veille) ni humain : dérivé du portefeuille
       updatedAt: FieldValue.serverTimestamp(),
     };

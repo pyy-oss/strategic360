@@ -255,6 +255,19 @@ export function Copilote() {
             </div>
           )}
 
+          {/* Bascule vers le récurrent (levier RÉCURRENCE) : compte 100% projet ponctuel → managé/OPEX. */}
+          {account.nt360?.managedReco && (
+            <div style={{ marginTop: 12, background: `${T.plum}14`, borderRadius: 10, padding: "10px 13px", borderLeft: `3px solid ${T.plum}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                <Eyebrow color={T.plum}>Passer au récurrent (managé / OPEX)</Eyebrow>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: T.plum }}>ARR ≈ {fmtC(account.nt360.managedReco.arr)} XOF</span>
+              </div>
+              <div style={{ fontSize: 12, color: T.dim, marginTop: 6, lineHeight: 1.45 }}>
+                Ce compte n'achète que du projet ponctuel. Proposer <b style={{ color: T.ink }}>{account.nt360.managedReco.offre}</b> en offre managée transforme un CA one-shot en revenu récurrent.
+              </div>
+            </div>
+          )}
+
           {((account.enjeux ?? []).length > 0 || (account.whitespace ?? []).length > 0) && (
             <div style={{ marginTop: 14 }}>
               <Eyebrow>Enjeux &amp; espaces à conquérir</Eyebrow>

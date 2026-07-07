@@ -212,6 +212,21 @@ function isMeaningfulBu(name) {
   if (!s) return false;
   return !PLACEHOLDER_BU.has(s.toLowerCase());
 }
+
+// Offres MANAGÉES / RÉCURRENTES (OPEX) — classification DÉTERMINISTE par mots-clés du libellé (audit
+// doubler-CA, levier RÉCURRENCE). Une offre managée/abonnement/support transforme un CA one-shot en
+// revenu récurrent (MRR). On reste sur une liste de marqueurs sûrs (pas de dérivation fp/suppliers, que
+// l'audit demande de valider sur échantillon avant industrialisation). PUR.
+const MANAGED_MARKERS = [
+  "manag", "mssp", "soc", "infogér", "infoger", "tma", "maintenance", "support",
+  "abonn", "saas", "as-a-service", "aas", "cloud", "hébergement", "hebergement",
+  "supervision", "monitoring", "récurrent", "recurrent", "opex", "academy", "licence", "license", "subscription",
+];
+function isManagedOffer(name) {
+  const s = String(name == null ? "" : name).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (!s.trim()) return false;
+  return MANAGED_MARKERS.some((m) => s.includes(m.normalize("NFD").replace(/[̀-ͯ]/g, "")));
+}
 // Repli déterministe (djb2 → base36) quand slugifyClient est vide (nom purement non-latin/symboles) :
 // on ne veut PAS perdre le CAS de ce client ni fusionner tous ces clients dans une seule clé "".
 function hashName(name) {
@@ -488,6 +503,16 @@ function deriveAccountValue(acc, meta, todayIso) {
     if (h && Number(h.firstYear) && Number(h.lastYear) && Number(h.lastYear) > Number(h.firstYear)) recurrentCas += Number(h.cas) || 0;
   }
 
+  // Reco « passage en managé/OPEX » (levier RÉCURRENCE) : si le compte n'achète AUCUNE offre managée
+  // (que du projet ponctuel), on cible la meilleure offre managée du whitespace, chiffrée en ARR récurrent
+  // (panier de référence fiable). C'est la conversion qui transforme un CA one-shot en MRR.
+  const hasManaged = ownedBus.some((b) => isManagedOffer(b));
+  let managedReco = null;
+  if (!hasManaged) {
+    const managedCand = whitespaceValue.find((w) => isManagedOffer(w.offre));
+    if (managedCand) managedReco = { offre: managedCand.offre, arr: managedCand.montant };
+  }
+
   return {
     whitespaceValue,
     whitespacePotential: Math.round(whitespacePotential),
@@ -496,6 +521,7 @@ function deriveAccountValue(acc, meta, todayIso) {
     scorePotentiel,
     signals: signals.slice(0, 4),
     recurrentCas: Math.round(recurrentCas),
+    managedReco, // { offre, arr } | null — bascule projet ponctuel → récurrent managé
   };
 }
 
@@ -575,6 +601,7 @@ function copiloteAccountMatchesScope(account, scope) {
 module.exports = {
   STAGE_TO_ETAPE,
   isMeaningfulBu,
+  isManagedOffer,
   mapOrders,
   mapOpportunities,
   mapInvoices,

@@ -77,6 +77,7 @@ export interface CopiloteAccount {
     upsellByOffre?: { offre: string; montant: number }[];
     scorePotentiel?: number;
     signals?: { type: string; montant: number; label: string }[];
+    managedReco?: { offre: string; arr: number } | null; // bascule projet ponctuel → récurrent managé/OPEX
     updatedAt?: Timestamp | FieldValue;
   };
   updatedAt?: Timestamp | FieldValue;
