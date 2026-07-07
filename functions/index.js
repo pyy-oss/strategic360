@@ -845,13 +845,27 @@ exports.classifyAI = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
  *   2) si le score est stable (ou suppression) → on recalcule les agrégats UNE fois.
  * Résultat : une écriture de contenu = une passe de scoring + une passe d'agrégats, pas davantage.
  */
+/** Charge l'index de valeur commerciale par client (summaries/copiloteClientValue) — {} si absent. */
+async function loadClientValueIndex(db) {
+  try {
+    const snap = await db.doc("summaries/copiloteClientValue").get();
+    const idx = snap.exists ? snap.data().index : null;
+    return idx && typeof idx === "object" ? idx : {};
+  } catch {
+    return {};
+  }
+}
+
 exports.onIntelItemWrite = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1", database: FIRESTORE_DATABASE_ID }, async (event) => {
   const db = firestoreDb();
   const after = event.data && event.data.after;
 
   if (after && after.exists) {
     const item = after.data();
-    const computed = computePriorityScore(item);
+    // accountValueFactor : un signal concernant un gros compte client remonte (boucle interne → veille).
+    const clientValue = await loadClientValueIndex(db);
+    const accountValue = nt360ResolveAccountValue(item.ent, clientValue);
+    const computed = computePriorityScore(item, Date.now(), { accountValue });
     if (item.priorityScore !== computed) {
       // Le score a bougé : on l'écrit et on sort. La mise à jour re-déclenche ce trigger, et c'est
       // à cette passe-là (score stabilisé) que les agrégats seront recalculés — évite de les
@@ -887,13 +901,17 @@ exports.onIntelItemWrite = onDocumentWritten({ document: "intelItems/{id}", regi
  * écritures inutiles). Seuls les scores dont la valeur change déclenchent une réécriture.
  */
 async function runRescoreActive(db) {
-  const snap = await db.collection("intelItems").get();
+  const [snap, clientValue] = await Promise.all([
+    db.collection("intelItems").get(),
+    loadClientValueIndex(db),
+  ]);
   // Filtre en mémoire (collection de petite taille) : un `!=` Firestore exclurait les docs sans
   // champ `status`. On re-score tout ce qui n'est pas archivé.
   const active = snap.docs.filter((d) => (d.data().status || "new") !== "archived");
   const updates = active.map(async (doc) => {
     const item = doc.data();
-    const computed = computePriorityScore(item);
+    const accountValue = nt360ResolveAccountValue(item.ent, clientValue);
+    const computed = computePriorityScore(item, Date.now(), { accountValue });
     if (item.priorityScore === computed) return false;
     await doc.ref.update({ priorityScore: computed });
     return true;
@@ -1955,6 +1973,8 @@ const {
   deriveAccountVeille: nt360DeriveAccountVeille,
   matchOffersToEvents: nt360MatchOffersToEvents,
   armDormantSignals: nt360ArmDormantSignals,
+  deriveClientValueIndex: nt360DeriveClientValueIndex,
+  resolveAccountValue: nt360ResolveAccountValue,
   matchSignalsToAccount: nt360MatchSignalsToAccount,
   copiloteAccountMatchesScope: nt360AccountMatchesScope,
   isMeaningfulBu: nt360IsMeaningfulBu,
@@ -2206,6 +2226,14 @@ async function runSyncCopiloteAccounts(db) {
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }
+  );
+
+  // Index de VALEUR COMMERCIALE par client (boucle interne → veille) : le scoring des signaux de
+  // veille s'en sert pour faire remonter ceux qui concernent les gros comptes (accountValueFactor).
+  const clientValue = nt360DeriveClientValueIndex(derived);
+  await db.doc("summaries/copiloteClientValue").set(
+    { index: clientValue, count: Object.keys(clientValue).length, updatedAt: FieldValue.serverTimestamp() },
+    { merge: false }
   );
 
   // MOTEUR PROACTIF (Phase 4) : émettre les meilleures opportunités cross-sell/upsell chiffrées dans

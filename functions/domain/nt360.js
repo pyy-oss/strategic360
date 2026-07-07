@@ -672,6 +672,49 @@ function armDormantSignals(signals, veille, eventOffers) {
 }
 
 /**
+ * deriveClientValueIndex(accounts) -> { [nomNormalisé]: tier(0..1) } — index de VALEUR COMMERCIALE
+ * par client, pour que la veille priorise les signaux qui concernent les gros comptes (boucle
+ * interne → veille). tier = rang quantile du CAS réalisé (robuste aux quelques comptes géants) :
+ * le plus gros ≈ 1.0, la médiane ≈ 0.5. PUR.
+ */
+function deriveClientValueIndex(accounts) {
+  const rows = (Array.isArray(accounts) ? accounts : [])
+    .map((a) => ({ nom: a && a.nom, cas: Number(a && a.casTotal) || 0 }))
+    .filter((r) => r.nom && r.cas > 0)
+    .sort((a, b) => a.cas - b.cas);
+  const n = rows.length;
+  const index = {};
+  for (let i = 0; i < n; i++) {
+    const tier = n > 1 ? i / (n - 1) : 1; // rang quantile croissant
+    index[normalizeText(rows[i].nom)] = Math.round(tier * 100) / 100;
+  }
+  return index;
+}
+
+/**
+ * resolveAccountValue(entName, index) -> number 0..1 — retrouve le tier de valeur d'une entité de
+ * veille (`item.ent`) dans l'index. Correspondance sur le nom normalisé (égalité ou inclusion bornée,
+ * pour absorber « Orange CI » vs « Orange Côte d'Ivoire »). 0 si aucune correspondance. PUR.
+ */
+function resolveAccountValue(entName, index) {
+  if (!index || typeof index !== "object") return 0;
+  const ent = normalizeText(entName);
+  if (ent && index[ent] != null) return index[ent]; // correspondance exacte prioritaire
+  // Sinon, chevauchement de JETON DISTINCTIF (même logique que le rattachement des signaux : « Orange
+  // CI » et « Orange Côte d'Ivoire » partagent « orange »). Robuste aux libellés partiels.
+  const entToks = new Set(accountMatchTokens(entName));
+  if (!entToks.size) return 0;
+  let best = 0;
+  for (const key of Object.keys(index)) {
+    if (accountMatchTokens(key).some((t) => entToks.has(t))) {
+      const v = Number(index[key]) || 0;
+      if (v > best) best = v;
+    }
+  }
+  return best;
+}
+
+/**
  * copiloteAccountMatchesScope(account, scope) -> bool — un compte est visible par un commercial si
  * l'UNE des trois sources de rattachement correspond (« mix des 3 ») :
  *   1. override manuel : son e-mail figure dans account.owners ;
@@ -715,6 +758,8 @@ module.exports = {
   deriveAccountVeille,
   matchOffersToEvents,
   armDormantSignals,
+  deriveClientValueIndex,
+  resolveAccountValue,
   matchSignalsToAccount,
   copiloteAccountMatchesScope,
   slugifyClient,
