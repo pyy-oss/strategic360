@@ -6,7 +6,7 @@ import { Modal, useToast } from "../../../design/overlay";
 import { T, AX, IMP, STANCE, PROX } from "../../../design/tokens";
 import { Card, Badge } from "../../../design/ui";
 import { useCan } from "../../../lib/rbac";
-import { BUSINESS_SUBTYPES, DETECTION_SUBTYPE_LABELS, createIntelItem, updateIntelItem, useIntelItems, type IntelAxis, type IntelImpact, type IntelStance, type IntelItem, type IntelStatus } from "../lib/intel";
+import { BUSINESS_SUBTYPES, DETECTION_SUBTYPE_LABELS, PUBLISHED_STATUSES, createIntelItem, updateIntelItem, useIntelItems, type IntelAxis, type IntelImpact, type IntelStance, type IntelItem, type IntelStatus } from "../lib/intel";
 import { createAction } from "../lib/execution";
 import { effectiveProx, isPastDue } from "../lib/freshness";
 import { useIsExec } from "../../../lib/rbac";
@@ -151,12 +151,15 @@ export function Fil() {
   const [prx, setPrx] = useState("all");
   const [watchOnly, setWatchOnly] = useState(false);
   const [bizOnly, setBizOnly] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
+  // Vue par statut : « publiés » par défaut (porte de qualité) ; les exec peuvent inspecter les signaux
+  // « en attente » d'évaluation, ceux « rejetés » (corbeille restaurable) et les « archivés ».
+  const [statusView, setStatusView] = useState<"published" | "pending" | "rejected" | "archived">("published");
   const [showForm, setShowForm] = useState(false);
   const clearEnt = () => { const n = new URLSearchParams(sp); n.delete("ent"); setSp(n, { replace: true }); };
   const norm = (v: string) => v.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
   const { items, loading } = useIntelItems();
   const { canWrite } = useCan("veille");
+  const isExec = useIsExec();
 
   const rows = items
     .filter(
@@ -168,8 +171,9 @@ export function Fil() {
         (!watchOnly || !!s.ent) &&
         (!entFilter || (s.ent ? norm(s.ent).includes(norm(entFilter)) || norm(entFilter).includes(norm(s.ent)) : false)) &&
         (!bizOnly || BUSINESS_SUBTYPES.has(s.subtype ?? "")) &&
-        // Les signaux archivés (dont les doublons dédoublonnés) sortent du fil actif par défaut.
-        (showArchived || s.status !== "archived")
+        // Porte de qualité : par défaut on ne montre que les signaux PUBLIÉS. Les vues attente/rejetés/
+        // archivés (exec) isolent respectivement pending / rejected / archived.
+        (statusView === "published" ? PUBLISHED_STATUSES.has(s.status) : s.status === statusView)
     )
     // Tri stable : score de priorité desc, puis échéance la plus proche (items sans dueDate en
     // dernier), puis date de signal desc.
@@ -181,7 +185,7 @@ export function Fil() {
     );
 
   // Pagination : le fil peut atteindre des centaines de signaux (retour à la page 1 si un filtre change).
-  const paged = usePaged(rows, 25, `${ax}|${st}|${imp}|${prx}|${watchOnly}|${bizOnly}|${showArchived}|${entFilter}`);
+  const paged = usePaged(rows, 25, `${ax}|${st}|${imp}|${prx}|${watchOnly}|${bizOnly}|${statusView}|${entFilter}`);
 
   return (
     <div>
@@ -220,9 +224,34 @@ export function Fil() {
           <button className={`pill ${bizOnly ? "on" : ""}`} onClick={() => setBizOnly((v) => !v)}>
             💼 Business
           </button>
-          <button className={`pill ${showArchived ? "on" : ""}`} onClick={() => setShowArchived((v) => !v)} title="Inclure les signaux archivés (doublons, traités)">
-            Archivés
-          </button>
+          {isExec && (
+            <>
+              <span style={{ fontSize: 11.5, color: T.faint, marginLeft: 10 }}>Vue :</span>
+              {([
+                ["published", "Publiés"],
+                ["pending", "En attente"],
+                ["rejected", "Rejetés"],
+                ["archived", "Archivés"],
+              ] as const).map(([k, l]) => (
+                <button
+                  key={k}
+                  className={`pill ${statusView === k ? "on" : ""}`}
+                  onClick={() => setStatusView(k)}
+                  title={
+                    k === "pending"
+                      ? "Signaux en attente d'évaluation par l'agent de pertinence"
+                      : k === "rejected"
+                        ? "Signaux écartés par l'agent (corbeille restaurable)"
+                        : k === "archived"
+                          ? "Signaux archivés (doublons, traités)"
+                          : "Signaux publiés dans le fil"
+                  }
+                >
+                  {l}
+                </button>
+              ))}
+            </>
+          )}
           {entFilter && (
             <button className="pill on" onClick={clearEnt} title="Retirer le filtre entité" style={{ marginLeft: 10 }}>
               Entité : {entFilter} ✕
@@ -293,6 +322,12 @@ export function Fil() {
                 {s.summary && !s.soWhat && (
                   <div style={{ marginTop: 10, fontSize: 12.5, color: T.dim }}>{s.summary}</div>
                 )}
+                {/* Verdict de l'agent de pertinence — surtout utile en vue « en attente » / « rejetés ». */}
+                {(s.status === "pending" || s.status === "rejected" || s.evalReason) && s.evalReason && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: s.status === "rejected" ? T.clay : T.faint }}>
+                    <b>Évaluation{typeof s.evalScore === "number" ? ` (${s.evalScore}/100)` : ""} :</b> {s.evalReason}
+                  </div>
+                )}
                 <SignalLifecycle s={s} />
               </div>
             </div>
@@ -305,10 +340,12 @@ export function Fil() {
 }
 
 const STATUS_META: Record<IntelStatus, { l: string; c: string }> = {
+  pending: { l: "En attente", c: T.steel },
   new: { l: "Nouveau", c: T.gold },
   reviewed: { l: "Revu", c: T.steel },
   actioned: { l: "Traité", c: T.emerald },
   archived: { l: "Archivé", c: T.faint },
+  rejected: { l: "Rejeté", c: T.clay },
 };
 const STATUS_FLOW: IntelStatus[] = ["new", "reviewed", "actioned", "archived"];
 

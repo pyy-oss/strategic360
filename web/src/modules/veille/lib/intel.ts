@@ -37,7 +37,11 @@ import { auth, db, functions } from "../../../lib/firebase";
 export type IntelAxis = "partenaires" | "concurrents" | "clients_prospects" | "tech" | "reglementaire";
 export type IntelImpact = "high" | "medium" | "low";
 export type IntelStance = "opportunity" | "threat" | "neutral";
-export type IntelStatus = "new" | "reviewed" | "actioned" | "archived";
+// `pending` = en attente d'évaluation (porte de qualité, invisible du fil) ; `rejected` = écarté par
+// l'évaluateur (corbeille exec restaurable). `new`/`reviewed`/`actioned` = publiés.
+export type IntelStatus = "pending" | "new" | "reviewed" | "actioned" | "archived" | "rejected";
+/** Statuts publiés (affichés dans le fil/radar par défaut). */
+export const PUBLISHED_STATUSES: ReadonlySet<string> = new Set(["new", "reviewed", "actioned"]);
 export type IntelProx = "imminent" | "court" | "moyen" | "horizon";
 
 export interface IntelItem {
@@ -71,6 +75,8 @@ export interface IntelItem {
   decisionId?: string;
   initiativeId?: string;
   status: IntelStatus;
+  evalScore?: number | null; // note de pertinence (0-100) attribuée par l'évaluateur avant publication
+  evalReason?: string; // raison de publication / rejet (1 phrase) — traçabilité de la porte de qualité
   createdBy: string;
   createdAt?: Timestamp | FieldValue;
 }
@@ -357,6 +363,13 @@ export async function runSyncSourcesNow(): Promise<Record<string, unknown>> {
 /** Nettoie les quasi-doublons existants dans les signaux (callable exec). Retourne { clusters, archived }. */
 export async function runDedupeIntelItemsNow(): Promise<{ clusters?: number; archived?: number }> {
   const call = httpsCallable<void, { clusters?: number; archived?: number }>(functions, "dedupeIntelItemsNow", HEAVY_CALL);
+  const { data } = await call();
+  return data;
+}
+
+/** Évalue à la demande les signaux en attente (porte de qualité, callable exec). Retourne { evaluated, published, rejected }. */
+export async function runEvaluateIntelItemsNow(): Promise<{ evaluated?: number; published?: number; rejected?: number }> {
+  const call = httpsCallable<void, { evaluated?: number; published?: number; rejected?: number }>(functions, "evaluateIntelItemsNow", HEAVY_CALL);
   const { data } = await call();
   return data;
 }

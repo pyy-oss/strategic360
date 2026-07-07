@@ -5,7 +5,7 @@ import { AX, IMP, PROX, STANCE, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { Toggle } from "../../../design/fields";
 import { useActions, useDecisions } from "../lib/execution";
-import { BUSINESS_SUBTYPES, useBizOpportunities, useIntelItems, useWatchlist } from "../lib/intel";
+import { BUSINESS_SUBTYPES, PUBLISHED_STATUSES, useBizOpportunities, useIntelItems, useWatchlist } from "../lib/intel";
 import { isPastDue } from "../lib/freshness";
 import { useVeilleExecSummary, useAiHealth } from "../lib/summaries";
 import { computeVeilleAttribution } from "../lib/attribution";
@@ -95,7 +95,8 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   // Les signaux ARCHIVÉS (dont les doublons dédoublonnés) sortent du radar actif — cohérent avec le
   // Fil. Sans ça, un doublon archivé restait affiché dans « Business imminent », « Top signaux » et le
   // compteur « signaux actifs ».
-  const items = React.useMemo(() => rawItems.filter((s) => (s.status ?? "new") !== "archived"), [rawItems]);
+  // Porte de qualité : le radar exécutif ne compte que les signaux PUBLIÉS (exclut pending/rejected/archived).
+  const items = React.useMemo(() => rawItems.filter((s) => PUBLISHED_STATUSES.has(s.status ?? "new")), [rawItems]);
   const { data: exec } = useVeilleExecSummary();
   const { data: aiHealth } = useAiHealth();
   const sorted = [...items].sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
