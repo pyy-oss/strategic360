@@ -380,6 +380,41 @@ describe("matchOffersToEvents — la veille déclenche le cross-sell (offre oppo
   });
 });
 
+describe("armDormantSignals — relance churn armée par la veille (levier RÉCURRENCE)", () => {
+  it("arme une dormante quand l'événement cible l'offre, ou à défaut quand un signal chaud existe", async () => {
+    const { armDormantSignals } = await import("../domain/nt360.js");
+    const signals = [
+      { type: "dormante", offre: "SOC managé", montant: 30, label: "Offre dormante : SOC managé" },
+      { type: "dormante", offre: "Formation", montant: 10, label: "Offre dormante : Formation" },
+      { type: "fantome", montant: 50, label: "Deal fantôme" },
+    ];
+    // (a) événement ciblant précisément SOC managé → armée avec cet événement.
+    const eventOffers = [{ offre: "SOC managé", montant: 30, kind: "cross-sell", event: "Faille Fortinet" }];
+    const out = armDormantSignals(signals, { hot: false, top: [] }, eventOffers);
+    const soc = out.find((s) => s.offre === "SOC managé");
+    expect(soc.armed).toBe(true);
+    expect(soc.triggerEvent).toBe("Faille Fortinet");
+    // Formation n'a ni événement ni signal chaud → non armée.
+    expect(out.find((s) => s.offre === "Formation").armed).toBeUndefined();
+    // Les signaux non-dormants ne sont pas touchés.
+    expect(out.find((s) => s.type === "fantome").armed).toBeUndefined();
+  });
+
+  it("(b) fenêtre rouverte par un signal chaud générique → arme toutes les dormantes", async () => {
+    const { armDormantSignals } = await import("../domain/nt360.js");
+    const signals = [{ type: "dormante", offre: "Réseau", montant: 20, label: "dormante" }];
+    const out = armDormantSignals(signals, { hot: true, top: [{ title: "Nouvelle DSI à la SGCI" }] }, []);
+    expect(out[0].armed).toBe(true);
+    expect(out[0].triggerEvent).toBe("Nouvelle DSI à la SGCI");
+  });
+
+  it("aucun signal de veille → aucune dormante armée (pas d'exception)", async () => {
+    const { armDormantSignals } = await import("../domain/nt360.js");
+    const signals = [{ type: "dormante", offre: "X", montant: 20, label: "d" }];
+    expect(armDormantSignals(signals, { hot: false, top: [] }, [])[0].armed).toBeUndefined();
+  });
+});
+
 describe("copiloteAccountMatchesScope (cloisonnement « mix des 3 »)", () => {
   it("matche par owner (e-mail), par am, ou par BU — insensible casse/espaces ; sinon false", async () => {
     const { copiloteAccountMatchesScope } = await import("../domain/nt360.js");

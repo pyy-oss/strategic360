@@ -1954,6 +1954,7 @@ const {
   deriveAccountValue: nt360DeriveAccountValue,
   deriveAccountVeille: nt360DeriveAccountVeille,
   matchOffersToEvents: nt360MatchOffersToEvents,
+  armDormantSignals: nt360ArmDormantSignals,
   matchSignalsToAccount: nt360MatchSignalsToAccount,
   copiloteAccountMatchesScope: nt360AccountMatchesScope,
   isMeaningfulBu: nt360IsMeaningfulBu,
@@ -2121,13 +2122,6 @@ async function runSyncCopiloteAccounts(db) {
       // dans la file « à traiter » (un déclencheur externe fait remonter le compte). C'est ce qui
       // pilote la vente PAR la veille, pas seulement par la donnée interne.
       const veille = nt360DeriveAccountVeille(acc.nom, intelItems, todayIso);
-      if (veille.top.length) {
-        const t = veille.top[0];
-        val.signals = [
-          { type: "veille", montant: 0, hot: veille.hot, prox: t.prox, impact: t.impact, label: `Signal de veille : ${t.title}` },
-          ...val.signals,
-        ].slice(0, 5);
-      }
       // Cross-sell/upsell DÉCLENCHÉ PAR ÉVÉNEMENT : croise les signaux de veille avec les offres de
       // réserve du compte → une offre devient « opportune maintenant » (la veille pilote la vente).
       const offersForEvents = [
@@ -2137,6 +2131,17 @@ async function runSyncCopiloteAccounts(db) {
       const eventOffers = nt360MatchOffersToEvents(veille.top, offersForEvents).slice(0, 3);
       val.eventOffers = eventOffers;
       const eventByOffre = new Map(eventOffers.map((e) => [e.offre, e.event]));
+      // Relance churn ARMÉE par la veille (levier RÉCURRENCE) : une offre dormante devient prioritaire
+      // quand un événement rouvre sa fenêtre. On arme AVANT de tronquer/préfixer les signaux.
+      val.signals = nt360ArmDormantSignals(val.signals, veille, eventOffers);
+      // Le meilleur déclencheur de veille est FUSIONNÉ en tête des signaux d'action.
+      if (veille.top.length) {
+        const t = veille.top[0];
+        val.signals = [
+          { type: "veille", montant: 0, hot: veille.hot, prox: t.prox, impact: t.impact, label: `Signal de veille : ${t.title}` },
+          ...val.signals,
+        ].slice(0, 5);
+      }
       // Agrégat de churn (dormance matérielle) pour la bannière « récurrent qui s'éteint ».
       const dormantes = (val.signals || []).filter((s) => s.type === "dormante");
       if (dormantes.length) { churnCount += 1; churnMontant += dormantes.reduce((s, x) => s + (x.montant || 0), 0); }
@@ -2152,6 +2157,12 @@ async function runSyncCopiloteAccounts(db) {
       // du compte (le timing externe prime). Dédupliquées à l'émission par id déterministe.
       for (const eo of eventOffers) {
         if (eo.montant >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: eo.kind, slug: acc.slug, client: acc.nom, offre: eo.offre, montant: eo.montant, event: eo.event });
+      }
+      // Relance d'un récurrent dormant ARMÉE par la veille : la fenêtre est rouverte → lead de relance.
+      for (const s of val.signals) {
+        if (s.type === "dormante" && s.armed && s.offre && (s.montant || 0) >= AUTO_OPP_FLOOR) {
+          autoOppCandidates.push({ kind: "relance", slug: acc.slug, client: acc.nom, offre: s.offre, montant: s.montant, event: s.triggerEvent || null });
+        }
       }
       batch.set(
         db.doc(`copiloteAccounts/${acc.slug}`),
@@ -2218,12 +2229,14 @@ async function runSyncCopiloteAccounts(db) {
   for (const cand of autoOpps) {
     const ref = db.doc(`bizOpportunities/${cand.id}`);
     const existing = await ref.get();
-    const kindLabel = cand.kind === "upsell" ? "Upsell" : cand.kind === "managed" ? "Passage en managé" : "Cross-sell";
+    const kindLabel = cand.kind === "upsell" ? "Upsell" : cand.kind === "managed" ? "Passage en managé" : cand.kind === "relance" ? "Relance" : "Cross-sell";
     const baseAction = cand.kind === "upsell"
       ? `Étendre ${cand.offre} (compte sous-pénétré vs panier de référence)`
       : cand.kind === "managed"
         ? `Convertir en récurrent : proposer ${cand.offre} en managé/OPEX (ARR ≈ panier de référence)`
-        : `Chiffrer et proposer ${cand.offre} (panier de référence réel)`;
+        : cand.kind === "relance"
+          ? `Relancer ${cand.offre} (récurrent dormant, fenêtre rouverte)`
+          : `Chiffrer et proposer ${cand.offre} (panier de référence réel)`;
     // Déclenchée par un événement de veille : on référence l'événement et on relève l'urgence.
     const nextAction = cand.event ? `⚡ ${cand.event} → ${baseAction}` : baseAction;
     const payload = {

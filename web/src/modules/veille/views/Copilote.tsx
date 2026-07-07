@@ -587,8 +587,8 @@ function PortfolioDashboard({
     // Boucle veille → action : un déclencheur de veille externe (chaud) ou un deal fantôme remonte en
     // tête, AVANT le tri par € — c'est l'environnement externe qui pilote l'urgence, pas que la donnée
     // interne. Puis, à urgence égale, par montant en jeu.
-    const urg = (s: { type: string; hot?: boolean }) =>
-      (s.type === "veille" && s.hot) || s.type === "fantome" ? 1 : 0;
+    const urg = (s: { type: string; hot?: boolean; armed?: boolean }) =>
+      (s.type === "veille" && s.hot) || s.type === "fantome" || (s.type === "dormante" && s.armed) ? 1 : 0;
     const worklist = accounts
       .flatMap((a) => (a.nt360?.signals ?? []).map((sig) => ({ ...sig, compte: a.nom, accountId: a.id })))
       .sort((x, y) => urg(y) - urg(x) || (y.montant ?? 0) - (x.montant ?? 0))
@@ -732,12 +732,14 @@ function PortfolioDashboard({
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
               {worklist.map((s, i) => {
-                const c = s.type === "veille" ? T.plum : s.type === "fantome" ? T.clay : s.type === "pointmort" ? T.gold : T.steel;
+                const armed = s.type === "dormante" && s.armed;
+                const c = s.type === "veille" ? T.plum : s.type === "fantome" ? T.clay : s.type === "pointmort" ? T.gold : armed ? T.clay : T.steel;
                 return (
-                  <button key={i} onClick={() => onPick(s.accountId)} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "9px 11px", background: T.panel2, borderRadius: 9, border: `1px solid ${T.line}`, cursor: "pointer", textAlign: "left", minHeight: 44 }}>
+                  <button key={i} onClick={() => onPick(s.accountId)} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "9px 11px", background: T.panel2, borderRadius: 9, border: `1px solid ${armed ? T.clay + "55" : T.line}`, cursor: "pointer", textAlign: "left", minHeight: 44 }}>
                     <span style={{ minWidth: 0 }}>
                       <span style={{ fontSize: 12.5, color: T.ink, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.compte}</span>
-                      <span style={{ fontSize: 10.5, color: c }}>{s.label}</span>
+                      <span style={{ fontSize: 10.5, color: c }}>{armed ? "⚡ " : ""}{s.label}</span>
+                      {armed && s.triggerEvent ? <span style={{ fontSize: 10, color: T.faint, display: "block" }}>fenêtre rouverte : {s.triggerEvent}</span> : null}
                     </span>
                     {s.montant > 0 ? <span style={{ fontSize: 11.5, color: T.dim, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{fmt(s.montant)}</span> : null}
                   </button>
