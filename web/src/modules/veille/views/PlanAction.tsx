@@ -113,6 +113,8 @@ function BizOpportunitiesSection({ isExec }: { isExec: boolean }) {
               <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 600 }}>{o.name}</div>
               <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                 <Badge c={OPP_STATUS_META[o.status]?.c}>{OPP_STATUS_META[o.status]?.l ?? o.status}</Badge>
+                {o.source === "cross-sell" && <Badge c={T.emerald}>↗ Cross-sell</Badge>}
+                {o.source === "upsell" && <Badge c={T.gold}>⤴ Upsell</Badge>}
                 <Badge c={T.plum}>{o.client}</Badge>
                 <Badge c={T.steel}>BU {o.bu}</Badge>
                 <Badge c={T.gold}>Montant estimé : {o.estAmount || "—"}</Badge>

@@ -374,7 +374,8 @@ export interface BizOpportunity {
   sourceSignals?: number[];
   competitorsLikely?: string[];
   status: BizOpportunityStatus;
-  generatedBy?: string;
+  generatedBy?: string; // "ai" (enrichissement veille) | "sync" (dérivé du portefeuille) | absent (humain)
+  source?: string; // origine du lead dérivé du portefeuille : "cross-sell" | "upsell"
   // Chaîne de captation (M12 audit) : une opportunité qualifiée devient un lead avec porteur et
   // échéance de prochaine action, et peut être convertie en action liée (actionId).
   owner?: string;
