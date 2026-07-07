@@ -329,6 +329,30 @@ describe("deriveAccountValue — réserve de valeur chiffrée et persistée (aud
   });
 });
 
+describe("deriveAccountVeille — boucle veille → action (direction intégrée)", () => {
+  it("rattache les signaux de veille frais qui nomment le compte, écarte périmés/impact faible, marque hot", async () => {
+    const { deriveAccountVeille } = await import("../domain/nt360.js");
+    const items = [
+      { id: "1", title: "Refonte SI à la SGCI", summary: "grand projet", axis: "clients_prospects", impact: "high", prox: "imminent", priorityScore: 90, soWhat: "fenêtre de deal", date: "2026-07-01" },
+      { id: "2", title: "Nouvelle réglementation bancaire", summary: "concerne SGCI", impact: "medium", prox: "court", priorityScore: 60, date: "2026-06-15" },
+      { id: "3", title: "AO périmé SGCI", summary: "clos", impact: "high", prox: "imminent", priorityScore: 80, stale: true, date: "2026-01-01" }, // périmé → écarté
+      { id: "4", title: "Signal faible SGCI", summary: "bruit", impact: "low", priorityScore: 10, date: "2026-07-02" }, // impact low → écarté
+      { id: "5", title: "Orange CI lance un site", summary: "autre compte", impact: "high", priorityScore: 70, date: "2026-07-03" }, // ne nomme pas SGCI
+    ];
+    const v = deriveAccountVeille("SGCI/Société Générale CI", items, "2026-07-07");
+    expect(v.count).toBe(2);                    // items 1 et 2 (3=périmé, 4=low, 5=autre compte)
+    expect(v.hot).toBe(true);                   // item 1 = high + imminent
+    expect(v.top[0].title).toBe("Refonte SI à la SGCI"); // trié par priorityScore desc
+    expect(v.top.map((t) => t.title)).not.toContain("Orange CI lance un site");
+  });
+
+  it("aucun signal rattaché → count 0, hot false, top vide (pas d'exception)", async () => {
+    const { deriveAccountVeille } = await import("../domain/nt360.js");
+    const v = deriveAccountVeille("SGCI", [], "2026-07-07");
+    expect(v).toEqual({ count: 0, hot: false, top: [] });
+  });
+});
+
 describe("copiloteAccountMatchesScope (cloisonnement « mix des 3 »)", () => {
   it("matche par owner (e-mail), par am, ou par BU — insensible casse/espaces ; sinon false", async () => {
     const { copiloteAccountMatchesScope } = await import("../domain/nt360.js");

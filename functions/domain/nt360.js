@@ -573,6 +573,37 @@ function matchSignalsToAccount(accountName, signals) {
 }
 
 /**
+ * deriveAccountVeille(accountName, intelItems, todayIso) -> { count, hot, top:[{...}] } — RATTACHE les
+ * signaux de veille EXTERNES qui nomment le compte (la BOUCLE veille → action : c'est ce qui fait de
+ * l'outil une VEILLE STRATÉGIQUE appliquée à la vente, et non un CRM interne). On ne garde que le
+ * frais et l'actionnable : item non périmé (stale), impact non faible. Trié par score de priorité.
+ * `hot` = au moins un signal à fort impact ou imminence → le compte doit remonter dans la file. PUR.
+ */
+function deriveAccountVeille(accountName, intelItems, todayIso) {
+  const list = (Array.isArray(intelItems) ? intelItems : []).filter(
+    (it) => it && !it.stale && it.impact !== "low"
+  );
+  // matchSignalsToAccount lit {name|titre|texte|rationale|description} — on mappe title/summary/ent.
+  const mapped = list.map((it) => ({ ref: it, name: it.title, texte: it.summary, rationale: it.ent }));
+  const matched = matchSignalsToAccount(accountName, mapped).map((m) => m.ref);
+  matched.sort(
+    (a, b) => (Number(b.priorityScore) || 0) - (Number(a.priorityScore) || 0) ||
+      String(b.date || "").localeCompare(String(a.date || ""))
+  );
+  const top = matched.slice(0, 3).map((it) => ({
+    title: it.title || "",
+    axis: it.axis || "",
+    impact: it.impact || "",
+    prox: it.prox || "",
+    subtype: it.subtype || "",
+    soWhat: it.soWhat || "",
+    date: it.date || "",
+  }));
+  const hot = matched.some((it) => it.impact === "high" || it.prox === "imminent");
+  return { count: matched.length, hot, top };
+}
+
+/**
  * copiloteAccountMatchesScope(account, scope) -> bool — un compte est visible par un commercial si
  * l'UNE des trois sources de rattachement correspond (« mix des 3 ») :
  *   1. override manuel : son e-mail figure dans account.owners ;
@@ -613,6 +644,7 @@ module.exports = {
   recommendNextOffers,
   deriveBuBenchmark,
   deriveAccountValue,
+  deriveAccountVeille,
   matchSignalsToAccount,
   copiloteAccountMatchesScope,
   slugifyClient,

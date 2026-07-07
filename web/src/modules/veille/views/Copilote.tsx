@@ -268,6 +268,27 @@ export function Copilote() {
             </div>
           )}
 
+          {/* Boucle veille → action : les déclencheurs de veille EXTERNES rattachés à ce compte. C'est
+              ce qui fait qu'un signal d'environnement produit une action commerciale (direction intégrée). */}
+          {(account.nt360?.veille?.top ?? []).length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <Eyebrow color={T.plum}>Déclencheurs de veille {account.nt360?.veille?.hot ? "· 🔴 actif" : ""}</Eyebrow>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 7 }}>
+                {(account.nt360?.veille?.top ?? []).map((v, i) => (
+                  <button key={i} onClick={() => navigate(`/veille/fil?ent=${encodeURIComponent(account.nom)}`)}
+                    style={{ display: "block", width: "100%", textAlign: "left", background: T.panel2, border: `1px solid ${v.impact === "high" || v.prox === "imminent" ? T.plum + "66" : T.line}`, borderRadius: 8, padding: "8px 11px", cursor: "pointer" }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "baseline", flexWrap: "wrap" }}>
+                      {v.impact === "high" && <Badge c={T.clay}>Impact fort</Badge>}
+                      {v.prox === "imminent" && <Badge c={T.gold}>Imminent</Badge>}
+                      <span style={{ fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{v.title}</span>
+                    </div>
+                    {v.soWhat ? <div style={{ fontSize: 11.5, color: T.dim, marginTop: 2 }}>↳ {v.soWhat}</div> : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {((account.enjeux ?? []).length > 0 || (account.whitespace ?? []).length > 0) && (
             <div style={{ marginTop: 14 }}>
               <Eyebrow>Enjeux &amp; espaces à conquérir</Eyebrow>
@@ -547,9 +568,14 @@ function PortfolioDashboard({
       .slice(0, 8);
     // File « à traiter cette semaine » : signaux d'action pré-calculés (dormance, deal fantôme, point
     // mort) agrégés sur tout le portefeuille, triés par € en jeu — la réponse à « qui relancer ».
+    // Boucle veille → action : un déclencheur de veille externe (chaud) ou un deal fantôme remonte en
+    // tête, AVANT le tri par € — c'est l'environnement externe qui pilote l'urgence, pas que la donnée
+    // interne. Puis, à urgence égale, par montant en jeu.
+    const urg = (s: { type: string; hot?: boolean }) =>
+      (s.type === "veille" && s.hot) || s.type === "fantome" ? 1 : 0;
     const worklist = accounts
       .flatMap((a) => (a.nt360?.signals ?? []).map((sig) => ({ ...sig, compte: a.nom, accountId: a.id })))
-      .sort((x, y) => (y.montant ?? 0) - (x.montant ?? 0))
+      .sort((x, y) => urg(y) - urg(x) || (y.montant ?? 0) - (x.montant ?? 0))
       .slice(0, 8);
     // Churn silencieux (levier RÉCURRENCE) : récurrent qui s'éteint = offres dormantes matérielles.
     let churnComptes = 0, churnMontant = 0;
@@ -690,7 +716,7 @@ function PortfolioDashboard({
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
               {worklist.map((s, i) => {
-                const c = s.type === "fantome" ? T.clay : s.type === "pointmort" ? T.gold : T.steel;
+                const c = s.type === "veille" ? T.plum : s.type === "fantome" ? T.clay : s.type === "pointmort" ? T.gold : T.steel;
                 return (
                   <button key={i} onClick={() => onPick(s.accountId)} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "9px 11px", background: T.panel2, borderRadius: 9, border: `1px solid ${T.line}`, cursor: "pointer", textAlign: "left", minHeight: 44 }}>
                     <span style={{ minWidth: 0 }}>
