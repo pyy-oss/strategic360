@@ -910,16 +910,23 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
     try {
       const parsed = parseEvaluateResponse(await generateJson(buildEvaluatePrompt(it, companyContext)));
       if (parsed && parsed.publier === false) {
-        await db.doc(`intelItems/${it.id}`).update({ status: "rejected", evalScore: parsed.pertinence, evalReason: parsed.raison || "écarté par l'évaluateur", updatedAt: stamp() });
+        await db.doc(`intelItems/${it.id}`).update({ status: "rejected", evalScore: parsed.pertinence, evalReason: parsed.raison || "écarté par l'évaluateur", evalFailed: false, updatedAt: stamp() });
         rejected += 1;
+      } else if (parsed) {
+        await db.doc(`intelItems/${it.id}`).update({ status: "new", evalScore: parsed.pertinence, evalReason: parsed.raison || "publié", evalFailed: false, updatedAt: stamp() });
+        published += 1;
       } else {
-        await db.doc(`intelItems/${it.id}`).update({ status: "new", evalScore: parsed ? parsed.pertinence : null, evalReason: parsed ? parsed.raison : "évaluation indisponible — publié par défaut", updatedAt: stamp() });
+        // Réponse non exploitable (parse null) : fail-open, mais on MARQUE le signal (evalFailed) et on
+        // pose un score plancher explicite (50) pour que le tri aval ne confonde pas un signal « non
+        // évalué » avec un signal réellement validé (audit pertinence 2026-07).
+        await db.doc(`intelItems/${it.id}`).update({ status: "new", evalScore: 50, evalReason: "évaluation indisponible — publié par défaut", evalFailed: true, updatedAt: stamp() });
         published += 1;
       }
     } catch (err) {
-      // Fail-open : en cas d'échec IA, on PUBLIE (ne jamais retenir un signal à cause d'une panne).
+      // Fail-open borné aux vraies pannes (réseau/IA) : on PUBLIE mais on MARQUE (evalFailed + score
+      // plancher) — ne jamais retenir un signal à cause d'une panne, ni le faire passer pour validé.
       logger.warn(`runEvaluateIntelItems: éval échouée pour ${it.id} — publié par défaut (${err.message})`);
-      try { await db.doc(`intelItems/${it.id}`).update({ status: "new", evalReason: "évaluation échouée — publié par défaut", updatedAt: stamp() }); published += 1; } catch (_e) { /* ignore */ }
+      try { await db.doc(`intelItems/${it.id}`).update({ status: "new", evalScore: 50, evalReason: "évaluation échouée — publié par défaut", evalFailed: true, updatedAt: stamp() }); published += 1; } catch (_e) { /* ignore */ }
     }
   });
   logger.info(`runEvaluateIntelItems: ${items.length} évalués — ${published} publiés, ${rejected} écartés`);
@@ -1019,6 +1026,18 @@ async function loadClientValueIndex(db) {
   }
 }
 
+/**
+ * Valeur-compte d'un signal (accountValueFactor) : on rattache par `item.ent` MAIS AUSSI par
+ * `businessAngle.buyer` — souvent le seul compte concret cité (« BCEAO », « Trésor public ») quand
+ * l'entité watchlist (`item.ent`) est absente. On prend le meilleur des deux (audit pertinence 2026-07).
+ */
+function resolveItemAccountValue(item, clientValue) {
+  const byEnt = nt360ResolveAccountValue(item.ent, clientValue);
+  const buyer = item && item.businessAngle && item.businessAngle.buyer;
+  const byBuyer = buyer ? nt360ResolveAccountValue(buyer, clientValue) : 0;
+  return Math.max(byEnt, byBuyer);
+}
+
 exports.onIntelItemWrite = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1", database: FIRESTORE_DATABASE_ID }, async (event) => {
   const db = firestoreDb();
   const after = event.data && event.data.after;
@@ -1027,7 +1046,7 @@ exports.onIntelItemWrite = onDocumentWritten({ document: "intelItems/{id}", regi
     const item = after.data();
     // accountValueFactor : un signal concernant un gros compte client remonte (boucle interne → veille).
     const clientValue = await loadClientValueIndex(db);
-    const accountValue = nt360ResolveAccountValue(item.ent, clientValue);
+    const accountValue = resolveItemAccountValue(item, clientValue);
     const computed = computePriorityScore(item, Date.now(), { accountValue });
     if (item.priorityScore !== computed) {
       // Le score a bougé : on l'écrit et on sort. La mise à jour re-déclenche ce trigger, et c'est
@@ -1073,7 +1092,7 @@ async function runRescoreActive(db) {
   const active = snap.docs.filter((d) => (d.data().status || "new") !== "archived");
   const updates = active.map(async (doc) => {
     const item = doc.data();
-    const accountValue = nt360ResolveAccountValue(item.ent, clientValue);
+    const accountValue = resolveItemAccountValue(item, clientValue);
     const computed = computePriorityScore(item, Date.now(), { accountValue });
     if (item.priorityScore === computed) return false;
     await doc.ref.update({ priorityScore: computed });

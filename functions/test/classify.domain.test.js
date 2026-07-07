@@ -116,6 +116,21 @@ describe("parseClassificationResponse — businessAngle / dueDate / budgetIdenti
     expect(parseClassificationResponse({ title: "x", dueDate: " 2026-09-15 " }, {}).dueDate).toBe("2026-09-15");
   });
 
+  it("dérive dueDate depuis businessAngle.deadline (ISO) quand dueDate est absente (audit pertinence)", () => {
+    // deadline ISO stricte présente, dueDate absente → promue en dueDate.
+    const it1 = parseClassificationResponse({ title: "AO", businessAngle: { buyer: "BCEAO", deadline: "2026-08-15" } }, {});
+    expect(it1.dueDate).toBe("2026-08-15");
+    // deadline textuelle contenant une date ISO → on extrait la date.
+    const it2 = parseClassificationResponse({ title: "AO", businessAngle: { buyer: "BCEAO", deadline: "dépôt avant le 2026-08-15" } }, {});
+    expect(it2.dueDate).toBe("2026-08-15");
+    // dueDate explicite fournie → on ne l'écrase pas avec la deadline.
+    const it3 = parseClassificationResponse({ title: "AO", dueDate: "2026-09-01", businessAngle: { buyer: "X", deadline: "2026-08-15" } }, {});
+    expect(it3.dueDate).toBe("2026-09-01");
+    // deadline sans date ISO → pas de dueDate dérivée.
+    const it4 = parseClassificationResponse({ title: "AO", businessAngle: { buyer: "X", deadline: "septembre 2026" } }, {});
+    expect(Object.keys(it4)).not.toContain("dueDate");
+  });
+
   it("coerces businessAngle sub-fields: invalid bu dropped, empty strings dropped, junk block absent", () => {
     const item = parseClassificationResponse(
       { title: "x", businessAngle: { buyer: "BCEAO", bu: "MARKETING", estAmount: "   ", deadline: 42, tenderRef: null } },

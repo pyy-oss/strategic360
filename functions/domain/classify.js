@@ -323,6 +323,14 @@ function parseClassificationResponse(rawJsonResponse, context) {
     status: "new",
   };
 
+  // Dérivation de dueDate depuis l'échéance du businessAngle (audit pertinence 2026-07) : l'IA cite
+  // parfois l'échéance dans businessAngle.deadline sans renseigner dueDate. Si une date ISO stricte y
+  // figure, on la promeut en dueDate pour que la proximité/fraîcheur (et le scoring) en profitent.
+  if (!item.dueDate && item.businessAngle && typeof item.businessAngle.deadline === "string") {
+    const m = item.businessAngle.deadline.trim().match(/\d{4}-\d{2}-\d{2}/);
+    if (m) item.dueDate = m[0];
+  }
+
   // Dérivation de l'imminence depuis l'échéance réelle (prime sur le label IA) + drapeau `stale`.
   if (item.dueDate) {
     const d = deriveProxFromDueDate(item.dueDate, ctx.now || Date.now());
