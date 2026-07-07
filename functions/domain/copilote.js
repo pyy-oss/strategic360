@@ -153,8 +153,23 @@ function factBase(c) {
         : `— PISTE DE QUALIFICATION (whitespace non encore étayé par l'affinité portefeuille — aucune donnée de cross-sell exploitable sur ce compte, à confirmer avant d'en faire une priorité) : « ${coerceStr(rec.offre)} »${montant}.`)
     : "";
   // Déclencheurs de veille RATTACHÉS à ce compte (signaux qui le nomment) — timing/accroche commerciale.
+  // On rend la MATIÈRE TEMPORELLE (date), le SO-WHAT et l'OFFRE DÉCLENCHÉE quand ils existent : sans
+  // eux l'IA ne pouvait produire ni timing ni accroche (audit pertinence 2026-07).
   const signauxCompte = (Array.isArray(c.signauxCompte) ? c.signauxCompte : [])
-    .map((s) => coerceStr(s && (s.titre || s.name))).filter(Boolean).slice(0, 5);
+    .map((s) => {
+      if (!s || typeof s !== "object") return "";
+      const titre = coerceStr(s.titre || s.name);
+      if (!titre) return "";
+      const meta = [];
+      if (s.date) meta.push(coerceStr(s.date));
+      if (s.prox) meta.push(coerceStr(s.prox));
+      const head = meta.length ? `${titre} (${meta.join(" · ")})` : titre;
+      const tail = [];
+      if (s.soWhat) tail.push(`so-what : ${coerceStr(s.soWhat)}`);
+      if (s.offreLiee) tail.push(`offre à activer : ${coerceStr(s.offreLiee)}`);
+      return tail.length ? `${head} — ${tail.join(" ; ")}` : head;
+    })
+    .filter(Boolean).slice(0, 5);
   return [
     `— Compte : ${coerceStr(c.compte, "(non nommé)")}${c.secteur ? ` — secteur ${coerceStr(c.secteur)}` : ""}${c.tier ? `, compte ${coerceStr(c.tier)}` : ""}.`,
     `— ${empreinteChiffree(c)}`,
@@ -189,9 +204,7 @@ function targetDealLine(c) {
  * ont besoin (deal analysis, plan de compte, prospection). Vide si aucune battlecard rattachée.
  */
 function competitorBlock(c) {
-  const bc = Array.isArray(c.battlecards) ? c.battlecards : [];
-  if (!bc.length) return "";
-  const lines = bc.slice(0, 4).map((b) => {
+  const fmtCard = (b) => {
     const seg = [`• ${coerceStr(b.competitor)}`];
     if (b.positioning) seg.push(`positionnement : ${coerceStr(b.positioning)}`);
     if (Array.isArray(b.strengths) && b.strengths.length) seg.push(`forces : ${list(b.strengths)}`);
@@ -199,8 +212,25 @@ function competitorBlock(c) {
     if (Array.isArray(b.ourWinThemes) && b.ourWinThemes.length) seg.push(`nos axes de victoire : ${list(b.ourWinThemes)}`);
     if (Array.isArray(b.objectionHandling) && b.objectionHandling.length) seg.push(`réponses aux objections : ${list(b.objectionHandling)}`);
     return seg.join(" — ");
-  });
-  return `INTELLIGENCE CONCURRENTIELLE (battlecards réelles, à mobiliser — ne pas inventer d'autre concurrent) :\n${lines.join("\n")}`;
+  };
+  const matched = (Array.isArray(c.battlecards) ? c.battlecards : []).slice(0, 4);
+  const market = (Array.isArray(c.battlecardsMarket) ? c.battlecardsMarket : []).slice(0, 3);
+  if (!matched.length && !market.length) return "";
+  const blocks = [];
+  // Confirmés sur le compte : SEULS ceux-ci peuvent être présentés comme « le concurrent en place ».
+  if (matched.length) {
+    blocks.push(
+      `INTELLIGENCE CONCURRENTIELLE — CONCURRENTS CONFIRMÉS SUR CE COMPTE (à mobiliser ; ne pas inventer d'autre concurrent) :\n${matched.map(fmtCard).join("\n")}`
+    );
+  }
+  // Complément marché : concurrents fréquents (loss-rank global) NON confirmés ici — contexte, pas
+  // « concurrent en place ». On interdit explicitement à l'IA de les présumer présents sur le deal.
+  if (market.length) {
+    blocks.push(
+      `CONCURRENTS FRÉQUENTS DU MARCHÉ (NON confirmés sur ce compte — contexte uniquement ; ne PAS les présenter comme le concurrent en place ni bâtir de parade en supposant leur présence) :\n${market.map(fmtCard).join("\n")}`
+    );
+  }
+  return blocks.join("\n\n");
 }
 
 /** Statistiques de victoire RÉELLES (winLoss) — bloc partagé pour contextualiser probabilité/win-themes. */
@@ -1004,9 +1034,12 @@ const AGENTS = {
   planCompte: { build: buildPlanComptePrompt, parse: parsePlanCompteResponse },
   planAction: { build: buildPlanActionPrompt, parse: parsePlanActionResponse },
   redaction: { build: buildRedactionPrompt, parse: parseRedactionResponse },
-  meddic: { build: buildMeddicPrompt, parse: parseMeddicResponse },
+  // `requiresDeal` : agents MONO-DEAL — sans opportunité ouverte, ils ne produisent qu'une coquille
+  // « à qualifier » partout (score 0), qui décrédibilise l'outil. L'appelant les court-circuite avec
+  // un message clair au lieu de générer du vide (audit pertinence 2026-07).
+  meddic: { build: buildMeddicPrompt, parse: parseMeddicResponse, requiresDeal: true },
   brief: { build: buildBriefPrompt, parse: parseBriefResponse },
-  dealAnalysis: { build: buildDealAnalysisPrompt, parse: parseDealAnalysisResponse },
+  dealAnalysis: { build: buildDealAnalysisPrompt, parse: parseDealAnalysisResponse, requiresDeal: true },
   businessCase: { build: buildBusinessCasePrompt, parse: parseBusinessCaseResponse },
   sequence: { build: buildSequencePrompt, parse: parseSequenceResponse },
   stakeholders: { build: buildStakeholdersPrompt, parse: parseStakeholdersResponse },
