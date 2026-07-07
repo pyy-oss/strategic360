@@ -71,4 +71,31 @@ function dedupeByTitle(items, threshold = 0.6) {
   return out;
 }
 
-module.exports = { normalizeTitle, titleSimilarity, isNearDuplicate, dedupeByTitle };
+/**
+ * clusterNearDuplicates(items, threshold) — regroupe les quasi-doublons d'une collection de signaux.
+ * `items` = [{id, title, axis?, ...}]. Deux items ne sont fusionnés que s'ils partagent le MÊME axe
+ * (un signal tech et un signal client au titre proche ne sont pas le même sujet) et sont quasi-
+ * doublons par recouvrement de titre. Renvoie UNIQUEMENT les grappes de taille ≥ 2 (les doublons
+ * réels), chacune = tableau des items d'origine dans l'ordre rencontré. PUR.
+ */
+function clusterNearDuplicates(items, threshold = 0.6) {
+  const list = Array.isArray(items) ? items : [];
+  const clusters = []; // { rep:{title,axis}, members: [] }
+  for (const it of list) {
+    if (!it || typeof it !== "object") continue;
+    const title = typeof it.title === "string" ? it.title : "";
+    const axis = it.axis || "";
+    let placed = false;
+    for (const c of clusters) {
+      if ((c.rep.axis || "") === axis && isNearDuplicate(c.rep.title, title, threshold)) {
+        c.members.push(it);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) clusters.push({ rep: { title, axis }, members: [it] });
+  }
+  return clusters.filter((c) => c.members.length >= 2).map((c) => c.members);
+}
+
+module.exports = { normalizeTitle, titleSimilarity, isNearDuplicate, dedupeByTitle, clusterNearDuplicates };
