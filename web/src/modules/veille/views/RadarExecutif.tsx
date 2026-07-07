@@ -111,6 +111,17 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
     .filter((s) => !isPastDue(s, nowMs))
     .filter((s) => s.prox === "imminent" || s.prox === "court" || BUSINESS_SUBTYPES.has(s.subtype ?? ""))
     .slice(0, 6);
+  // Top signaux : mêmes items, mais les périmés (échéance dépassée) sont repoussés en bas de liste
+  // (audit pertinence 2026-07 — un AO déjà clos à score élevé ne doit pas trôner en tête de ce que
+  // le dirigeant lit en premier). Ils restent visibles mais marqués « Échéance passée ».
+  const topSignals = [...items]
+    .sort((a, b) => {
+      const pa = isPastDue(a, nowMs) ? 1 : 0;
+      const pb = isPastDue(b, nowMs) ? 1 : 0;
+      if (pa !== pb) return pa - pb;
+      return (b.priorityScore ?? 0) - (a.priorityScore ?? 0);
+    })
+    .slice(0, 6);
   const cell = (imp: string, st: string) => items.filter((s) => s.impact === imp && s.stance === st).length;
   const intro = (
     {
@@ -171,12 +182,19 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
         <Card>
           <Eyebrow color={T.gold}>Top signaux prioritaires</Eyebrow>
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-            {sorted.slice(0, 6).map((s) => (
-              <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${STANCE[s.stance].c}` }}>
+            {topSignals.map((s) => (
+              <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${STANCE[s.stance].c}`, opacity: isPastDue(s, nowMs) ? 0.6 : 1 }}>
                 <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16, color: STANCE[s.stance].c, minWidth: 30, textAlign: "center" }}>{s.priorityScore ?? "—"}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12.5, color: T.ink, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{s.title}</div>
+                  {/* « So-what » : l'implication décisionnelle, pas seulement le score brut (audit 2026-07). */}
+                  {s.soWhat && (
+                    <div style={{ fontSize: 11, color: T.dim, marginTop: 3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>
+                      {s.soWhat}
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                    {isPastDue(s, nowMs) && <Badge c={T.faint}>Échéance passée</Badge>}
                     <Badge c={AX[s.axis]?.c}>{AX[s.axis]?.l ?? s.axis}</Badge>
                     <Badge c={IMP[s.impact]?.c}>{IMP[s.impact]?.l ?? s.impact}</Badge>
                     <Badge c={T.faint}>{s.sourceRating}</Badge>

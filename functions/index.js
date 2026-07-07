@@ -1245,16 +1245,18 @@ async function computeVeilleExecSummary(db) {
     entities,
   });
 
+  // Périmètre : `items` est déjà filtré sur les statuts PUBLIÉS (ligne ~1199) — donc `archived` en
+  // est absent. « Traitée » = `actioned` uniquement (audit pertinence 2026-07). On ne compte PAS
+  // `archived` comme traité : l'archivage sert surtout au dédoublonnage automatique et gonflerait
+  // artificiellement la couverture (l'ancienne branche `archived` était de toute façon morte
+  // puisque ces items sont exclus en amont).
   const menacesTotal = items.filter((i) => i.stance === "threat").length;
-  // « Traitée » = actionnée OU archivée (audit 2026-07) : une menace archivée est résolue/classée,
-  // pas une menace laissée sans réponse — sinon la couverture décisionnelle était sous-estimée.
-  const DONE_THREAT_STATUS = new Set(["actioned", "archived"]);
-  const menacesTraitees = items.filter((i) => i.stance === "threat" && DONE_THREAT_STATUS.has(i.status)).length;
+  const menacesTraitees = items.filter((i) => i.stance === "threat" && i.status === "actioned").length;
   const opportunites = items.filter((i) => i.stance === "opportunity").length;
-  // Placeholder metric: count of high-impact threats not yet actioned/archived, standing in for
-  // a chiffered "exposure" figure until summaries/quanti (V4) can value it in FCFA.
-  const threatsExposure = items.filter(
-    (i) => i.stance === "threat" && i.impact === "high" && i.status !== "actioned" && i.status !== "archived"
+  // Nombre de menaces high-impact encore non traitées (compte, pas un montant — voir renommage
+  // ci-dessous). Standing-in d'une future valorisation FCFA (summaries/quanti V4).
+  const threatsHighUnactionedCount = items.filter(
+    (i) => i.stance === "threat" && i.impact === "high" && i.status !== "actioned"
   ).length;
 
   return {
@@ -1263,13 +1265,12 @@ async function computeVeilleExecSummary(db) {
       menacesTraitees,
       opportunites,
       winRateGlobal, // taux de victoire global (winLoss) — null si aucun deal enregistré
-      tti: null, // time-to-insight needs decision timestamps — V6 (decisions collection)
     },
     decisionsPending, // décisions non tranchées (collection decisions)
     porter: quanti ? quanti.porterForces ?? null : null, // from summaries/quanti (nt360 sync)
     winRateByCompetitor, // taux de victoire par concurrent (winLoss)
     pipelineInfluenced, // veille-tracked clients' value-at-stake — see computation above
-    threatsExposure,
+    threatsHighUnactionedCount, // compte de menaces high non traitées (renommé — ex-« threatsExposure »)
     okrProgress, // avancement moyen des initiatives (0-1) — null si aucune initiative
     updatedAt: FieldValue.serverTimestamp(),
   };
@@ -1310,16 +1311,22 @@ async function runGenerateBriefing(db, generatedBy) {
   const [veilleSnap, veilleExecSnap, topItemsSnap] = await Promise.all([
     db.doc("summaries/veille").get(),
     db.doc("summaries/veille_exec").get(),
-    db.collection("intelItems").orderBy("priorityScore", "desc").limit(10).get(),
+    // On récupère un surplus (40) puis on filtre sur les statuts PUBLIÉS avant de garder le top-10 :
+    // Firestore ne combine pas trivialement orderBy + where("in"), et le briefing ne doit JAMAIS
+    // fonder ses recommandations sur des signaux `pending`/`rejected`/`archived` alors que ses
+    // propres KPI (computeVeilleExecSummary) ne comptent que les publiés — sinon corps et chiffres
+    // du même livrable se contredisent (audit pertinence 2026-07).
+    db.collection("intelItems").orderBy("priorityScore", "desc").limit(40).get(),
   ]);
 
   const veilleSummary = veilleSnap.exists ? veilleSnap.data() : null;
   const veilleExecSummary = veilleExecSnap.exists ? veilleExecSnap.data() : null;
-  const topItems = topItemsSnap.docs.map((d) => {
-    const it = d.data();
+  const topItems = topItemsSnap.docs
+    .map((d) => d.data())
+    .filter((it) => PUBLISHED_STATUSES.has(it.status || "new"))
+    .slice(0, 10)
     // ent/date rendus par briefing.js#itemsBlock (Action 4.3) — recommandations nominatives.
-    return { title: it.title, axis: it.axis, impact: it.impact, stance: it.stance, soWhat: it.soWhat, priorityScore: it.priorityScore, ent: it.ent, date: it.date };
-  });
+    .map((it) => ({ title: it.title, axis: it.axis, impact: it.impact, stance: it.stance, soWhat: it.soWhat, priorityScore: it.priorityScore, ent: it.ent, date: it.date }));
 
   const now = new Date();
   const period = `semaine du ${now.toISOString().slice(0, 10)}`;
