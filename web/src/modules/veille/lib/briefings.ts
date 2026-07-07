@@ -107,8 +107,11 @@ interface GenerateBriefingResult {
  * Calls the `generateBriefing` Cloud Function (exec-gated server-side — see functions/index.js).
  * Returns the newly created `briefings/{id}` doc id.
  */
+// Timeout client aligné sur le serveur (540 s) — la génération IA d'un briefing dépasse le défaut 70 s.
+const HEAVY_CALL = { timeout: 540_000 } as const;
+
 export async function generateBriefing(): Promise<GenerateBriefingResult> {
-  const call = httpsCallable<void, GenerateBriefingResult>(functions, "generateBriefing");
+  const call = httpsCallable<void, GenerateBriefingResult>(functions, "generateBriefing", HEAVY_CALL);
   const { data } = await call();
   return data;
 }
@@ -124,7 +127,7 @@ interface ExportBriefingPdfResult {
  * callers typically `window.open(url, "_blank")` it or offer it as a download link.
  */
 export async function exportBriefingPdf(briefingId?: string): Promise<string> {
-  const call = httpsCallable<{ briefingId?: string }, ExportBriefingPdfResult>(functions, "exportPdf");
+  const call = httpsCallable<{ briefingId?: string }, ExportBriefingPdfResult>(functions, "exportPdf", HEAVY_CALL);
   const { data } = await call(briefingId ? { briefingId } : {});
   return data.url;
 }

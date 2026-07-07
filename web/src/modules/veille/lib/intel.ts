@@ -342,16 +342,21 @@ export async function deactivateSource(id: string): Promise<void> {
 export async function deleteSource(id: string): Promise<void> {
   await deleteDoc(doc(db, "intelSources", id));
 }
+// Le SDK client abandonne un callable au bout de 70 s par défaut (« deadline-exceeded ») alors que la
+// fonction serveur tourne jusqu'à 540 s. Les opérations lourdes (synchro, dédup, IA) doivent attendre
+// la fin côté serveur : on aligne le timeout client sur le serveur.
+const HEAVY_CALL = { timeout: 540_000 } as const;
+
 /** Relance la synchronisation des sources maintenant (callable exec). Retourne les compteurs. */
 export async function runSyncSourcesNow(): Promise<Record<string, unknown>> {
-  const call = httpsCallable<void, Record<string, unknown>>(functions, "syncSourcesNow");
+  const call = httpsCallable<void, Record<string, unknown>>(functions, "syncSourcesNow", HEAVY_CALL);
   const { data } = await call();
   return data;
 }
 
 /** Nettoie les quasi-doublons existants dans les signaux (callable exec). Retourne { clusters, archived }. */
 export async function runDedupeIntelItemsNow(): Promise<{ clusters?: number; archived?: number }> {
-  const call = httpsCallable<void, { clusters?: number; archived?: number }>(functions, "dedupeIntelItemsNow");
+  const call = httpsCallable<void, { clusters?: number; archived?: number }>(functions, "dedupeIntelItemsNow", HEAVY_CALL);
   const { data } = await call();
   return data;
 }
