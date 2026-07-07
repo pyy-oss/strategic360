@@ -836,7 +836,10 @@ async function runDedupeIntelItems(db) {
   // Ordre de préférence pour le « gardé » : revu par un humain d'abord, puis meilleur score, puis le
   // plus ancien (premier vu). Les doublons « new » restants sont archivés (mergés vers le gardé).
   const rank = (x) => (x.status && x.status !== "new" ? 1 : 0);
-  let archived = 0;
+  // On collecte d'abord les doublons à archiver, puis on ÉCRIT PAR LOTS (≤ 400/commit) au lieu d'un
+  // await séquentiel par doublon — sinon, sur un gros portefeuille, le dédoublonnage à chaque synchro
+  // allongeait la passe au point de faire expirer l'appel côté client (« deadline-exceeded »).
+  const toArchive = [];
   for (const cluster of clusters) {
     const sorted = [...cluster].sort(
       (a, b) => rank(b) - rank(a) ||
@@ -846,14 +849,18 @@ async function runDedupeIntelItems(db) {
     const keep = sorted[0];
     for (const dup of sorted.slice(1)) {
       if ((dup.status || "new") !== "new") continue; // ne jamais toucher une décision humaine
-      await db.doc(`intelItems/${dup.id}`).update({
-        status: "archived",
-        dedupedInto: keep.id,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      archived += 1;
+      toArchive.push({ id: dup.id, keepId: keep.id });
     }
   }
+  const CHUNK = 400;
+  for (let i = 0; i < toArchive.length; i += CHUNK) {
+    const batch = db.batch();
+    for (const { id, keepId } of toArchive.slice(i, i + CHUNK)) {
+      batch.update(db.doc(`intelItems/${id}`), { status: "archived", dedupedInto: keepId, updatedAt: FieldValue.serverTimestamp() });
+    }
+    await batch.commit();
+  }
+  const archived = toArchive.length;
   logger.info(`runDedupeIntelItems: ${clusters.length} grappes de doublons, ${archived} signaux archivés`);
   return { clusters: clusters.length, archived };
 }

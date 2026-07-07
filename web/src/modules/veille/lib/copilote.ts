@@ -19,6 +19,10 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { auth, db, functions } from "../../../lib/firebase";
 
+// Timeout client aligné sur le serveur (540 s) : sans ça le SDK abandonne à 70 s (« deadline-exceeded »)
+// alors que la génération IA / la synchro tournent plus longtemps.
+const HEAVY_CALL = { timeout: 540_000 } as const;
+
 /* ---------------------------------------------------------------------------------------------
  * Comptes (copiloteAccounts) — qualitatif édité par les commerciaux
  * ------------------------------------------------------------------------------------------- */
@@ -238,21 +242,21 @@ export interface CopiloteChatMessage { role: "user" | "assistant"; content: stri
 
 /** Appelle un agent structuré. `extra` fournit les champs propres à l'écran (ex. redaction). */
 export async function copiloteGenerate<T>(agent: CopiloteAgent, accountId?: string, extra?: Record<string, unknown>): Promise<T> {
-  const call = httpsCallable<{ agent: string; accountId?: string; extra?: Record<string, unknown> }, T>(functions, "copiloteGenerate");
+  const call = httpsCallable<{ agent: string; accountId?: string; extra?: Record<string, unknown> }, T>(functions, "copiloteGenerate", HEAVY_CALL);
   const { data } = await call({ agent, accountId, extra });
   return data;
 }
 
 /** Chat multi-turn : envoie l'historique complet + contexte compte. */
 export async function copiloteChat(messages: CopiloteChatMessage[], accountId?: string, ecran?: string): Promise<{ reply: string }> {
-  const call = httpsCallable<{ messages: CopiloteChatMessage[]; accountId?: string; ecran?: string }, { reply: string }>(functions, "copiloteChat");
+  const call = httpsCallable<{ messages: CopiloteChatMessage[]; accountId?: string; ecran?: string }, { reply: string }>(functions, "copiloteChat", HEAVY_CALL);
   const { data } = await call({ messages, accountId, ecran });
   return data;
 }
 
 /** Pré-remplit l'empreinte des comptes depuis nt360 (read-only). Retourne le nombre de comptes traités. */
 export async function syncCopiloteAccountsFromNt360(): Promise<{ accounts: number }> {
-  const call = httpsCallable<void, { accounts: number }>(functions, "syncCopiloteAccountsNow");
+  const call = httpsCallable<void, { accounts: number }>(functions, "syncCopiloteAccountsNow", HEAVY_CALL);
   const { data } = await call();
   return data;
 }
