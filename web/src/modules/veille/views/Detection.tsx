@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { T, AX, ECAT, PROX, IMP, STANCE } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { useNavigate } from "react-router-dom";
-import { useIntelItems, useSources, withDetectionFields, createSource, updateSource, reactivateSource, deactivateSource, deleteSource, runSyncSourcesNow, runDedupeIntelItemsNow, type IntelSource, type IntelSourceKind, type IntelAxis } from "../lib/intel";
+import { useIntelItems, useSources, withDetectionFields, createSource, updateSource, reactivateSource, deactivateSource, deleteSource, runSyncSourcesNow, runDedupeIntelItemsNow, runEvaluateIntelItemsNow, type IntelSource, type IntelSourceKind, type IntelAxis } from "../lib/intel";
 import { createAction } from "../lib/execution";
 import { useCan, useIsExec } from "../../../lib/rbac";
 import { effectiveProx, isPastDue } from "../lib/freshness";
@@ -389,6 +389,7 @@ function SourceHealthPanel() {
   const [showAdd, setShowAdd] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [deduping, setDeduping] = useState(false);
+  const [evaluating, setEvaluating] = useState(false);
   const syncNow = async () => {
     setSyncing(true);
     try { const r = await runSyncSourcesNow(); toast.success(`Synchronisation lancée${typeof r?.processed === "number" ? ` — ${r.processed} sources traitées` : ""}.`); }
@@ -398,6 +399,11 @@ function SourceHealthPanel() {
     setDeduping(true);
     try { const r = await runDedupeIntelItemsNow(); toast.success(`Doublons nettoyés — ${r?.archived ?? 0} signaux archivés (${r?.clusters ?? 0} groupes).`); }
     catch (e) { toast.error(e instanceof Error ? e.message : "Échec du dédoublonnage."); } finally { setDeduping(false); }
+  };
+  const evaluateNow = async () => {
+    setEvaluating(true);
+    try { const r = await runEvaluateIntelItemsNow(); toast.success(`Évaluation terminée — ${r?.published ?? 0} publiés, ${r?.rejected ?? 0} écartés (${r?.evaluated ?? 0} traités).`); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Échec de l'évaluation."); } finally { setEvaluating(false); }
   };
   if (loading || sources.length === 0) {
     // Même vide, les exec doivent pouvoir ajouter une 1re source.
@@ -419,6 +425,7 @@ function SourceHealthPanel() {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {isExec && <button className="pill" disabled={syncing} onClick={() => void syncNow()}>{syncing ? <><span className="cop-spin" /> Synchro…</> : "↻ Relancer la synchro"}</button>}
           {isExec && <button className="pill" disabled={deduping} onClick={() => void dedupeNow()} title="Archiver les quasi-doublons (même événement vu par plusieurs sources)">{deduping ? <><span className="cop-spin" /> Nettoyage…</> : "⧉ Dédoublonner"}</button>}
+          {isExec && <button className="pill" disabled={evaluating} onClick={() => void evaluateNow()} title="Passer les signaux en attente au juge de pertinence (publie ou écarte avant affichage)">{evaluating ? <><span className="cop-spin" /> Évaluation…</> : "▶ Évaluer"}</button>}
           {isExec && <button className="pill on" onClick={() => setShowAdd(true)}>+ Ajouter</button>}
           {problems.length > 0 && (
             <button className="pill" onClick={() => setOpen((v) => !v)}>

@@ -26,6 +26,7 @@ const { computePorterForces, computeBcg, computeCasSummary, computePipeline, com
 const { intelItemId } = require("./domain/ids");
 const { buildClassificationPrompt, parseClassificationResponse } = require("./domain/classify");
 const { dedupeByTitle, isNearDuplicate, clusterNearDuplicates } = require("./domain/dedupe");
+const { buildEvaluatePrompt, parseEvaluateResponse } = require("./domain/evaluate");
 const { pickRelevant } = require("./domain/retrieve");
 const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
 const { buildBriefingPdf } = require("./domain/pdf");
@@ -217,6 +218,10 @@ const HEAVY_CALLABLE_OPTS = { ...CALLABLE_OPTS, timeoutSeconds: 540, memory: "51
 /** Concurrence max des appels IA en parallèle (lots) — borne la charge Vertex tout en évitant la
  * boucle strictement séquentielle qui faisait exploser la durée. */
 const AI_CONCURRENCY = 5;
+
+/** Statuts « PUBLIÉS » (visibles du fil/radar et comptés dans les agrégats). `pending` (en attente
+ * d'évaluation) et `rejected` (écarté par l'évaluateur) et `archived` (doublon/clos) en sont exclus. */
+const PUBLISHED_STATUSES = new Set(["new", "reviewed", "actioned"]);
 
 /** Exécute `worker` sur chaque élément de `items` par lots de `size`, en tolérant les échecs
  * (allSettled). Remplace les boucles `for … await` séquentielles sur les sources/artefacts. */
@@ -617,9 +622,14 @@ async function upsertClassifiedItem(db, classified, dedupeIndex) {
     }
     dedupeIndex.push({ title: classified.title || "", axis });
   }
+  const { status: _classifiedStatus, ...rest } = classified;
   await ref.set(
     {
-      ...classified,
+      ...rest,
+      // PORTE DE QUALITÉ (audit « insights manquent de pertinence ») : un NOUVEAU signal IA reste EN
+      // ATTENTE d'évaluation (`pending`) — invisible du fil/radar jusqu'à ce que l'évaluateur le publie
+      // (`new`) ou l'écarte (`rejected`). Un signal déjà présent conserve son statut (jamais re-gaté).
+      status: existing.exists ? (existing.data().status || "new") : "pending",
       createdBy: "system:syncSources",
       createdAt: existing.exists ? existing.data().createdAt : FieldValue.serverTimestamp(),
     },
@@ -794,8 +804,17 @@ async function runSyncSources(db) {
     logger.warn(`syncSources: auto-dédoublonnage ignoré (${e.message})`);
   }
 
-  logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourcesSnap.size} itemsCreated=${itemsCreated} deduped=${deduped.archived}`);
-  return { sourcesTotal: sourcesSnap.size, sourcesProcessed, itemsCreated, deduped: deduped.archived };
+  // PORTE DE QUALITÉ : on évalue les nouveaux signaux (pending) dans la foulée — ils passent en `new`
+  // (publiés) ou `rejected`. Best-effort ; fail-open par item (une panne IA publie au lieu de retenir).
+  let evaluated = { evaluated: 0, published: 0, rejected: 0 };
+  try {
+    evaluated = await runEvaluateIntelItems(db);
+  } catch (e) {
+    logger.warn(`syncSources: évaluation ignorée (${e.message})`);
+  }
+
+  logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourcesSnap.size} itemsCreated=${itemsCreated} deduped=${deduped.archived} évalués=${evaluated.evaluated} (pub ${evaluated.published}/rej ${evaluated.rejected})`);
+  return { sourcesTotal: sourcesSnap.size, sourcesProcessed, itemsCreated, deduped: deduped.archived, evaluated: evaluated.published, rejected: evaluated.rejected };
 }
 
 /**
@@ -872,6 +891,61 @@ exports.dedupeIntelItemsNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   logger.info(`dedupeIntelItemsNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
   return result;
 });
+
+/**
+ * runEvaluateIntelItems — PORTE DE QUALITÉ : passe en revue les signaux EN ATTENTE (`pending`) et, via
+ * un jugement LLM de PERTINENCE pour NT, les PUBLIE (`new`, avec evalScore/evalReason) ou les ÉCARTE
+ * (`rejected`, corbeille exec restaurable). FAIL-OPEN par item : toute erreur d'évaluation → on publie
+ * (jamais pire que le comportement historique « tout est publié »), le fil ne se vide jamais.
+ * Borné à `limit` par passe (coût). Parallélisé (runInBatches, AI_CONCURRENCY).
+ */
+async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
+  const companyContext = await getCompanyContext();
+  const snap = await db.collection("intelItems").where("status", "==", "pending").limit(limit).get();
+  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  if (!items.length) return { evaluated: 0, published: 0, rejected: 0 };
+  let published = 0, rejected = 0;
+  const stamp = () => FieldValue.serverTimestamp();
+  await runInBatches(items, AI_CONCURRENCY, async (it) => {
+    try {
+      const parsed = parseEvaluateResponse(await generateJson(buildEvaluatePrompt(it, companyContext)));
+      if (parsed && parsed.publier === false) {
+        await db.doc(`intelItems/${it.id}`).update({ status: "rejected", evalScore: parsed.pertinence, evalReason: parsed.raison || "écarté par l'évaluateur", updatedAt: stamp() });
+        rejected += 1;
+      } else {
+        await db.doc(`intelItems/${it.id}`).update({ status: "new", evalScore: parsed ? parsed.pertinence : null, evalReason: parsed ? parsed.raison : "évaluation indisponible — publié par défaut", updatedAt: stamp() });
+        published += 1;
+      }
+    } catch (err) {
+      // Fail-open : en cas d'échec IA, on PUBLIE (ne jamais retenir un signal à cause d'une panne).
+      logger.warn(`runEvaluateIntelItems: éval échouée pour ${it.id} — publié par défaut (${err.message})`);
+      try { await db.doc(`intelItems/${it.id}`).update({ status: "new", evalReason: "évaluation échouée — publié par défaut", updatedAt: stamp() }); published += 1; } catch (_e) { /* ignore */ }
+    }
+  });
+  logger.info(`runEvaluateIntelItems: ${items.length} évalués — ${published} publiés, ${rejected} écartés`);
+  return { evaluated: items.length, published, rejected };
+}
+
+/** evaluateIntelItemsNow — callable exec-gated : évalue à la demande les signaux en attente. */
+exports.evaluateIntelItemsNow = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "1GiB" }, async (request) => {
+  requireExecCaller(request, "évaluer les signaux de veille");
+  const result = await runEvaluateIntelItems(firestoreDb());
+  logger.info(`evaluateIntelItemsNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
+  return result;
+});
+
+/**
+ * evaluateIntelItemsScheduled — l'agent de PERTINENCE tourne PÉRIODIQUEMENT (toutes les heures) pour
+ * rattraper les signaux restés `pending` (ingestion hors-sync, ou passe précédente bornée par `limit`).
+ * La synchro quotidienne évalue déjà dans la foulée ; ce cron garantit qu'un signal ne stagne jamais.
+ */
+exports.evaluateIntelItemsScheduled = onSchedule(
+  { schedule: "every 60 minutes", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "1GiB" },
+  async () => {
+    const result = await runEvaluateIntelItems(firestoreDb());
+    logger.info(`evaluateIntelItemsScheduled: ${JSON.stringify(result)}`);
+  }
+);
 
 /**
  * classifyAI — callable (manual "reclassify this item" admin action)
@@ -1056,7 +1130,7 @@ async function computeVeilleSummary(db) {
   const snap = await db.collection("intelItems").get();
   // Les signaux archivés (doublons dédoublonnés, items clos par un humain) ne comptent PAS dans les
   // agrégats « actifs » (axes/impacts/entités) — cohérent avec le fil et le radar.
-  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((it) => (it.status || "new") !== "archived");
+  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((it) => PUBLISHED_STATUSES.has(it.status || "new"));
 
   const countsByAxis = {};
   const countsByImpact = {};
@@ -1122,7 +1196,7 @@ async function computeVeilleExecSummary(db) {
     db.collection("initiatives").get(),
     db.collection("decisions").get(),
   ]);
-  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((it) => (it.status || "new") !== "archived");
+  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((it) => PUBLISHED_STATUSES.has(it.status || "new"));
   const quanti = quantiSnap.exists ? quantiSnap.data() : null;
 
   // Win rate par concurrent depuis winLoss (réel — C3 audit 2026-07). Même logique que
