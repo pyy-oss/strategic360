@@ -218,14 +218,32 @@ function isMeaningfulBu(name) {
 // revenu récurrent (MRR). On reste sur une liste de marqueurs sûrs (pas de dérivation fp/suppliers, que
 // l'audit demande de valider sur échantillon avant industrialisation). PUR.
 const MANAGED_MARKERS = [
-  "manag", "mssp", "soc", "infogér", "infoger", "tma", "maintenance", "support",
-  "abonn", "saas", "as-a-service", "aas", "cloud", "hébergement", "hebergement",
-  "supervision", "monitoring", "récurrent", "recurrent", "opex", "academy", "licence", "license", "subscription",
+  "manag", "mssp", "soc", "infoger", "tma", "maintenance", "support",
+  "abonn", "saas", "aas", "cloud", "hebergement",
+  "supervision", "monitoring", "recurrent", "opex", "academy", "licence", "license", "subscription",
 ];
+
+/**
+ * labelMatchesAnyMarker(label, markers) — rapprochement libellé ↔ marqueurs par MOT (pas sous-chaîne).
+ * Corrige un défaut latent : un marqueur court comme « soc » (pour SOC) matchait « société » par simple
+ * inclusion. Règle : marqueur ≤ 3 caractères → mot ENTIER (acronyme : soc, wan, ia, erp) ; marqueur
+ * plus long → PRÉFIXE de mot (racine : « manag » → managé/management, « conform » → conformité). PUR.
+ */
+function normMarkerTokens(s) {
+  return String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").split(/[^a-z0-9]+/).filter(Boolean);
+}
+function labelMatchesAnyMarker(label, markers) {
+  const toks = normMarkerTokens(label);
+  if (!toks.length) return false;
+  return (Array.isArray(markers) ? markers : []).some((raw) => {
+    const m = normMarkerTokens(raw).join("");
+    if (!m) return false;
+    return m.length <= 3 ? toks.includes(m) : toks.some((t) => t.startsWith(m));
+  });
+}
+
 function isManagedOffer(name) {
-  const s = String(name == null ? "" : name).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  if (!s.trim()) return false;
-  return MANAGED_MARKERS.some((m) => s.includes(m.normalize("NFD").replace(/[̀-ͯ]/g, "")));
+  return labelMatchesAnyMarker(name, MANAGED_MARKERS);
 }
 // Repli déterministe (djb2 → base36) quand slugifyClient est vide (nom purement non-latin/symboles) :
 // on ne veut PAS perdre le CAS de ce client ni fusionner tous ces clients dans une seule clé "".
@@ -614,13 +632,13 @@ const SUBTYPE_OFFER_MARKERS = {
   eol: ["refresh", "renouvel", "infra", "reseau", "wan", "serveur", "migration", "cloud"],
   implantation: ["reseau", "wan", "infra", "lan", "cabl", "connect", "ict", "site"],
   market_entry: ["reseau", "wan", "infra", "ict", "cloud"],
-  expansion: ["reseau", "wan", "infra", "ict", "cloud", "manage"],
-  supply: ["infoger", "manage", "sourcing", "tma", "maintenance", "support"],
+  expansion: ["reseau", "wan", "infra", "ict", "cloud", "manag"],
+  supply: ["infoger", "manag", "sourcing", "tma", "maintenance", "support"],
   hire: ["formation", "academy", "certif", "competence"],
   leadership: ["formation", "academy", "conduite", "change"],
   funding: ["data", "ia", "cloud", "transformation", "erp", "digital"],
   budget: ["data", "ia", "cloud", "transformation", "erp", "digital"],
-  product_launch: ["data", "ia", "innovation", "appli", "dev"],
+  product_launch: ["data", "ia", "innovation", "appli", "developp"],
   trend: ["data", "ia", "innovation"],
 };
 
@@ -628,10 +646,10 @@ const SUBTYPE_OFFER_MARKERS = {
  * matchOffersToEvents(veilleTop, offers) -> [{ offre, montant, kind, event, subtype }] — croise les
  * signaux de veille rattachés au compte avec ses offres de réserve (cross-sell/upsell) : une offre
  * devient « opportune maintenant » quand un événement externe la rend pertinente. C'est ce qui fait
- * que la VEILLE déclenche le cross-sell (au lieu d'un simple market-basket interne). PUR.
+ * que la VEILLE déclenche le cross-sell (au lieu d'un simple market-basket interne). Rapprochement par
+ * MOT (labelMatchesAnyMarker) et non sous-chaîne — évite les faux positifs (« soc » ⊄ « société »). PUR.
  */
 function matchOffersToEvents(veilleTop, offers) {
-  const norm = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const out = [];
   const seen = new Set();
   for (const ev of Array.isArray(veilleTop) ? veilleTop : []) {
@@ -639,8 +657,7 @@ function matchOffersToEvents(veilleTop, offers) {
     if (!markers) continue;
     for (const o of Array.isArray(offers) ? offers : []) {
       if (!o || !o.offre || seen.has(o.offre)) continue;
-      const label = norm(o.offre);
-      if (markers.some((m) => label.includes(m))) {
+      if (labelMatchesAnyMarker(o.offre, markers)) {
         seen.add(o.offre);
         out.push({ offre: o.offre, montant: o.montant, kind: o.kind, event: ev.title || "", subtype: ev.subtype });
       }
