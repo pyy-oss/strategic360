@@ -106,6 +106,48 @@ describe("Copilote — chiffrage & déclencheurs de veille dans factBase (via pr
     expect(p).toContain("AO refonte SI à la BRVM"); // déclencheur de veille rattaché
     expect(p).toMatch(/120\D000\D000\D?XOF réalisés/); // historique chiffré exploité
   });
+
+  it("factBase rend la matière temporelle (date/so-what/offre déclenchée) des déclencheurs enrichis", async () => {
+    const { buildCvpPrompt } = await import("../domain/copilote.js");
+    const p = buildCvpPrompt({
+      compte: "SGBCI",
+      signauxCompte: [
+        { titre: "Faille Fortinet exposée à la SGBCI", date: "2026-06-30", prox: "imminent", soWhat: "fenêtre pour un audit de vulnérabilité", offreLiee: "SOC managé" },
+      ],
+    });
+    expect(p).toContain("Faille Fortinet exposée à la SGBCI");
+    expect(p).toContain("2026-06-30"); // date surfacée → l'IA peut fonder le timing
+    expect(p).toContain("so-what : fenêtre pour un audit de vulnérabilité");
+    expect(p).toContain("offre à activer : SOC managé"); // boucle veille→vente explicitée
+  });
+});
+
+describe("Copilote — battlecards confirmées vs marché (competitorBlock via prompts)", () => {
+  it("sépare les concurrents confirmés sur le compte du complément marché, et interdit de présumer ce dernier présent", async () => {
+    const { buildDealAnalysisPrompt } = await import("../domain/copilote.js");
+    const p = buildDealAnalysisPrompt({
+      compte: "NSIA", deals: [{ nom: "OPP-SOC", montant: 40000000, etape: "Négociation" }],
+      battlecards: [{ competitor: "Talentys", positioning: "intégrateur local", weaknesses: ["prix"] }],
+      battlecardsMarket: [{ competitor: "Atos", positioning: "gros intégrateur", weaknesses: ["proximité"] }],
+    });
+    expect(p).toContain("CONCURRENTS CONFIRMÉS SUR CE COMPTE");
+    expect(p).toContain("Talentys");
+    expect(p).toContain("CONCURRENTS FRÉQUENTS DU MARCHÉ");
+    expect(p).toContain("Atos");
+    expect(p).toMatch(/ne PAS les présenter comme le concurrent en place/i);
+  });
+
+  it("n'affiche que le complément marché quand aucun concurrent n'est confirmé sur le compte", async () => {
+    const { buildDealAnalysisPrompt } = await import("../domain/copilote.js");
+    const p = buildDealAnalysisPrompt({
+      compte: "X", deals: [{ nom: "OPP", montant: 1, etape: "x" }],
+      battlecards: [],
+      battlecardsMarket: [{ competitor: "Atos", positioning: "gros intégrateur" }],
+    });
+    expect(p).not.toContain("CONCURRENTS CONFIRMÉS SUR CE COMPTE");
+    expect(p).toContain("CONCURRENTS FRÉQUENTS DU MARCHÉ");
+    expect(p).toContain("Atos");
+  });
 });
 
 describe("Copilote — agent planAction (plan d'action daté 90 j)", () => {

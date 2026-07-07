@@ -1942,9 +1942,29 @@ async function assembleCopiloteContext(db, accountId) {
   // qui comptent pour CE compte, pas un échantillon aveugle.
   const prospectTerms = [a.secteur, ...(Array.isArray(a.whitespace) ? a.whitespace : []), ...(Array.isArray(a.enjeux) ? a.enjeux : [])].filter(Boolean);
   const signaux = pickRelevant(bizAll, { terms: prospectTerms }, 10).map((o) => ({ titre: o.name }));
-  const signauxCompte = (a.nom ? nt360MatchSignalsToAccount(a.nom, bizAll) : [])
-    .slice(0, 5)
-    .map((o) => ({ titre: o.name }));
+  // Déclencheurs de veille RATTACHÉS au compte : on privilégie `nt.veille.top` (persisté au sync —
+  // titre + date + so-what + impact + offre déclenchée), qui porte l'actionnabilité, au lieu des
+  // seuls titres de bizOpportunities. Audit pertinence 2026-07 (constat « la boucle veille→vente
+  // s'arrêtait au titre nu ») : sans date/so-what/offre liée, l'IA ne pouvait produire ni timing ni
+  // accroche et retombait sur du générique. Repli sur le matching bizOpportunities si aucune veille
+  // dérivée n'est disponible pour ce compte.
+  const ntVeille = nt.veille && typeof nt.veille === "object" ? nt.veille : {};
+  const veilleTop = Array.isArray(ntVeille.top) ? ntVeille.top : [];
+  const eventOffers = Array.isArray(nt.eventOffers) ? nt.eventOffers : [];
+  const signauxCompteRich = veilleTop.map((t) => {
+    const eo = eventOffers.find((e) => e && e.event && t.title && e.event === t.title);
+    return {
+      titre: t.title || "",
+      date: t.date || "",
+      soWhat: t.soWhat || "",
+      impact: t.impact || "",
+      prox: t.prox || "",
+      offreLiee: eo ? eo.offre : "", // offre NT rendue opportune par cet événement (boucle veille→vente)
+    };
+  }).filter((s) => s.titre);
+  const signauxCompte = signauxCompteRich.length
+    ? signauxCompteRich
+    : (a.nom ? nt360MatchSignalsToAccount(a.nom, bizAll) : []).slice(0, 5).map((o) => ({ titre: o.name }));
   // WHITESPACE RÉEL = catalogue d'offres NT (agrégé au sync, summaries/copiloteMeta.buCatalog) MOINS
   // les BU que ce compte a déjà touchées (achetées ou en cours). C'est le cross-sell concret et
   // spécifique — remplace le whitespace vide qui faisait produire des livrables génériques.
@@ -2018,13 +2038,21 @@ async function assembleCopiloteContext(db, accountId) {
   // les concurrents où NT PERD LE PLUS (winPct croissant sur des deals réels) — on arme le commercial contre
   // l'adversaire qui coûte réellement des affaires, au lieu des 6 premières au hasard.
   const lossRank = new Map(winStats.byCompetitor.map((x) => [x.competitor.toLowerCase(), x.winPct]));
-  const bcScore = (b) => {
+  const isMatched = (b) => concurrenceText.includes(String(b.competitor).toLowerCase());
+  // Audit pertinence 2026-07 : on ne mélange PLUS les battlecards CONFIRMÉES sur le compte (champ
+  // `concurrence`) avec le complément « loss-rank » global. Injectées ensemble, l'IA prenait un
+  // concurrent absent du compte pour le « concurrent en place » et bâtissait des parades fictives.
+  // Deux listes distinctes, étiquetées différemment côté prompt.
+  const battlecards = bcAll.filter(isMatched).slice(0, 6).map(compact); // confirmés sur ce compte
+  const bcMarketScore = (b) => {
     const key = String(b.competitor).toLowerCase();
-    if (concurrenceText.includes(key)) return -1000; // matché au compte : priorité absolue
-    if (lossRank.has(key)) return lossRank.get(key); // sinon, plus le winPct est BAS, plus c'est prioritaire
-    return 500; // ni matché ni tracé en win/loss : moins prioritaire
+    return lossRank.has(key) ? lossRank.get(key) : 500; // plus le winPct est BAS, plus c'est prioritaire
   };
-  const battlecards = [...bcAll].sort((a2, b2) => bcScore(a2) - bcScore(b2)).slice(0, 6).map(compact);
+  const battlecardsMarket = bcAll
+    .filter((b) => !isMatched(b))
+    .sort((a2, b2) => bcMarketScore(a2) - bcMarketScore(b2))
+    .slice(0, Math.max(0, 6 - battlecards.length))
+    .map(compact); // concurrents fréquents du marché (NON confirmés sur ce compte)
 
   // --- Modèle de valeur CHIFFRÉ en code (audit profondeur) : la trajectoire/business case ne doit plus
   // reposer sur des montants hallucinés par l'IA. On projette depuis les VRAIS paniers de référence
@@ -2058,17 +2086,19 @@ async function assembleCopiloteContext(db, accountId) {
     concurrence: a.concurrence || "",
     pestel,
     signaux, // leads de veille génériques (prospection)
-    signauxCompte, // déclencheurs de veille nommant CE compte (rattachés au portefeuille)
+    signauxCompte, // déclencheurs de veille nommant CE compte (rattachés au portefeuille — enrichis date/so-what/offre)
+    eventOffers, // offres NT rendues opportunes MAINTENANT par un événement de veille (boucle veille→vente)
     deals,   // opportunités réelles du compte (CVP/triennal/plan/chat)
     recommendation, // next best offer data-driven { offre, csPct, montantEstime }
     casTotal,
     pipelinePondere,
     wins,
-    battlecards,   // intelligence concurrentielle réelle (matchée au compte)
+    battlecards,   // battlecards CONFIRMÉES sur ce compte (concurrent en place)
+    battlecardsMarket, // concurrents fréquents du marché (loss-rank global) — NON confirmés sur ce compte
     winStats,      // taux de victoire réel (global + par concurrent + leçons)
     valueModel,    // modèle de valeur chiffré (paniers de référence réels) — pour le business case
     today: new Date().toISOString().slice(0, 10), // ancrage temporel des séquences/plans datés
-    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte, battlecards, winStats, valueModel, today: new Date().toISOString().slice(0, 10) },
+    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte, eventOffers, battlecards, battlecardsMarket, winStats, valueModel, today: new Date().toISOString().slice(0, 10) },
   };
 }
 
@@ -2095,6 +2125,14 @@ exports.copiloteGenerate = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   assertAccountId(accountId);
   const db = firestoreDb();
   const base = await assembleCopiloteContext(db, accountId);
+  // Agents mono-deal : refuser proprement si le compte n'a aucune opportunité ouverte, plutôt que de
+  // renvoyer une carte MEDDIC/analyse « à qualifier » sur tous les champs (audit pertinence 2026-07).
+  if (spec.requiresDeal && !(Array.isArray(base.deals) && base.deals.some((d) => d && d.nom))) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Aucune opportunité ouverte sur ce compte — créez ou qualifiez un deal (pipeline) avant de lancer cet agent (MEDDIC / analyse de deal)."
+    );
+  }
   const safeExtra = {};
   if (extra && typeof extra === "object") {
     for (const k of COPILOTE_EXTRA_ALLOWED) if (k in extra) safeExtra[k] = extra[k];
