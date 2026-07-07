@@ -357,8 +357,15 @@ function DealRow({ nom, bu, etape, montant, probability, closingDate, dealRef }:
   // Le libellé (fiche projet ou « Opportunité <offre> ») peut déjà contenir l'offre → on n'affiche le
   // BU en second que s'il n'y est pas déjà, pour éviter « Opportunité ICT · ICT ».
   const showBu = bu && !nom.toLowerCase().includes(bu.toLowerCase());
+  // Urgence de closing (audit doubler-CA) : dépassée = à requalifier (fantôme) ; ≤14 j = à fermer.
+  const cd = closingDate && /^\d{4}-\d{2}-\d{2}/.test(closingDate) ? closingDate : "";
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const in14 = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
+  const overdue = cd !== "" && cd < todayIso;
+  const soon = cd !== "" && !overdue && cd <= in14;
+  const edge = overdue ? T.clay : soon ? T.emerald : T.gold;
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", padding: "8px 11px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${T.gold}` }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", padding: "8px 11px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${edge}` }}>
       <div style={{ minWidth: 0 }}>
         <div title={dealRef ? `réf. ${dealRef}` : undefined} style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {nom}{showBu ? <span style={{ color: T.dim }}> · {bu}</span> : null} <span style={{ color: T.steel }}>— {etape}</span>
@@ -372,7 +379,7 @@ function DealRow({ nom, bu, etape, montant, probability, closingDate, dealRef }:
               <span style={{ fontSize: 11, color: T.dim, fontVariantNumeric: "tabular-nums" }}>{p}%</span>
             </span>
           )}
-          {closingDate ? <span style={{ fontSize: 11, color: T.dim }}>clôture {closingDate}</span> : null}
+          {closingDate ? <span style={{ fontSize: 11, color: overdue ? T.clay : soon ? T.emerald : T.dim, fontWeight: overdue || soon ? 700 : 400 }}>clôture {closingDate}{overdue ? " · dépassée → requalifier" : soon ? " · sous 14 j" : ""}</span> : null}
         </div>
       </div>
       <span style={{ fontSize: 13, color: T.gold, fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", fontFamily: "'Bricolage Grotesque',sans-serif" }}>{fmtC(montant)} XOF</span>
@@ -422,8 +429,20 @@ function PortfolioDashboard({
     // Deals chauds = opportunités en cours triées par valeur pondérée. Correctif audit 2026-07 : une
     // probabilité INCONNUE ne vaut plus 100 % (elle faisait passer les deals non qualifiés devant des
     // deals qualifiés à 90 %) — repli conservateur à 50 %, probabilité connue bornée 0-100.
-    const dealWeight = (o: { montant: number; probability?: number | null }) =>
-      o.montant * (typeof o.probability === "number" ? Math.max(0, Math.min(100, o.probability)) / 100 : 0.5);
+    // Audit doubler-CA (levier VICTOIRE) : un deal à closing DÉPASSÉE n'est pas « chaud » (à requalifier)
+    // → on le rétrograde fortement ; un deal qui se ferme sous 14 j est boosté (l'attention doit aller
+    // au CA réellement fermable ce trimestre, pas à un gros deal fantôme).
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const in14 = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
+    const dealWeight = (o: { montant: number; probability?: number | null; closingDate?: string }) => {
+      const base = o.montant * (typeof o.probability === "number" ? Math.max(0, Math.min(100, o.probability)) / 100 : 0.5);
+      const cd = o.closingDate;
+      if (cd && /^\d{4}-\d{2}-\d{2}/.test(cd)) {
+        if (cd < todayIso) return base * 0.1; // closing dépassée → fantôme, rétrogradé
+        if (cd <= in14) return base * 1.5; // fenêtre de closing imminente → priorité
+      }
+      return base;
+    };
     const hotDeals = accounts
       .flatMap((a) => (a.nt360?.opportunites ?? []).map((o) => ({ ...o, compte: a.nom, accountId: a.id })))
       .sort((x, y) => dealWeight(y) - dealWeight(x))

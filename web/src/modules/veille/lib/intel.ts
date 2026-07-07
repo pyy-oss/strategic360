@@ -146,6 +146,19 @@ export const DETECTION_SUBTYPE_LABELS: Record<string, string> = {
   supply: "Risque sectoriel",
 };
 
+/**
+ * Subtypes à contenu business direct — aligné sur `SUBTYPE_BUSINESS` du scoring serveur
+ * (functions/domain/scoring.js) : on inclut tous les subtypes jugés convertibles (≥ ~0.7), pas
+ * seulement les 4 historiques. Manquaient supply/budget/vulnerability/implantation/market_entry —
+ * précisément les signaux les mieux notés (sourcing, campagnes patch/upgrade, nouvelles
+ * implantations à équiper). Source unique consommée par le filtre « Business » du Fil ET le bloc
+ * « Business imminent » du Radar.
+ */
+export const BUSINESS_SUBTYPES: ReadonlySet<string> = new Set([
+  "tender", "funding", "eol", "regulation", "budget",
+  "supply", "vulnerability", "cve", "implantation", "market_entry",
+]);
+
 /** Fills `cat`/`prox` (and Frenchifies known subtype codes) so the item is plottable on the radar. */
 export function withDetectionFields(item: IntelItem): IntelItem {
   return {

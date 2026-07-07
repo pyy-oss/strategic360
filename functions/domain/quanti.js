@@ -200,32 +200,40 @@ function etapeProbability(etape) {
 }
 
 /**
- * computePipeline({opportunities}) -> { pipelinePondere, winRate }
- * pipelinePondere = Σ(montant × probabilité-per-étape) over ALL opportunities (open + closed) —
- * matches the maquette's "Pipeline pondéré" KRI, which is a running weighted total, not restricted
- * to open deals only.
+ * computePipeline({opportunities}) -> { pipelinePondere, realise, winRate }
+ * pipelinePondere = Σ(montant × probabilité-per-étape) over OPEN opportunities only (étape not in
+ * ['Gagné','Perdu']). Une prévision pondérée ne doit PAS inclure le CA déjà réalisé (Gagné=1.0) ni
+ * les affaires perdues : sinon le "pondéré" gonfle avec du réalisé et ment sur ce qu'il reste à
+ * fermer (audit doubler-CA, levier VICTOIRE). Le CA gagné est exposé à part via `realise`.
+ * realise = Σ(montant) des opportunités Gagné — le réalisé issu du pipe, distinct de la prévision.
  * winRate = count(étape=='Gagné') / count(étape in ['Gagné','Perdu']) — null if there are no
  * closed opportunities yet (0/0 is undefined, not 0%).
  */
 function computePipeline({ opportunities } = {}) {
   if (!Array.isArray(opportunities) || opportunities.length === 0) {
-    return { pipelinePondere: null, winRate: null };
+    return { pipelinePondere: null, realise: null, winRate: null };
   }
   let pipelinePondere = 0;
+  let realise = 0;
   let gagne = 0;
   let closed = 0;
   for (const o of opportunities) {
     const montant = Number(o && o.montant) || 0;
-    pipelinePondere += montant * etapeProbability(o && o.etape);
-    if (o && o.etape === "Gagné") {
+    const etape = o && o.etape;
+    if (etape === "Gagné") {
+      realise += montant;
       gagne += 1;
       closed += 1;
-    } else if (o && o.etape === "Perdu") {
+    } else if (etape === "Perdu") {
       closed += 1;
+    } else {
+      // Affaires OUVERTES uniquement dans la prévision pondérée.
+      pipelinePondere += montant * etapeProbability(etape);
     }
   }
   return {
     pipelinePondere: Math.round(pipelinePondere),
+    realise: Math.round(realise),
     winRate: closed > 0 ? Math.round((gagne / closed) * 100) / 100 : null,
   };
 }

@@ -5,9 +5,9 @@ import { AX, IMP, PROX, STANCE, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { Toggle } from "../../../design/fields";
 import { useDecisions } from "../lib/execution";
-import { useIntelItems, useWatchlist } from "../lib/intel";
+import { BUSINESS_SUBTYPES, useIntelItems, useWatchlist } from "../lib/intel";
 import { isPastDue } from "../lib/freshness";
-import { useVeilleExecSummary } from "../lib/summaries";
+import { useVeilleExecSummary, useAiHealth } from "../lib/summaries";
 
 /** Carte KPI cliquable (drill-down vers l'onglet/vue source). */
 function KpiCard({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
@@ -47,6 +47,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   const { decisions, loading: decisionsLoading } = useDecisions();
   const { items } = useIntelItems();
   const { data: exec } = useVeilleExecSummary();
+  const { data: aiHealth } = useAiHealth();
   const sorted = [...items].sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
   const menaces = sorted.filter((s) => s.stance === "threat");
   const opps = sorted.filter((s) => s.stance === "opportunity");
@@ -57,7 +58,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   const nowMs = Date.now();
   const bizImminent = sorted
     .filter((s) => !isPastDue(s, nowMs))
-    .filter((s) => s.prox === "imminent" || s.prox === "court" || ["tender", "eol", "regulation", "funding"].includes(s.subtype ?? ""))
+    .filter((s) => s.prox === "imminent" || s.prox === "court" || BUSINESS_SUBTYPES.has(s.subtype ?? ""))
     .slice(0, 6);
   const cell = (imp: string, st: string) => items.filter((s) => s.impact === imp && s.stance === st).length;
   const intro = (
@@ -69,6 +70,12 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   )[lens];
   return (
     <div>
+      {aiHealth && aiHealth.ok === false && (
+        <div style={{ fontSize: 12.5, color: T.clay, marginBottom: 14, background: T.clay + "18", border: `1px solid ${T.clay}55`, borderRadius: 8, padding: "9px 12px", fontWeight: 600 }}>
+          ⚠️ Chaîne IA indisponible — les analyses (Copilote, briefings, battlecards) peuvent être vides ou obsolètes.
+          Modèle {aiHealth.model ?? "?"} en échec{aiHealth.lastError ? ` : ${aiHealth.lastError}` : ""}.
+        </div>
+      )}
       <div style={{ fontSize: 12, color: T.plum, marginBottom: 14, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 12px" }}>
         🎯 {intro}
       </div>

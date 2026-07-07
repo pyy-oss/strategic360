@@ -29,7 +29,7 @@ const { dedupeByTitle } = require("./domain/dedupe");
 const { pickRelevant } = require("./domain/retrieve");
 const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
 const { buildBriefingPdf } = require("./domain/pdf");
-const { generateJson } = require("./domain/vertex");
+const { generateJson, DEFAULT_MODEL } = require("./domain/vertex");
 const { AGENTS: COPILOTE_AGENTS, buildChatPrompt, parseChatResponse } = require("./domain/copilote");
 const PDFDocument = require("pdfkit");
 const { v1: firestoreAdminV1 } = require("@google-cloud/firestore");
@@ -347,7 +347,7 @@ async function computeSummaryQuanti(db) {
   const porterForces = computePorterForces({ orders, opportunities });
   const bcg = computeBcg({ orders });
   const { casTotal, casN1Total } = computeCasSummary({ orders });
-  const { pipelinePondere, winRate } = computePipeline({ opportunities });
+  const { pipelinePondere, realise: pipelineRealise, winRate } = computePipeline({ opportunities });
   const kris = computeKris({ orders, opportunities, invoices });
   const valueAtStake = computeValueAtStake({ opportunities });
   const granularite = computeGranularite({ orders });
@@ -362,6 +362,7 @@ async function computeSummaryQuanti(db) {
     casTotal,
     casN1Total,
     pipelinePondere,
+    pipelineRealise, // CA déjà gagné (Gagné) — exposé à part du pondéré (prévision = affaires ouvertes)
     winRate,
     marginAvg: null, // not specified beyond BCG's per-BU marge — see comment above
     supplierSaturation: porterForces.pouvoirFournisseurs, // reuse Top-3 fournisseur concentration
@@ -907,6 +908,36 @@ exports.rescoreDaily = onSchedule(
   { schedule: "30 4 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
     await runRescoreActive(firestoreDb());
+  }
+);
+
+/**
+ * aiHealthCheck — canari de santé Vertex AI (audit doubler-CA, robustesse).
+ * Toute la chaîne IA (Copilote, briefings, battlecards, enrichissement) peut tourner À VIDE si le
+ * modèle Vertex renvoie un 404 « Publisher model not found » (déjà arrivé en prod, non signalé) :
+ * les vues s'affichent alors vides et sont prises pour « rien à dire ». Ce canari appelle generateJson
+ * sur un prompt trivial chaque matin (avant les syncs) et écrit summaries/aiHealth {ok, model,
+ * lastError, ts}. Le Radar Exécutif affiche un bandeau ERROR si ok=false → panne visible, pas silencieuse.
+ */
+async function runAiHealthCheck(db) {
+  const health = { model: DEFAULT_MODEL, checkedAt: FieldValue.serverTimestamp() };
+  try {
+    const res = await generateJson('Réponds STRICTEMENT avec {"ok":true}. Aucun autre texte.');
+    health.ok = !!(res && (res.ok === true || res.ok === "true"));
+    health.lastError = health.ok ? null : `réponse inattendue : ${JSON.stringify(res).slice(0, 200)}`;
+  } catch (e) {
+    health.ok = false;
+    health.lastError = String((e && e.message) || e).slice(0, 300);
+  }
+  await db.doc("summaries/aiHealth").set(health, { merge: true });
+  if (!health.ok) logger.error("aiHealthCheck: Vertex AI KO", { model: health.model, error: health.lastError });
+  return health;
+}
+
+exports.aiHealthCheck = onSchedule(
+  { schedule: "15 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 120, memory: "256MiB" },
+  async () => {
+    await runAiHealthCheck(firestoreDb());
   }
 );
 
@@ -1954,7 +1985,7 @@ async function runInternalQuantiSync(db) {
   };
   const bcg = computeBcg({ orders });
   const { casTotal, casN1Total } = computeCasSummary({ orders });
-  const { pipelinePondere, winRate } = computePipeline({ opportunities });
+  const { pipelinePondere, realise: pipelineRealise, winRate } = computePipeline({ opportunities });
   const kris = computeKris({ orders: supplierRows, opportunities, invoices });
   const valueAtStake = computeValueAtStake({ opportunities });
   const granularite = computeGranularite({ orders });
@@ -1967,6 +1998,7 @@ async function runInternalQuantiSync(db) {
     casTotal,
     casN1Total,
     pipelinePondere,
+    pipelineRealise, // CA déjà gagné (Gagné) — exposé à part du pondéré (prévision = affaires ouvertes)
     winRate,
     marginAvg: null, // see computeSummaryQuanti's comment — formula unspecified beyond BCG's per-BU marge
     supplierSaturation: porterForces.pouvoirFournisseurs,
