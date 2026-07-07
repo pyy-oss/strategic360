@@ -195,3 +195,15 @@ export const NAV: [string, string][] = [
   ["briefing", "Briefing exécutif"],
   ["copilote", "Copilote Commercial"],
 ];
+
+/**
+ * Navigation GROUPÉE (16 vues sur une ligne débordaient et masquaient des vues) : 4 groupes logiques,
+ * chacun ouvrant ses vues dans un menu. `home` = vue ouverte au clic sur le titre du groupe (raccourci).
+ * Le libellé de chaque vue reste défini dans NAV (source unique).
+ */
+export const NAV_GROUPS: { label: string; home: string; items: string[] }[] = [
+  { label: "Veille", home: "radar", items: ["radar", "fil", "detection", "briefing"] },
+  { label: "Analyse", home: "indicateurs", items: ["indicateurs", "cadres", "diagnostic", "concurrence"] },
+  { label: "Croissance", home: "portefeuille", items: ["portefeuille", "valeur", "simulateur", "scenarios", "innovation"] },
+  { label: "Action", home: "copilote", items: ["copilote", "plan", "execution"] },
+];
