@@ -1508,6 +1508,11 @@ function anchorGe9PositionsOnInternalCas(items, granularite) {
 async function runEnrichment(db) {
   const itemsSnap = await db.collection("intelItems").get();
   const signals = pickSignalsForEnrichment(itemsSnap.docs.map((d) => d.data()));
+  // Échantillon ENTRELACÉ PAR AXE (audit pertinence 2026-07) : les cadres qui visent la BREADTH
+  // (SWOT/PESTEL, Diagnostic, GE9, Ansoff, Horizons, paris d'innovation, scénarios) doivent voir un
+  // input équilibré, pas la seule tête priorité-clusterisée. La diversité est déjà garantie dans la
+  // SÉLECTION (pickSignalsForEnrichment stratifie par axe) ; ici on l'expose aussi dans l'ORDRE lu.
+  const diverseSignals = diversifySignals(signals, { key: "axis" });
 
   if (!signals.length) {
     logger.info("runEnrichment: no non-archived intelItems — nothing to enrich, skipping");
@@ -1543,7 +1548,7 @@ async function runEnrichment(db) {
 
   // 1. SWOT + PESTEL frameworks -----------------------------------------------------------------
   try {
-    const parsed = parseSwotPestelResponse(await generateJson(buildSwotPestelPrompt(signals, companyContext)));
+    const parsed = parseSwotPestelResponse(await generateJson(buildSwotPestelPrompt(diverseSignals, companyContext)));
     if (!parsed) {
       summary.swotPestel = "parse-failed";
       logger.error("runEnrichment: SWOT/PESTEL response unusable (parse returned null)");
@@ -1710,7 +1715,7 @@ async function runEnrichment(db) {
 
   // 5. Diagnostic (frameworks/diagnostic : arbre MECE + 7S + maturité) ---------------------------
   try {
-    const parsed = parseDiagnosticResponse(await generateJson(buildDiagnosticPrompt(signals, companyContext)));
+    const parsed = parseDiagnosticResponse(await generateJson(buildDiagnosticPrompt(diverseSignals, companyContext)));
     if (!parsed) {
       summary.diagnostic = "parse-failed";
       logger.error("runEnrichment: diagnostic response unusable (parse returned null)");
@@ -1728,7 +1733,7 @@ async function runEnrichment(db) {
   try {
     const quantiSnap = await db.doc("summaries/quanti").get();
     const granularite = quantiSnap.exists ? quantiSnap.data()?.granularite : null;
-    const parsed = parseGe9Response(await generateJson(buildGe9Prompt(signals, granularite, companyContext)));
+    const parsed = parseGe9Response(await generateJson(buildGe9Prompt(diverseSignals, granularite, companyContext)));
     if (!parsed) {
       summary.ge9 = "parse-failed";
       logger.error("runEnrichment: ge9 response unusable (parse returned null)");
@@ -1757,13 +1762,15 @@ async function runEnrichment(db) {
   }
 
   // 7c. Cadres additionnels (audit 2026-07) : Ansoff, VRIO, Chaîne de valeur — chacun indépendant.
-  for (const [key, build, parse] of [
-    ["ansoff", buildAnsoffPrompt, parseAnsoffResponse],
-    ["vrio", buildVrioPrompt, parseVrioResponse],
-    ["valueChain", buildValueChainPrompt, parseValueChainResponse],
+  // Ansoff vise la BREADTH (4 cases produit×marché) → échantillon diversifié ; VRIO/ValueChain sont
+  // surtout pilotés par le contexte entreprise → lot brut suffisant.
+  for (const [key, build, parse, sampleForKey] of [
+    ["ansoff", buildAnsoffPrompt, parseAnsoffResponse, diverseSignals],
+    ["vrio", buildVrioPrompt, parseVrioResponse, signals],
+    ["valueChain", buildValueChainPrompt, parseValueChainResponse, signals],
   ]) {
     try {
-      const parsed = parse(await generateJson(build(signals, companyContext)));
+      const parsed = parse(await generateJson(build(sampleForKey, companyContext)));
       if (!parsed) {
         summary[key] = "parse-failed";
         logger.error(`runEnrichment: ${key} response unusable (parse returned null)`);
@@ -1781,8 +1788,7 @@ async function runEnrichment(db) {
   // fournit un échantillon ENTRELACÉ PAR AXE (diversifySignals) pour qu'il explore des incertitudes
   // variées et indépendantes, pas la seule actualité chaude.
   try {
-    const scenarioSignals = diversifySignals(signals, { key: "axis" });
-    const parsed = parseScenariosResponse(await generateJson(buildScenariosPrompt(scenarioSignals, companyContext)));
+    const parsed = parseScenariosResponse(await generateJson(buildScenariosPrompt(diverseSignals, companyContext)));
     if (!parsed) {
       summary.scenarios = "parse-failed";
       logger.error("runEnrichment: scenarios response unusable (parse returned null)");
@@ -1797,7 +1803,7 @@ async function runEnrichment(db) {
   // 8. Three Horizons — suggestions d'initiatives (frameworks/horizons). L'humain adopte une
   // suggestion en créant l'initiative réelle dans Exécution & Décisions.
   try {
-    const parsed = parseHorizonsResponse(await generateJson(buildHorizonsPrompt(signals, companyContext)));
+    const parsed = parseHorizonsResponse(await generateJson(buildHorizonsPrompt(diverseSignals, companyContext)));
     if (!parsed) {
       summary.horizons = "parse-failed";
       logger.error("runEnrichment: horizons response unusable (parse returned null)");
@@ -1813,7 +1819,7 @@ async function runEnrichment(db) {
   // NON généré par l'IA (créé au formulaire) n'est jamais modifié ; les paris IA sont upsertés
   // par slug (pas de suppression : le RICE humain peut évoluer après édition).
   try {
-    const parsed = parseInnovationBetsResponse(await generateJson(buildInnovationBetsPrompt(signals, companyContext)));
+    const parsed = parseInnovationBetsResponse(await generateJson(buildInnovationBetsPrompt(diverseSignals, companyContext)));
     if (!parsed) {
       summary.innovationBets = "parse-failed";
       logger.error("runEnrichment: innovation bets response unusable (parse returned null)");

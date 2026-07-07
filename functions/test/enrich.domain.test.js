@@ -318,6 +318,23 @@ describe("pickSignalsForEnrichment", () => {
     expect(picked.map((s) => s.title)).toEqual(["A", "B", "C-newer", "C-older"]);
   });
 
+  it("stratifie la SÉLECTION : un axe dominant en tête de score ne coupe pas les autres à l'entonnoir", () => {
+    const many = [
+      ...Array.from({ length: 6 }, (_, i) => ({ title: `tech${i}`, summary: "s", axis: "tech", impact: "high", stance: "neutral", date: "2026-06-10", priorityScore: 90 - i, status: "new" })),
+      { title: "conc", summary: "s", axis: "concurrents", impact: "high", stance: "threat", date: "2026-06-10", priorityScore: 40, status: "new" },
+      { title: "cli", summary: "s", axis: "clients_prospects", impact: "high", stance: "opportunity", date: "2026-06-10", priorityScore: 30, status: "new" },
+    ];
+    // maxTotal=5 : sans stratification, les 5 seraient tous 'tech' (scores 90..86). Avec minPerAxis=2,
+    // 'concurrents' et 'clients_prospects' sont garantis dans l'échantillon.
+    const picked = pickSignalsForEnrichment(many, { maxTotal: 5, minPerAxis: 2 });
+    const axes = new Set(picked.map((s) => s.axis));
+    expect(axes.has("concurrents")).toBe(true);
+    expect(axes.has("clients_prospects")).toBe(true);
+    expect(picked).toHaveLength(5);
+    // L'ordre restitué reste priorité-décroissante (le 1er est le plus haut score).
+    expect(picked[0].title).toBe("tech0");
+  });
+
   it("truncates to maxTotal and maps to the lightweight prompt shape", () => {
     const picked = pickSignalsForEnrichment(items, { maxTotal: 2 });
     expect(picked).toHaveLength(2);
@@ -383,6 +400,21 @@ describe("diversifySignals — anti-obsession thématique (round-robin par axe)"
   it("tolère un lot vide / non-tableau", () => {
     expect(diversifySignals([])).toEqual([]);
     expect(diversifySignals(null)).toEqual([]);
+  });
+});
+
+describe("GROUNDING propagé aux cadres de breadth (anti-invention + équilibre sectoriel)", () => {
+  it("Ansoff et VRIO portent désormais la directive OBJECTIVITÉ + ÉQUILIBRE SECTORIEL", async () => {
+    const { buildAnsoffPrompt, buildVrioPrompt } = await import("../domain/enrich.js");
+    for (const p of [buildAnsoffPrompt([{ title: "x", axis: "tech" }]), buildVrioPrompt([{ title: "x", axis: "tech" }])]) {
+      expect(p).toContain("OBJECTIVITÉ");
+      expect(p).toContain("ÉQUILIBRE SECTORIEL");
+    }
+  });
+  it("VRIO présente ses ressources pré-citées comme de simples EXEMPLES à étayer", async () => {
+    const { buildVrioPrompt } = await import("../domain/enrich.js");
+    const p = buildVrioPrompt([{ title: "x", axis: "tech" }]);
+    expect(p).toMatch(/TITRE D'EXEMPLE/i);
   });
 });
 

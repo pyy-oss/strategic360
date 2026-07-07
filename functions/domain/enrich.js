@@ -68,9 +68,16 @@ function slugId(name) {
  */
 function pickSignalsForEnrichment(items, options) {
   const maxTotal = options && Number.isFinite(options.maxTotal) ? options.maxTotal : 60;
+  // Quota minimal par axe RÉSERVÉ avant de compléter par priorité (audit pertinence 2026-07, constat
+  // « obsession » racine) : sans ça, quand un axe (ex. cyber/CADA) monopolise les hauts scores, le
+  // top-N est monothématique et diversifySignals ne peut que réordonner un lot déjà appauvri — il ne
+  // peut pas ressusciter un axe entièrement coupé à l'entonnoir. On garantit donc la diversité DÈS LA
+  // SÉLECTION : chaque axe présent obtient jusqu'à `minPerAxis` places (dans son ordre de priorité)
+  // avant que le reste des places ne soit rempli par la priorité globale.
+  const minPerAxis = options && Number.isFinite(options.minPerAxis) ? options.minPerAxis : 4;
   const list = Array.isArray(items) ? items : [];
 
-  return list
+  const sorted = list
     .filter((it) => it && typeof it === "object" && it.status !== "archived")
     .sort((a, b) => {
       const scoreA = typeof a.priorityScore === "number" ? a.priorityScore : -Infinity;
@@ -79,8 +86,29 @@ function pickSignalsForEnrichment(items, options) {
       const dateA = typeof a.date === "string" ? a.date : "";
       const dateB = typeof b.date === "string" ? b.date : "";
       return dateB.localeCompare(dateA);
-    })
-    .slice(0, maxTotal)
+    });
+
+  // Sélection stratifiée : on choisit QUELS signaux garder (1: réserver jusqu'à minPerAxis par axe,
+  // 2: compléter par priorité globale) mais on RESTITUE dans l'ordre de priorité — les cadres qui
+  // consomment `signals` brut gardent donc le tri priorité-décroissante, tandis que la diversité est
+  // garantie dans l'ÉCHANTILLON (aucun axe coupé au seuil).
+  const chosen = new Set();
+  if (minPerAxis > 0) {
+    const perAxisCount = new Map();
+    for (const it of sorted) {
+      if (chosen.size >= maxTotal) break;
+      const ax = typeof it.axis === "string" && it.axis ? it.axis : "?";
+      const n = perAxisCount.get(ax) || 0;
+      if (n < minPerAxis) { chosen.add(it); perAxisCount.set(ax, n + 1); }
+    }
+  }
+  for (const it of sorted) {
+    if (chosen.size >= maxTotal) break;
+    chosen.add(it);
+  }
+
+  return sorted
+    .filter((it) => chosen.has(it))
     .map((it) => {
       const summary = typeof it.summary === "string" ? it.summary : "";
       const signal = {
@@ -1175,6 +1203,8 @@ des signaux réels. Réponds UNIQUEMENT avec un objet JSON valide :
 Contraintes : 2 à 3 initiatives concrètes par case, chacune ancrée dans un signal/fait (AO, EOL,
 obligation, tendance, mouvement concurrent). Français. JSON uniquement.
 
+${GROUNDING}
+
 Signaux de veille :
 ${signalsBlock(items)}
 
@@ -1197,10 +1227,12 @@ function buildVrioPrompt(items, companyContext = COMPANY_CONTEXT) {
   return `Tu es consultant en stratégie (analyse VRIO des ressources et capacités) pour l'entreprise suivante :
 ${companyContext}
 
-Évalue les ressources/capacités DISTINCTIVES de l'entreprise (ex : agrément PASSI, statut WALLIX
-Premier, Neurones Academy, références bancaires, proximité régulateurs). Pour chacune, indique si
-elle est Valorisable, Rare, Inimitable et si l'entreprise est Organisée pour l'exploiter, puis un
-verdict d'avantage. Réponds UNIQUEMENT avec un objet JSON valide :
+Évalue les ressources/capacités DISTINCTIVES de l'entreprise. Les libellés « agrément PASSI, statut
+WALLIX Premier, Neurones Academy, références bancaires, proximité régulateurs » ne sont donnés qu'à
+TITRE D'EXEMPLE de types de ressources : ne les reprends QUE si le contexte entreprise ou un signal
+les étaie — sinon ne les invente pas. Pour chaque ressource, indique si elle est Valorisable, Rare,
+Inimitable et si l'entreprise est Organisée pour l'exploiter, puis un verdict d'avantage (reste sur
+« parité concurrentielle » à défaut de preuve). Réponds UNIQUEMENT avec un objet JSON valide :
 
 {
   "resources": [
@@ -1217,6 +1249,8 @@ verdict d'avantage. Réponds UNIQUEMENT avec un objet JSON valide :
 }
 
 Contraintes : 4 à 6 ressources, honnêtes (toutes ne sont pas des avantages durables). Français. JSON uniquement.
+
+${GROUNDING}
 
 Signaux de veille :
 ${signalsBlock(items)}
