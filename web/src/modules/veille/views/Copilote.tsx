@@ -5,6 +5,8 @@ import { Eyebrow, Card, Badge, Kpi } from "../../../design/ui";
 import { Select, Input, Textarea } from "../../../design/fields";
 import { Modal, useToast } from "../../../design/overlay";
 import { useCan, useClaims } from "../../../lib/rbac";
+import { useAuthClaims } from "../../../lib/AuthProvider";
+import { createAction, useActions, actionPriority, ACTION_TERMINAL, type StrategicAction } from "../lib/execution";
 import {
   useCopiloteAccounts,
   createCopiloteAccount,
@@ -281,7 +283,7 @@ export function Copilote() {
       {tab === "brief" && <BriefTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "triennal" && <TriennalTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "planCompte" && <PlanCompteTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "planAction" && <PlanActionTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "planAction" && <PlanActionTab accountId={accountId} disabled={!accountId} canWrite={canWrite} accountName={account?.nom} />}
       {tab === "redaction" && <RedactionTab accountId={accountId} compte={account?.nom || ""} canWrite={canWrite} />}
       {tab === "chat" && <ChatTab accountId={accountId} canWrite={canWrite} />}
     </div>
@@ -412,6 +414,75 @@ function PortfolioSkeleton() {
   );
 }
 
+/* -------- « Ma journée » : file d'actions personnelles datées (adoption — audit doubler-CA) --------
+ * Le commercial ouvre le Copilote et voit d'abord CE QU'IL A À FAIRE (ses actions, échéance ≤ J+7 ou
+ * en retard), pas une vue d'ensemble passive. Sans réponse à « par quoi je commence ce matin »,
+ * l'outil n'entre pas dans la routine quotidienne — prérequis de tous les autres leviers. */
+function MaJournee({ onPick }: { onPick: (id: string) => void }) {
+  const { actions } = useActions();
+  const { user } = useAuthClaims();
+  const uid = user?.uid ?? "";
+  const me = (user?.displayName || user?.email || "").trim().toLowerCase();
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const in7 = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+
+  const mine = useMemo(() => {
+    const isMine = (a: StrategicAction) =>
+      (a.createdBy && a.createdBy === uid) || (me && (a.owner || "").trim().toLowerCase() === me);
+    const dated = (a: StrategicAction) => {
+      const d = a.echeance || "";
+      return /^\d{4}-\d{2}-\d{2}/.test(d) ? d : "";
+    };
+    return actions
+      .filter((a) => isMine(a) && !ACTION_TERMINAL.has(a.statut))
+      .map((a) => ({ a, d: dated(a) }))
+      // On garde : en retard, ou dû sous 7 j, ou sans date (à cadrer).
+      .filter(({ d }) => d === "" || d <= in7)
+      .sort((x, y) => {
+        const rank = (v: { d: string }) => (v.d === "" ? 2 : v.d < todayIso ? 0 : 1); // retard d'abord, sans-date en dernier
+        if (rank(x) !== rank(y)) return rank(x) - rank(y);
+        if (x.d && y.d && x.d !== y.d) return x.d < y.d ? -1 : 1;
+        return actionPriority(y.a) - actionPriority(x.a);
+      })
+      .slice(0, 6);
+  }, [actions, uid, me, todayIso, in7]);
+
+  if (mine.length === 0) return null;
+  const fmtEch = (d: string) => {
+    if (!d) return "à cadrer";
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
+    if (!m) return d;
+    const MO = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+    return `${+m[3]} ${MO[+m[2] - 1]}`;
+  };
+  return (
+    <Card style={{ borderLeft: `3px solid ${T.gold}` }}>
+      <Eyebrow color={T.gold}>Ma journée — {mine.length} action{mine.length > 1 ? "s" : ""} à traiter</Eyebrow>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+        {mine.map(({ a, d }, i) => {
+          const overdue = d !== "" && d < todayIso;
+          const row = (
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", padding: "8px 11px", background: T.panel2, borderRadius: 9, border: `1px solid ${overdue ? T.clay + "55" : T.line}` }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</div>
+                {a.source ? <div style={{ fontSize: 10.5, color: T.faint, marginTop: 2 }}>{a.source}</div> : null}
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", color: overdue ? T.clay : d === "" ? T.faint : T.emerald }}>
+                {overdue ? "⚠ en retard · " : ""}{fmtEch(d)}
+              </span>
+            </div>
+          );
+          return a.accountId ? (
+            <button key={i} onClick={() => onPick(a.accountId!)} style={{ display: "block", width: "100%", padding: 0, background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>{row}</button>
+          ) : (
+            <div key={i}>{row}</div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 /* -------- Portefeuille : vue d'ensemble quand aucun compte n'est sélectionné (jamais d'écran vide) -------- */
 function PortfolioDashboard({
   accounts, poids, fmt, onPick,
@@ -465,6 +536,7 @@ function PortfolioDashboard({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <MaJournee onPick={onPick} />
       <Card>
         <Eyebrow color={T.gold}>Portefeuille commercial — vue d'ensemble</Eyebrow>
         <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginTop: 12 }}>
@@ -756,8 +828,36 @@ function PlanCompteTab({ accountId, disabled, canWrite }: { accountId: string; d
 
 const QUAND_C: Record<string, string> = { "0–30 jours": T.clay, "30–60 jours": T.gold, "60–90 jours": T.steel, Continu: T.faint };
 
-function PlanActionTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+// Urgence dérivée de l'échéance narrative du plan (pour prioriser l'action une fois ajoutée).
+const QUAND_URGENCE: Record<string, number> = { Immédiat: 5, "Cette semaine": 5, "Ce mois": 4, "Ce trimestre": 3 };
+
+function PlanActionTab({ accountId, disabled, canWrite, accountName }: { accountId: string; disabled: boolean; canWrite: boolean; accountName?: string }) {
   const { data, busy, err, done, run } = useAgent<PlanActionResult>("planAction", accountId);
+  const { user } = useAuthClaims();
+  const toast = useToast();
+  const [added, setAdded] = useState<Set<number>>(new Set());
+
+  async function addToPlan(i: number, p: PlanActionResult["plan"][number]) {
+    if (added.has(i)) return;
+    const urgence = QUAND_URGENCE[p.quand] ?? 3;
+    try {
+      await createAction({
+        title: p.action,
+        impact: 4, urgence, effort: 2,
+        ev: Math.round(actionPriority({ impact: 4, urgence, effort: 2 }) * 100),
+        owner: user?.displayName || user?.email || "",
+        echeance: /^\d{4}-\d{2}-\d{2}/.test(p.echeance || "") ? (p.echeance || "") : "",
+        statut: "À lancer",
+        source: `Copilote · plan 90j${accountName ? ` · ${accountName}` : ""}`,
+        accountId,
+      });
+      setAdded((s) => new Set(s).add(i));
+      toast.success("Ajouté à ton plan d'action.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Échec de l'ajout.");
+    }
+  }
+
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
@@ -781,6 +881,16 @@ function PlanActionTab({ accountId, disabled, canWrite }: { accountId: string; d
               {p.objet && <div style={{ fontSize: 11.5, color: T.steel, marginTop: 2 }}>↳ {p.objet}</div>}
               {p.preuve && <div style={{ fontSize: 11.5, color: T.dim, marginTop: 2 }}><b style={{ color: T.emerald }}>Preuve :</b> {p.preuve}</div>}
             </div>
+            {canWrite && (
+              <button
+                onClick={() => addToPlan(i, p)}
+                disabled={added.has(i)}
+                title="Enregistrer cette étape dans mon plan d'action suivi"
+                style={{ flexShrink: 0, border: `1px solid ${added.has(i) ? T.emerald : T.line}`, background: added.has(i) ? T.emerald + "22" : "transparent", color: added.has(i) ? T.emerald : T.dim, cursor: added.has(i) ? "default" : "pointer", fontSize: 11, padding: "4px 9px", borderRadius: 7, fontWeight: 600, whiteSpace: "nowrap" }}
+              >
+                {added.has(i) ? "✓ Ajouté" : "＋ Au plan"}
+              </button>
+            )}
           </div>
         ))}
       </div>

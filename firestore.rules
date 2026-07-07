@@ -103,7 +103,11 @@ service cloud.firestore {
     }
     match /actions/{id} {
       allow read: if canRead('veille');
-      allow write: if exec();
+      // Adoption (audit doubler-CA) : un commercial doit pouvoir enregistrer ce qu'il a à faire.
+      // Il crée ses propres actions (createdBy imposé à lui-même) et n'édite/supprime que les siennes ;
+      // les exec gardent la main sur toutes. Sans ça, l'outil n'entre pas dans la routine quotidienne.
+      allow create: if commercial() && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if exec() || (commercial() && resource.data.createdBy == request.auth.uid);
     }
     match /briefings/{id} {
       allow read: if canRead('veille');
