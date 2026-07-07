@@ -1047,7 +1047,9 @@ exports.aiHealthCheck = onSchedule(
  */
 async function computeVeilleSummary(db) {
   const snap = await db.collection("intelItems").get();
-  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // Les signaux archivés (doublons dédoublonnés, items clos par un humain) ne comptent PAS dans les
+  // agrégats « actifs » (axes/impacts/entités) — cohérent avec le fil et le radar.
+  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((it) => (it.status || "new") !== "archived");
 
   const countsByAxis = {};
   const countsByImpact = {};
@@ -1113,7 +1115,7 @@ async function computeVeilleExecSummary(db) {
     db.collection("initiatives").get(),
     db.collection("decisions").get(),
   ]);
-  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((it) => (it.status || "new") !== "archived");
   const quanti = quantiSnap.exists ? quantiSnap.data() : null;
 
   // Win rate par concurrent depuis winLoss (réel — C3 audit 2026-07). Même logique que
