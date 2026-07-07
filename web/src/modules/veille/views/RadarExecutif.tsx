@@ -91,7 +91,11 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   const navigate = useNavigate();
   const { entries: watchlist, loading: watchLoading } = useWatchlist();
   const { decisions, loading: decisionsLoading } = useDecisions();
-  const { items } = useIntelItems();
+  const { items: rawItems } = useIntelItems();
+  // Les signaux ARCHIVÉS (dont les doublons dédoublonnés) sortent du radar actif — cohérent avec le
+  // Fil. Sans ça, un doublon archivé restait affiché dans « Business imminent », « Top signaux » et le
+  // compteur « signaux actifs ».
+  const items = React.useMemo(() => rawItems.filter((s) => (s.status ?? "new") !== "archived"), [rawItems]);
   const { data: exec } = useVeilleExecSummary();
   const { data: aiHealth } = useAiHealth();
   const sorted = [...items].sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
