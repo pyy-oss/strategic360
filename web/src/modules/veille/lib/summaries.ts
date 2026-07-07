@@ -54,7 +54,6 @@ export interface VeilleExecBoardKpis {
   menacesTraitees: number;
   opportunites: number;
   winRateGlobal?: number | null; // taux de victoire global (winLoss) — null si aucun deal
-  tti: number | null; // pending V6 (decisions collection)
 }
 
 export interface VeilleExecDecisionPending {
@@ -76,7 +75,7 @@ export interface VeilleExecSummary {
   porter: unknown | null; // from summaries/quanti (nt360 sync)
   winRateByCompetitor: Record<string, VeilleExecWinRate>; // taux de victoire par concurrent (winLoss)
   pipelineInfluenced: number | null; // XOF — value-at-stake des clients suivis/cités par la veille (null tant que summaries/quanti est absent)
-  threatsExposure: number; // placeholder metric (count of high-impact, unactioned threats)
+  threatsHighUnactionedCount: number; // compte de menaces high-impact non traitées (ex-« threatsExposure »)
   okrProgress: number | null; // avancement moyen des initiatives (0-1)
   updatedAt?: Timestamp | FieldValue;
 }
