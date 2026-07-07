@@ -5,7 +5,53 @@ import { T } from "../../design/tokens";
 import { Badge } from "../../design/ui";
 import { auth } from "../../lib/firebase";
 import { useAuthClaims } from "../../lib/AuthProvider";
-import { LENS, NAV } from "./data";
+import { LENS, NAV, NAV_GROUPS } from "./data";
+
+const NAV_LABEL = (k: string) => NAV.find(([kk]) => kk === k)?.[1] ?? k;
+
+/** Navigation à DEUX NIVEAUX — remplace la barre plate de 16 onglets qui débordait et masquait des
+ * vues. Rang 1 : les 4 groupes (le groupe actif surligné). Rang 2 : les vues du groupe actif. Rien
+ * n'est masqué, le contexte courant est toujours visible, et ça tient à toute largeur (chaque rang,
+ * court, passe à la ligne au besoin). Cliquer un groupe ouvre sa vue principale. */
+function GroupedNav({ view, setView }: { view: string; setView: (v: string) => void }) {
+  const activeGroup = NAV_GROUPS.find((g) => g.items.includes(view)) ?? NAV_GROUPS[0];
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", gap: 2, flexWrap: "wrap", borderBottom: `1px solid ${T.line}` }}>
+        {NAV_GROUPS.map((g) => {
+          const on = g.label === activeGroup.label;
+          return (
+            <button
+              key={g.label}
+              className="tab"
+              onClick={() => setView(g.home)}
+              aria-current={on ? "page" : undefined}
+              style={{ padding: "9px 15px", fontSize: 14, color: on ? T.ink : T.dim, borderBottomColor: on ? T.gold : "transparent" }}
+            >
+              {g.label}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", padding: "9px 2px 0" }}>
+        {activeGroup.items.map((k) => {
+          const on = k === view;
+          return (
+            <button
+              key={k}
+              className="tab"
+              onClick={() => setView(k)}
+              aria-current={on ? "page" : undefined}
+              style={{ padding: "4px 2px", fontSize: 12.5, color: on ? T.ink : T.dim, borderBottomColor: on ? T.gold : "transparent" }}
+            >
+              {NAV_LABEL(k)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 import { RadarExecutif } from "./views/RadarExecutif";
 import { Fil } from "./views/Fil";
 import { Detection } from "./views/Detection";
@@ -93,13 +139,7 @@ export default function VeilleApp() {
           </button>
         </div>
       </header>
-      <div className="navwrap" style={{ display: "flex", gap: 18, borderBottom: `1px solid ${T.line}`, marginBottom: 18, overflowX: "auto" }}>
-        {NAV.map(([k, l]) => (
-          <button key={k} className={`tab ${view === k ? "on" : ""}`} onClick={() => setView(k)}>
-            {l}
-          </button>
-        ))}
-      </div>
+      <GroupedNav view={view} setView={setView} />
 
       {view === "radar" && <RadarExecutif lens={lens} setView={setView} />}
       {view === "fil" && <Fil />}
