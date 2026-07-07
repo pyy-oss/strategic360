@@ -7,7 +7,7 @@ import { quadrant } from "../data";
 import { useIsExec } from "../../../lib/rbac";
 import { useAuthClaims } from "../../../lib/AuthProvider";
 import { slugifyClient } from "../lib/copilote";
-import { actionPriority, createAction, updateAction, useActions, ACTION_STATUSES, type ActionStatus } from "../lib/execution";
+import { actionPriority, createAction, updateAction, createWinLossEntry, useActions, ACTION_STATUSES, type ActionStatus } from "../lib/execution";
 import { updateBizOpportunity, useBizOpportunities, type BizOpportunityProbability, type BizOpportunityStatus } from "../lib/intel";
 import { usePaged, Pager } from "../components/Pager";
 import { Select, Input, DateField } from "../../../design/fields";
@@ -308,6 +308,71 @@ function NewActionPanel({ open, onClose, defaultOwner = "" }: { open: boolean; o
   );
 }
 
+/** Capture du résultat commercial (win/loss) à la conclusion d'une action — alimente le taux de
+ * victoire réel (Concurrence, battlecards du Copilote) ET l'attribution en montant gagné. Optionnel :
+ * « Passer » si l'action n'est pas une affaire commerciale (le statut reste appliqué). */
+function OutcomeCaptureModal({ outcome, onClose }: { outcome: { title: string; result: "win" | "loss" } | null; onClose: () => void }) {
+  const [montant, setMontant] = useState("");
+  const [concurrent, setConcurrent] = useState("");
+  const [lecon, setLecon] = useState("");
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+  const labelStyle: React.CSSProperties = { fontSize: 11, color: T.faint, display: "block", marginBottom: 4 };
+
+  React.useEffect(() => { setMontant(""); setConcurrent(""); setLecon(""); }, [outcome]);
+  if (!outcome) return null;
+  const win = outcome.result === "win";
+
+  async function save() {
+    setSaving(true);
+    try {
+      const amt = Number(String(montant).replace(/[^\d.-]/g, ""));
+      await createWinLossEntry({
+        competitor: concurrent.trim() || "—",
+        result: outcome!.result,
+        amount: Number.isFinite(amt) && amt > 0 ? Math.round(amt) : undefined,
+        lesson: lecon.trim() || undefined,
+        date: new Date().toISOString().slice(0, 10),
+      });
+      toast.success(win ? "Affaire gagnée enregistrée." : "Affaire perdue enregistrée.");
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Échec de l'enregistrement.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={win ? "Affaire gagnée — enregistrer le résultat" : "Affaire perdue — enregistrer le résultat"}>
+      <div style={{ fontSize: 12.5, color: T.dim, marginBottom: 12, lineHeight: 1.5 }}>
+        « {outcome.title} » — le résultat alimente le <b style={{ color: T.ink }}>taux de victoire réel</b> et la mesure du CA.
+        Passez si ce n'est pas une affaire commerciale.
+      </div>
+      <div style={{ display: "grid", gap: 10, marginBottom: 12 }}>
+        <div>
+          <label style={labelStyle}>Montant (XOF)</label>
+          <Input value={montant} onChange={setMontant} placeholder="ex: 45000000" />
+        </div>
+        <div>
+          <label style={labelStyle}>Concurrent {win ? "battu" : "gagnant"} (optionnel)</label>
+          <Input value={concurrent} onChange={setConcurrent} placeholder="ex: Concurrent X" />
+        </div>
+        <div>
+          <label style={labelStyle}>Leçon / raison (optionnel)</label>
+          <Input value={lecon} onChange={setLecon} placeholder={win ? "ce qui a fait la différence" : "ce qui a manqué"} />
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <button type="button" className="pill" onClick={onClose}>Passer</button>
+        <button type="button" className="pill on" onClick={save} disabled={saving}>
+          {saving ? "Enregistrement…" : "Enregistrer le résultat"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 /** "Plan d'action" — ported from `PlanAction` in the maquette; data source swapped to Firestore
  * `actions` (V6). */
 export function PlanAction() {
@@ -320,6 +385,15 @@ export function PlanAction() {
   const myUid = user?.uid ?? "";
   const defaultOwner = user?.displayName || user?.email || "";
   const [showForm, setShowForm] = useState(false);
+  // Capture du résultat commercial quand une action se conclut (levier VICTOIRE + attribution) :
+  // « Gagné » → win, « Abandonné » → loss. On capture les DEUX côtés, sinon le taux de victoire
+  // (consommé par le Copilote) serait biaisé à 100 %. Optionnel (une action peut être non-commerciale).
+  const [outcomeFor, setOutcomeFor] = useState<{ title: string; result: "win" | "loss" } | null>(null);
+  const onStatut = (a: { id: string; t: string }, v: string) => {
+    void updateAction(a.id, { statut: v as ActionStatus });
+    if (v === "Gagné") setOutcomeFor({ title: a.t, result: "win" });
+    else if (v === "Abandonné") setOutcomeFor({ title: a.t, result: "loss" });
+  };
 
   const acts = actions
     .map((a) => ({
@@ -351,6 +425,7 @@ export function PlanAction() {
         )}
       </div>
       {canContribute && <NewActionPanel open={showForm} onClose={() => setShowForm(false)} defaultOwner={defaultOwner} />}
+      <OutcomeCaptureModal outcome={outcomeFor} onClose={() => setOutcomeFor(null)} />
       {loading && actions.length === 0 && <div style={{ fontSize: 12.5, color: T.faint, marginBottom: 10 }}>Chargement du plan d'action…</div>}
       {!loading && actions.length === 0 && (
         <div style={{ fontSize: 12.5, color: T.faint, marginBottom: 10 }}>
@@ -441,7 +516,7 @@ export function PlanAction() {
                         {isExec || a.createdBy === myUid ? (
                           <Select
                             value={a.st}
-                            onChange={(v) => { void updateAction(a.id, { statut: v as ActionStatus }); }}
+                            onChange={(v) => onStatut(a, v)}
                             ariaLabel={`Statut de ${a.t}`}
                             options={ACTION_STATUSES.map((s) => ({ value: s, label: s }))}
                           />
