@@ -4,10 +4,11 @@ import { T } from "../../../design/tokens";
 import { AX, IMP, PROX, STANCE, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { Toggle } from "../../../design/fields";
-import { useDecisions } from "../lib/execution";
-import { BUSINESS_SUBTYPES, useIntelItems, useWatchlist } from "../lib/intel";
+import { useActions, useDecisions } from "../lib/execution";
+import { BUSINESS_SUBTYPES, useBizOpportunities, useIntelItems, useWatchlist } from "../lib/intel";
 import { isPastDue } from "../lib/freshness";
 import { useVeilleExecSummary, useAiHealth } from "../lib/summaries";
+import { computeVeilleAttribution } from "../lib/attribution";
 
 /** Carte KPI cliquable (drill-down vers l'onglet/vue source). */
 function KpiCard({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
@@ -32,6 +33,51 @@ function EntityLink({ name, color = T.plum }: { name: string; color?: string }) 
     >
       {name}
     </button>
+  );
+}
+
+/** Contribution de la veille au pipeline commercial — la PREUVE DE ROI de la boucle veille → action.
+ * Funnel : signal → opportunité attribuable → qualifiée → convertie en action → gagnée. On n'attribue
+ * que ce qui porte une trace explicite (déclencheur de veille ou origine proactive). */
+function VeilleAttributionPanel() {
+  const navigate = useNavigate();
+  const { opportunities } = useBizOpportunities();
+  const { actions } = useActions();
+  const a = React.useMemo(() => computeVeilleAttribution(opportunities, actions), [opportunities, actions]);
+  if (a.attribuables === 0) return null;
+
+  const step = (label: string, n: number, xof: number | null, color: string) => (
+    <div style={{ flex: 1, minWidth: 120, background: T.panel2, borderRadius: 9, padding: "9px 11px", borderTop: `2px solid ${color}` }}>
+      <div style={{ fontSize: 10.5, color: T.faint }}>{label}</div>
+      <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 20, fontWeight: 700, color, marginTop: 2 }}>{n}</div>
+      {xof != null ? <div style={{ fontSize: 10.5, color: T.dim, fontVariantNumeric: "tabular-nums" }}>{fmt(xof)} XOF</div> : null}
+    </div>
+  );
+
+  return (
+    <Card style={{ borderLeft: `3px solid ${T.emerald}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <Eyebrow color={T.emerald}>Contribution de la veille au pipeline</Eyebrow>
+        <button className="pill" onClick={() => navigate("/veille/plan")} title="Voir les opportunités">Voir le pipeline →</button>
+      </div>
+      <div style={{ fontSize: 12, color: T.dim, marginTop: 6, lineHeight: 1.5 }}>
+        Pipeline attribuable à la boucle veille → action : <b style={{ color: T.emerald }}>{fmt(a.pipelineXof)} XOF</b> sur {a.attribuables} opportunité{a.attribuables > 1 ? "s" : ""}
+        {a.declenchees > 0 ? <> — dont <b style={{ color: T.gold }}>{fmt(a.declencheesXof)} XOF</b> déclenchés par un événement de veille</> : null}.
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        {step("Attribuables", a.attribuables, a.pipelineXof, T.steel)}
+        {step("Qualifiées", a.qualifiees, null, T.gold)}
+        {step("Converties en action", a.converties, null, T.plum)}
+        {step("Gagnées", a.gagnees, a.gagneesXof, T.emerald)}
+      </div>
+      {a.parSource.length > 0 && (
+        <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+          {a.parSource.map((s) => (
+            <Badge key={s.source} c={T.faint}>{s.source} · {s.count} · {fmt(s.xof)} XOF</Badge>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -78,6 +124,9 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
       )}
       <div style={{ fontSize: 12, color: T.plum, marginBottom: 14, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 12px" }}>
         🎯 {intro}
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <VeilleAttributionPanel />
       </div>
       <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 14 }}>
         <KpiCard title="Ouvrir le Copilote (comptes suivis)" onClick={() => setView("copilote")}>
