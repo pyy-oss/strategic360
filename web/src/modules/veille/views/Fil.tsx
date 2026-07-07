@@ -6,15 +6,12 @@ import { Modal, useToast } from "../../../design/overlay";
 import { T, AX, IMP, STANCE, PROX } from "../../../design/tokens";
 import { Card, Badge } from "../../../design/ui";
 import { useCan } from "../../../lib/rbac";
-import { DETECTION_SUBTYPE_LABELS, createIntelItem, updateIntelItem, useIntelItems, type IntelAxis, type IntelImpact, type IntelStance, type IntelItem, type IntelStatus } from "../lib/intel";
+import { BUSINESS_SUBTYPES, DETECTION_SUBTYPE_LABELS, createIntelItem, updateIntelItem, useIntelItems, type IntelAxis, type IntelImpact, type IntelStance, type IntelItem, type IntelStatus } from "../lib/intel";
 import { createAction } from "../lib/execution";
 import { effectiveProx, isPastDue } from "../lib/freshness";
 import { useIsExec } from "../../../lib/rbac";
 
 const AXIS_KEYS = Object.keys(AX) as IntelAxis[];
-
-/** Subtypes à contenu business direct (AO, fins de vie, réglementation, financements) — plan d'audit §5.3. */
-const BUSINESS_SUBTYPES = new Set(["tender", "eol", "regulation", "funding"]);
 
 interface NewItemForm {
   title: string;

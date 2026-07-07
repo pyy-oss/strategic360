@@ -124,18 +124,24 @@ function factBase(c) {
     });
   // Deals enrichis (audit profondeur) : montant + étape + probabilité + date de closing réelle quand
   // disponibles → l'IA peut prioriser et dater. Repli sur le `titre` compact pour les entrées pauvres.
-  const deals = (Array.isArray(c.deals) ? c.deals : []).map((d) => {
-    if (!d || typeof d !== "object") return "";
-    if (d.nom) {
-      const parts = [coerceStr(d.nom)];
-      if (Number(d.montant) > 0) parts.push(xof(d.montant));
-      if (d.etape) parts.push(`stade ${coerceStr(d.etape)}`);
-      if (Number(d.probability) > 0) parts.push(`prob. ${Math.round(Number(d.probability) * (Number(d.probability) <= 1 ? 100 : 1))}%`);
-      if (d.closingDate) parts.push(`closing ${coerceStr(d.closingDate)}`);
-      return parts.join(" · ");
-    }
-    return coerceStr(d.titre);
-  }).filter(Boolean).slice(0, 6);
+  // Tri par montant décroissant AVANT de borner à 6 : sur un compte à >6 opportunités, un slice non
+  // trié pourrait tronquer le plus gros deal avant l'IA — et la stratégie se bâtirait sur le mauvais
+  // deal (audit doubler-CA, levier VICTOIRE). On garde donc les 6 plus gros, dans l'ordre.
+  const deals = (Array.isArray(c.deals) ? c.deals : [])
+    .filter((d) => d && typeof d === "object")
+    .slice()
+    .sort((a, b) => (Number(b.montant) || 0) - (Number(a.montant) || 0))
+    .map((d) => {
+      if (d.nom) {
+        const parts = [coerceStr(d.nom)];
+        if (Number(d.montant) > 0) parts.push(xof(d.montant));
+        if (d.etape) parts.push(`stade ${coerceStr(d.etape)}`);
+        if (Number(d.probability) > 0) parts.push(`prob. ${Math.round(Number(d.probability) * (Number(d.probability) <= 1 ? 100 : 1))}%`);
+        if (d.closingDate) parts.push(`closing ${coerceStr(d.closingDate)}`);
+        return parts.join(" · ");
+      }
+      return coerceStr(d.titre);
+    }).filter(Boolean).slice(0, 6);
   const rec = c.recommendation || {};
   const montant = Number(rec.montantEstime) > 0 ? ` ; panier de référence de cette offre sur le portefeuille ≈ ${xof(rec.montantEstime)} (montant d'ancrage à viser)` : "";
   // Cold start (audit 2026-07) : quand l'affinité de cross-sell ne fonde PAS l'offre (csPct=0, ex.
@@ -160,6 +166,22 @@ function factBase(c) {
     `— Opportunités réelles en cours (à nommer avec leur montant exact) : ${list(deals)}.`,
     (Array.isArray(c.enjeux) && c.enjeux.length) ? `— Enjeux saisis par le commercial : ${list(c.enjeux)}.` : "",
   ].filter(Boolean).join("\n");
+}
+
+/**
+ * Le DEAL CIBLE = la plus grosse opportunité en cours (montant décroissant). Injecté explicitement
+ * dans les agents mono-deal (dealAnalysis, MEDDIC) pour qu'ils ne bâtissent pas la stratégie sur un
+ * deal secondaire quand le compte en a plusieurs (audit doubler-CA, levier VICTOIRE).
+ */
+function targetDealLine(c) {
+  const deals = (Array.isArray(c && c.deals) ? c.deals : []).filter((d) => d && typeof d === "object" && d.nom);
+  if (!deals.length) return "";
+  const top = deals.slice().sort((a, b) => (Number(b.montant) || 0) - (Number(a.montant) || 0))[0];
+  const parts = [coerceStr(top.nom)];
+  if (Number(top.montant) > 0) parts.push(xof(top.montant));
+  if (top.etape) parts.push(`stade ${coerceStr(top.etape)}`);
+  if (top.closingDate) parts.push(`closing ${coerceStr(top.closingDate)}`);
+  return `DEAL CIBLE (l'opportunité en cours la plus importante — c'est ELLE que tu analyses/qualifies, sauf faits contraires explicites) : ${parts.join(" · ")}.`;
 }
 
 /**
@@ -685,6 +707,7 @@ ${NO_GENERIC}
 
 Qualifie l'opportunité principale de CE compte selon MEDDIC (+ note de confiance), à partir de ses faits réels :
 ${factBase(c)}
+${targetDealLine(c)}
 ${contactsBlock(c)}
 ${winStatsBlock(c)}
 ${analyticsBlock(c)}
@@ -791,6 +814,7 @@ ${NO_GENERIC}
 
 Analyse l'opportunité en cours la plus importante de CE compte et propose une STRATÉGIE DE GAIN, à partir des faits réels :
 ${factBase(c)}
+${targetDealLine(c)}
 ${competitorBlock(c)}
 ${winStatsBlock(c)}
 ${analyticsBlock(c)}

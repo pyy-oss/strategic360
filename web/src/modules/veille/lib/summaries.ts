@@ -113,6 +113,32 @@ export function useVeilleSummary(): { data: VeilleSummary | null; loading: boole
  * summaries/veille_exec
  * ------------------------------------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------------------------------------
+ * summaries/aiHealth — canari Vertex AI (écrit par la Cloud Function aiHealthCheck)
+ * ------------------------------------------------------------------------------------------- */
+
+export interface AiHealth {
+  ok?: boolean;
+  model?: string;
+  lastError?: string | null;
+  checkedAt?: Timestamp | FieldValue;
+}
+
+/** Santé de la chaîne IA. `ok===false` → panne Vertex (modèle KO) : à signaler visiblement. */
+export function useAiHealth(): { data: AiHealth | null; loading: boolean } {
+  const [data, setData] = useState<AiHealth | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, "summaries", "aiHealth"),
+      (snap) => { setData(snap.exists() ? (snap.data() as AiHealth) : null); setLoading(false); },
+      () => { setData(null); setLoading(false); }
+    );
+    return unsub;
+  }, []);
+  return { data, loading };
+}
+
 export function useVeilleExecSummary(): { data: VeilleExecSummary | null; loading: boolean; error: Error | null } {
   const [data, setData] = useState<VeilleExecSummary | null>(null);
   const [loading, setLoading] = useState(true);

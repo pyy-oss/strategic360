@@ -125,17 +125,18 @@ describe("bcgQuadrant / computeBcg", () => {
 });
 
 describe("computePipeline", () => {
-  it("computes the weighted pipeline sum via the étape→probabilité map", () => {
+  it("weighted pipeline = OPEN deals only; won CA exposed separately via realise", () => {
     const opportunities = [
       { client: "A", montant: 1000, etape: "Qualification" }, // ×0.2 = 200
       { client: "B", montant: 500, etape: "Proposition" }, // ×0.4 = 200
       { client: "C", montant: 800, etape: "Négociation" }, // ×0.6 = 480
-      { client: "D", montant: 300, etape: "Gagné" }, // ×1.0 = 300
-      { client: "E", montant: 400, etape: "Perdu" }, // ×0 = 0
+      { client: "D", montant: 300, etape: "Gagné" }, // fermé → réalisé, hors pondéré
+      { client: "E", montant: 400, etape: "Perdu" }, // fermé → exclu
     ];
-    // Total = 200+200+480+300+0 = 1180
-    const { pipelinePondere, winRate } = computePipeline({ opportunities });
-    expect(pipelinePondere).toBe(1180);
+    // Pondéré (ouvertes) = 200+200+480 = 880 ; réalisé (Gagné) = 300.
+    const { pipelinePondere, realise, winRate } = computePipeline({ opportunities });
+    expect(pipelinePondere).toBe(880);
+    expect(realise).toBe(300);
     // 1 Gagné out of 2 closed (Gagné+Perdu) = 0.5
     expect(winRate).toBe(0.5);
   });
@@ -144,6 +145,17 @@ describe("computePipeline", () => {
     const opportunities = [{ client: "A", montant: 100, etape: "Qualification" }];
     const { winRate } = computePipeline({ opportunities });
     expect(winRate).toBeNull();
+  });
+
+  it("un pipeline 100% gagné a un pondéré nul (réalisé, pas prévision) et expose le réalisé", () => {
+    const { pipelinePondere, realise } = computePipeline({
+      opportunities: [
+        { client: "A", montant: 1000, etape: "Gagné" },
+        { client: "B", montant: 500, etape: "Gagné" },
+      ],
+    });
+    expect(pipelinePondere).toBe(0); // rien d'ouvert → prévision nulle
+    expect(realise).toBe(1500);
   });
 
   it("returns nulls for empty input", () => {

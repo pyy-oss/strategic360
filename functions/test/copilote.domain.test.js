@@ -300,6 +300,21 @@ describe("Copilote — stratège de vente : moteur d'analyse + persona (audit 20
     expect(buildMeddicPrompt(stratCtx)).toContain("20% du CA réalisé");
   });
 
+  it("DEAL CIBLE : dealAnalysis & MEDDIC ciblent explicitement le plus gros deal (Phase 1 VICTOIRE)", async () => {
+    const { buildDealAnalysisPrompt, buildMeddicPrompt } = await import("../domain/copilote.js");
+    const ctx = {
+      compte: "SGCI",
+      deals: [
+        { nom: "Petit lot support", montant: 12000000, etape: "Qualification" },
+        { nom: "Refonte SI SGCI", montant: 480000000, etape: "Négociation", closingDate: "2026-11-30" },
+      ],
+    };
+    for (const p of [buildDealAnalysisPrompt(ctx), buildMeddicPrompt(ctx)]) {
+      expect(p).toContain("DEAL CIBLE");
+      expect(p).toContain("Refonte SI SGCI"); // le plus gros, pas le petit lot
+    }
+  });
+
   it("garde-fous GÉNÉRALISÉS à tous les agents ancrés (offre bidon + refs + proportions)", async () => {
     const mod = await import("../domain/copilote.js");
     const agents = [mod.buildTriennalPrompt, mod.buildPlanActionPrompt, mod.buildDealAnalysisPrompt, mod.buildBusinessCasePrompt, mod.buildMeddicPrompt, mod.buildBriefPrompt, mod.buildStakeholdersPrompt];
