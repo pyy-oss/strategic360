@@ -143,7 +143,9 @@ function factBase(c) {
       return coerceStr(d.titre);
     }).filter(Boolean).slice(0, 6);
   const rec = c.recommendation || {};
-  const montant = Number(rec.montantEstime) > 0 ? ` ; panier de référence de cette offre sur le portefeuille ≈ ${xof(rec.montantEstime)} (montant d'ancrage à viser)` : "";
+  const montant = Number(rec.montantEstime) > 0
+    ? ` ; panier de référence de cette offre ≈ ${xof(rec.montantEstime)} (montant d'ancrage à viser${rec.anchorCapped ? `, plafonné à l'échelle de ce compte — médiane portefeuille brute ${xof(rec.montantReference)}, à ne pas afficher tel quel` : ""})`
+    : "";
   // Cold start (audit 2026-07) : quand l'affinité de cross-sell ne fonde PAS l'offre (csPct=0, ex.
   // compte sans historique ou portefeuille sans co-occurrence), on ne prétend plus « data-driven / à
   // prioriser » — on la présente honnêtement comme une piste à qualifier.
@@ -427,11 +429,37 @@ Réponds UNIQUEMENT avec un objet JSON valide :
 JSON uniquement.`;
 }
 
-function parseCvpResponse(raw) {
+// NO_GENERIC déterministe sur les MONTANTS (audit pertinence 2026-07) : l'anti-invention des chiffres
+// XOF ne reposait que sur le texte du prompt. Ici on extrait les montants cités et on ANNOTE ceux qui
+// ne correspondent à aucune valeur du modèle de valeur chiffré (valueModel) — un montant halluciné est
+// marqué « (chiffre à vérifier) » au lieu de passer pour un fait. PUR, conservateur (tolérance ±2 %).
+function allowedAmountSet(valueModel) {
+  const s = new Set();
+  const add = (n) => { const v = Math.round(Number(n) || 0); if (v > 0) s.add(v); };
+  const v = valueModel || {};
+  add(v.casTotal); add(v.pipelinePondere); add(v.whitespacePotential);
+  if (v.nextOffer) add(v.nextOffer.montant);
+  for (const w of Array.isArray(v.whitespaceValue) ? v.whitespaceValue : []) add(w.montant);
+  return s;
+}
+function annotateStrayAmounts(text, allowed) {
+  if (typeof text !== "string" || !text || !allowed || !allowed.size) return text;
+  // Nombre (groupé par espaces/points/insécables) SUIVI d'un marqueur monétaire (XOF / FCFA / F CFA).
+  return text.replace(/(\d[\d .  ]*\d|\d)(\s*(?:XOF|FCFA|F\s?CFA))/gi, (m, num, unit) => {
+    if (/à vérifier/i.test(m)) return m;
+    const val = Number(String(num).replace(/[ .  ]/g, ""));
+    if (!Number.isFinite(val) || val <= 0) return m;
+    const ok = [...allowed].some((a) => Math.abs(a - val) <= Math.max(1, a * 0.02));
+    return ok ? m : `${num}${unit} (chiffre à vérifier)`;
+  });
+}
+
+function parseCvpResponse(raw, ctx) {
   if (!raw || typeof raw !== "object") return null;
-  const message = coerceStr(raw.message);
-  const differenciateurs = coerceStrArray(raw.differenciateurs);
-  const prochaineEtape = coerceStr(raw.prochaineEtape);
+  const allowed = allowedAmountSet(ctx && ctx.valueModel);
+  const message = annotateStrayAmounts(coerceStr(raw.message), allowed);
+  const differenciateurs = coerceStrArray(raw.differenciateurs).map((d) => annotateStrayAmounts(d, allowed));
+  const prochaineEtape = annotateStrayAmounts(coerceStr(raw.prochaineEtape), allowed);
   if (!message && !differenciateurs.length) return null;
   return { message, differenciateurs, prochaineEtape };
 }
@@ -577,17 +605,54 @@ Réponds UNIQUEMENT avec un objet JSON valide :
 "objet" = l'offre/deal/signal nommé visé ; "preuve" = le fait réel du compte qui la justifie (montant/année/affinité/signal). JSON uniquement.`;
 }
 
-function parsePlanActionResponse(raw) {
+// Un plan « daté » ne l'était pas vraiment : « echeance » était une chaîne libre (« S+2 »,
+// « semaine prochaine ») qui, à l'ajout au plan suivi, était remplacée par "" côté front → l'action
+// devenait « à cadrer ». On NORMALISE l'échéance en date calendaire ISO quand c'est possible (audit
+// pertinence 2026-07). PUR.
+function normalizeEcheance(raw, todayIso) {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (!s) return "";
+  const iso = s.match(/\d{4}-\d{2}-\d{2}/);
+  if (iso) return iso[0]; // date ISO déjà présente
+  const base = Date.parse(typeof todayIso === "string" ? todayIso : "");
+  if (Number.isNaN(base)) return "";
+  const addDays = (n) => new Date(base + n * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const wk = s.match(/s\s*\+\s*(\d+)/i); // « S+2 » = 2 semaines
+  if (wk) return addDays(Number(wk[1]) * 7);
+  const dj = s.match(/j\s*\+\s*(\d+)/i); // « J+10 » = 10 jours
+  if (dj) return addDays(Number(dj[1]));
+  return ""; // non normalisable → échéance à cadrer (pas de fausse date)
+}
+
+// Bucket « quand » dérivé d'une échéance ISO (cohérence avec l'échéance réelle plutôt que le label IA).
+function quandFromEcheance(echeanceIso, todayIso) {
+  const t = Date.parse(echeanceIso);
+  const base = Date.parse(typeof todayIso === "string" ? todayIso : "");
+  if (Number.isNaN(t) || Number.isNaN(base)) return null;
+  const days = (t - base) / (24 * 60 * 60 * 1000);
+  if (days < 30) return "0–30 jours";
+  if (days < 60) return "30–60 jours";
+  if (days < 90) return "60–90 jours";
+  return "Continu";
+}
+
+function parsePlanActionResponse(raw, ctx) {
   if (!raw || typeof raw !== "object" || !Array.isArray(raw.plan)) return null;
+  const todayIso = ctx && typeof ctx.today === "string" ? ctx.today : "";
   const plan = raw.plan
     .filter((x) => x && typeof x === "object" && coerceStr(x.action))
-    .map((x) => ({
-      quand: coerceEnum(x.quand, QUANDS, "Continu"),
-      echeance: coerceStr(x.echeance),
-      action: coerceStr(x.action),
-      objet: coerceStr(x.objet),
-      preuve: coerceStr(x.preuve),
-    }))
+    .map((x) => {
+      const echeance = normalizeEcheance(x.echeance, todayIso);
+      // Quand une échéance datée existe, le bucket en découle (sinon on garde le label IA / « Continu »).
+      const quand = echeance ? (quandFromEcheance(echeance, todayIso) || coerceEnum(x.quand, QUANDS, "Continu")) : coerceEnum(x.quand, QUANDS, "Continu");
+      return {
+        quand,
+        echeance, // ISO YYYY-MM-DD ou "" (à cadrer — plus jamais « S+2 » non exploitable)
+        action: coerceStr(x.action),
+        objet: coerceStr(x.objet),
+        preuve: coerceStr(x.preuve),
+      };
+    })
     .slice(0, 6);
   return plan.length ? { plan } : null;
 }
@@ -918,18 +983,19 @@ Réponds UNIQUEMENT avec un objet JSON valide :
 }
 JSON uniquement.`;
 }
-function parseBusinessCaseResponse(raw) {
+function parseBusinessCaseResponse(raw, ctx) {
   if (!raw || typeof raw !== "object") return null;
+  const allowed = allowedAmountSet(ctx && ctx.valueModel);
   const gains = (Array.isArray(raw.gains) ? raw.gains : [])
     .filter((x) => x && typeof x === "object" && coerceStr(x.levier))
-    .map((x) => ({ levier: coerceStr(x.levier), montant: coerceStr(x.montant), base: coerceStr(x.base) })).slice(0, 5);
+    .map((x) => ({ levier: coerceStr(x.levier), montant: annotateStrayAmounts(coerceStr(x.montant), allowed), base: coerceStr(x.base) })).slice(0, 5);
   const out = {
-    synthese: coerceStr(raw.synthese),
+    synthese: annotateStrayAmounts(coerceStr(raw.synthese), allowed),
     hypotheses: coerceStrArray(raw.hypotheses).slice(0, 4),
     gains,
-    potentielTotal: coerceStr(raw.potentielTotal),
+    potentielTotal: annotateStrayAmounts(coerceStr(raw.potentielTotal), allowed),
     risques: coerceStrArray(raw.risques).slice(0, 4),
-    recommandation: coerceStr(raw.recommandation),
+    recommandation: annotateStrayAmounts(coerceStr(raw.recommandation), allowed),
   };
   return (out.synthese || gains.length) ? out : null;
 }

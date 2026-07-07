@@ -61,7 +61,7 @@ function VeilleAttributionPanel() {
         <button className="pill" onClick={() => navigate("/veille/plan")} title="Voir les opportunités">Voir le pipeline →</button>
       </div>
       <div style={{ fontSize: 12, color: T.dim, marginTop: 6, lineHeight: 1.5 }}>
-        Pipeline attribuable à la boucle veille → action : <b style={{ color: T.emerald }}>{fmt(a.pipelineXof)} XOF</b> sur {a.attribuables} opportunité{a.attribuables > 1 ? "s" : ""}
+        Pipeline OUVERT attribuable à la boucle veille → action : <b style={{ color: T.emerald }}>{fmt(a.pipelineXof)} XOF</b> sur {a.attribuables} opportunité{a.attribuables > 1 ? "s" : ""}
         {a.declenchees > 0 ? <> — dont <b style={{ color: T.gold }}>{fmt(a.declencheesXof)} XOF</b> déclenchés par un événement de veille</> : null}.
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
@@ -147,10 +147,10 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
       <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 14 }}>
         <KpiCard title="Ouvrir le Copilote (comptes suivis)" onClick={() => setView("copilote")}>
           <Kpi
-            label="Pipeline sur comptes suivis"
+            label="Exposition comptes suivis"
             value={exec && exec.pipelineInfluenced != null ? fmt(exec.pipelineInfluenced) : "—"}
             accent={T.emerald}
-            sub="montant brut · comptes en veille / watchlist ▸"
+            sub="value-at-stake · comptes en veille / watchlist (≠ pipeline actif) ▸"
           />
         </KpiCard>
         <KpiCard title="Voir les menaces dans le Fil" onClick={() => navigate("/veille/fil?st=threat")}>

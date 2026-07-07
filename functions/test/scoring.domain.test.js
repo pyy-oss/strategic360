@@ -88,6 +88,18 @@ describe("businessFactor (Action 5.2)", () => {
   it("is clamped at 1.0 (tender + both bonuses does not overflow)", () => {
     expect(businessFactor({ subtype: "tender", stance: "opportunity", budgetIdentified: true })).toBe(1.0);
   });
+  it("décote vulnerability/cve/supply SANS ancrage local (ni ent ni geo) — anti-biais cyber (audit 2026-07)", () => {
+    // Sans ancrage : ×0.6 (une CVE éditeur mondiale sans parc/compte n'est pas une opportunité NT).
+    expect(businessFactor({ subtype: "vulnerability" })).toBeCloseTo(0.8 * 0.6, 6);
+    expect(businessFactor({ subtype: "cve" })).toBeCloseTo(0.8 * 0.6, 6);
+    expect(businessFactor({ subtype: "supply" })).toBeCloseTo(0.85 * 0.6, 6);
+    // Avec un ent résolu OU une zone locale → plein tarif rétabli.
+    expect(businessFactor({ subtype: "vulnerability", ent: "SGBCI" })).toBe(0.8);
+    expect(businessFactor({ subtype: "cve", geo: "ci" })).toBe(0.8);
+    expect(businessFactor({ subtype: "supply", geo: "Afrique de l'Ouest" })).toBe(0.85);
+    // Un subtype non concerné n'est jamais décoté, ancrage ou pas.
+    expect(businessFactor({ subtype: "tender" })).toBe(1.0);
+  });
 });
 
 describe("alignementFactor (Action 5.2 — per-axis AXIS_ALIGN + watchlist bonus)", () => {

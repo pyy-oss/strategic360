@@ -129,8 +129,24 @@ const SUBTYPE_BUSINESS = {
   macro: 0.35,
 };
 
+// Subtypes « techniques » dont le fort potentiel business n'existe QUE s'il y a un ancrage local
+// (parc/compte identifié ou zone CI/UEMOA) : une CVE éditeur mondiale ou une pénurie sourcing sans
+// client ni géo local n'est pas une opportunité NT — c'est de la brève tech. Sans ancrage on décote,
+// pour ne pas laisser le cyber/sourcing mondial trôner devant un mouvement d'un compte suivi
+// (audit pertinence 2026-07, biais sectoriel résiduel).
+const ANCHOR_REQUIRED_SUBTYPES = new Set(["vulnerability", "cve", "supply"]);
+const UNANCHORED_DECOTE = 0.6;
+
+function hasLocalAnchor(item) {
+  if (item && typeof item.ent === "string" && item.ent.trim()) return true;
+  const geo = typeof item?.geo === "string" ? item.geo.toLowerCase() : "";
+  return geo === "ci" || geo.includes("ivoire") || geo.includes("uemoa") || geo.includes("afrique");
+}
+
 function businessFactor(item) {
   let f = SUBTYPE_BUSINESS[item?.subtype] ?? 0.4;
+  // Décote des subtypes techniques sans ancrage local (parc/compte ou zone) — cf. commentaire ci-dessus.
+  if (ANCHOR_REQUIRED_SUBTYPES.has(item?.subtype) && !hasLocalAnchor(item)) f *= UNANCHORED_DECOTE;
   if (item?.stance === "opportunity") f = Math.min(1, f + 0.1);
   if (item?.budgetIdentified) f = Math.min(1, f + 0.1);
   return f;

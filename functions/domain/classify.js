@@ -220,6 +220,27 @@ function deriveProxFromDueDate(dueDate, now = Date.now()) {
   return { prox: "horizon", past: false };
 }
 
+// Notes d'amirauté par TYPE de domaine (audit pertinence 2026-07) : quand une source n'a pas de
+// cotation explicite, tous les signaux héritaient de « C3 » → le facteur crédibilité ne triait plus
+// rien (un AO officiel bceao.int ne se distinguait pas d'un agrégateur). On dérive une note par
+// défaut du domaine d'URL : officiels/institutionnels = fiables (A2/B2), agrégateurs = douteux (D3).
+const OFFICIAL_DOMAIN_MARKERS = ["bceao.int", "sigomap", "uemoa.int", "afdb.org", "worldbank.org", "gouv.", ".gov", "artci", "arcep", "anssi", "presidence.ci", "finances.gouv"];
+const REPUTABLE_DOMAIN_MARKERS = ["jeuneafrique", "reuters", "afp.com", "financialafrik", "sikafinance", "cisco.com", "fortinet.com", "paloaltonetworks", "microsoft.com", "oracle.com", "vmware.com"];
+const AGGREGATOR_DOMAIN_MARKERS = ["blogspot", "wordpress", "medium.com", "actucia", "abidjan.net", "linfodrome", "koaci"];
+
+/**
+ * deriveSourceRatingFromUrl(url) -> "A2" | "B2" | "C3" | "D3" | undefined — note d'amirauté par
+ * défaut dérivée du domaine, utilisée seulement quand la source n'a pas de cotation explicite. PUR.
+ */
+function deriveSourceRatingFromUrl(url) {
+  if (typeof url !== "string" || !url.trim()) return undefined;
+  const u = url.toLowerCase();
+  if (OFFICIAL_DOMAIN_MARKERS.some((m) => u.includes(m))) return "A2";
+  if (REPUTABLE_DOMAIN_MARKERS.some((m) => u.includes(m))) return "B2";
+  if (AGGREGATOR_DOMAIN_MARKERS.some((m) => u.includes(m))) return "D3";
+  return undefined; // inconnu → l'appelant retombe sur le défaut conservateur C3
+}
+
 function coerceEnum(value, allowed, fallback) {
   if (typeof value === "string" && allowed.includes(value)) return value;
   return fallback;
@@ -355,6 +376,7 @@ module.exports = {
   buildClassificationPrompt,
   parseClassificationResponse,
   deriveProxFromDueDate,
+  deriveSourceRatingFromUrl,
   VALID_AXES,
   VALID_IMPACTS,
   VALID_STANCES,
