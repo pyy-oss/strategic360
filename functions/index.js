@@ -2046,6 +2046,12 @@ exports.syncInternalQuantiNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   return result;
 });
 
+// Émission proactive d'opportunités (Phase 4) — garde-fous contre la surcharge (risques audit) :
+// plancher de matérialité (on n'émet pas un lead de cross-sell dérisoire) et plafond global (ne pas
+// noyer le pipeline suivi avec ~1600 leads auto sur 800 comptes).
+const AUTO_OPP_FLOOR = 5_000_000; // XOF : montant d'ancrage minimum pour émettre un lead
+const AUTO_OPP_MAX = 60;          // nombre max de leads proactifs par synchro (les plus gros d'abord)
+
 /**
  * runSyncCopiloteAccounts — pré-remplit l'empreinte des comptes du Copilote depuis nt360 (read-only).
  * ADDITIF : écrit uniquement `nom` + le sous-objet `nt360` (historique/enCours/casTotal/pipeline) par
@@ -2085,6 +2091,9 @@ async function runSyncCopiloteAccounts(db) {
   let reserveTotale = 0; // Σ potentiel cross-sell chiffré du portefeuille (KPI « réserve »)
   let recurrentCasTot = 0;
   let casTot = 0;
+  let churnCount = 0;    // comptes avec ≥1 offre dormante matérielle (récurrent qui s'éteint)
+  let churnMontant = 0;  // Σ du CAS annuel des offres dormantes
+  const autoOppCandidates = []; // opportunités cross-sell/upsell à émettre dans le pipeline suivi
   for (let i = 0; i < derived.length; i += CHUNK) {
     const slice = derived.slice(i, i + CHUNK);
     const batch = db.batch();
@@ -2094,6 +2103,15 @@ async function runSyncCopiloteAccounts(db) {
       reserveTotale += val.whitespacePotential;
       recurrentCasTot += val.recurrentCas;
       casTot += Number(acc.casTotal) || 0;
+      // Agrégat de churn (dormance matérielle) pour la bannière « récurrent qui s'éteint ».
+      const dormantes = (val.signals || []).filter((s) => s.type === "dormante");
+      if (dormantes.length) { churnCount += 1; churnMontant += dormantes.reduce((s, x) => s + (x.montant || 0), 0); }
+      // Candidats d'opportunités PROACTIVES (Phase 4) : la meilleure offre de cross-sell et le meilleur
+      // upsell chiffrés du compte deviennent des leads du pipeline suivi (qualifiable → action).
+      const topXs = (val.whitespaceValue || [])[0];
+      if (topXs && topXs.montant >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: "cross-sell", slug: acc.slug, client: acc.nom, offre: topXs.offre, montant: topXs.montant });
+      const topUp = (val.upsellByOffre || [])[0];
+      if (topUp && topUp.montant >= AUTO_OPP_FLOOR) autoOppCandidates.push({ kind: "upsell", slug: acc.slug, client: acc.nom, offre: topUp.offre, montant: topUp.montant });
       batch.set(
         db.doc(`copiloteAccounts/${acc.slug}`),
         {
@@ -2123,14 +2141,57 @@ async function runSyncCopiloteAccounts(db) {
     await batch.commit();
     written += slice.length;
   }
-  // Agrégats portefeuille exposés au dashboard (réserve cross-sell totale + part récurrente estimée).
+  // Agrégats portefeuille exposés au dashboard (réserve cross-sell + part récurrente + churn).
   const recurrentShare = casTot > 0 ? Math.round((recurrentCasTot / casTot) * 100) : null;
   await db.doc("summaries/copiloteMeta").set(
-    { reserveCrossSell: Math.round(reserveTotale), recurrentShare, updatedAt: FieldValue.serverTimestamp() },
+    {
+      reserveCrossSell: Math.round(reserveTotale),
+      recurrentShare,
+      churn: { comptes: churnCount, montant: Math.round(churnMontant) }, // récurrent en train de s'éteindre
+      updatedAt: FieldValue.serverTimestamp(),
+    },
     { merge: true }
   );
-  logger.info(`runSyncCopiloteAccounts: ${written} comptes copilote pré-remplis depuis nt360 (catalogue ${buCatalog.length} offres ; réserve cross-sell ≈ ${Math.round(reserveTotale)} ; récurrent ${recurrentShare ?? "n.c."}%)`);
-  return { accounts: written, buCatalog: buCatalog.length, reserveCrossSell: Math.round(reserveTotale), recurrentShare };
+
+  // MOTEUR PROACTIF (Phase 4) : émettre les meilleures opportunités cross-sell/upsell chiffrées dans
+  // le pipeline SUIVI (bizOpportunities) → elles rejoignent la boucle qualifier → convertir en action.
+  // Garde-fous (risques audit) : plafond global pour ne pas noyer le commercial ; plancher de
+  // matérialité ; statut humain (qualified/dropped) JAMAIS écrasé (merge sans `status` si le doc existe).
+  const autoOpps = autoOppCandidates
+    .sort((a, b) => b.montant - a.montant)
+    .slice(0, AUTO_OPP_MAX);
+  let oppsWritten = 0;
+  for (const cand of autoOpps) {
+    const offreSlug = String(cand.offre).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const id = `auto-${cand.kind}-${cand.slug}-${offreSlug}`.slice(0, 250);
+    const ref = db.doc(`bizOpportunities/${id}`);
+    const existing = await ref.get();
+    const payload = {
+      name: `${cand.kind === "upsell" ? "Upsell" : "Cross-sell"} ${cand.offre} — ${cand.client}`,
+      client: cand.client,
+      bu: cand.offre,
+      offering: cand.offre,
+      estAmount: String(Math.round(cand.montant)),
+      horizon: "moyen",
+      probability: "medium",
+      nextAction: cand.kind === "upsell"
+        ? `Étendre ${cand.offre} (compte sous-pénétré vs panier de référence)`
+        : `Chiffrer et proposer ${cand.offre} (panier de référence réel)`,
+      source: cand.kind,       // 'cross-sell' | 'upsell' — distingue l'origine du lead
+      generatedBy: "sync",     // ni IA (enrichissement veille) ni humain : dérivé du portefeuille
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (existing.exists) {
+      delete payload.status; // ne jamais repasser un lead qualifié/écarté par un humain en "new"
+    } else {
+      payload.status = "new";
+    }
+    await ref.set(payload, { merge: true });
+    oppsWritten += 1;
+  }
+
+  logger.info(`runSyncCopiloteAccounts: ${written} comptes (catalogue ${buCatalog.length} offres ; réserve ≈ ${Math.round(reserveTotale)} ; récurrent ${recurrentShare ?? "n.c."}% ; churn ${churnCount} comptes ; ${oppsWritten} opps proactives émises)`);
+  return { accounts: written, buCatalog: buCatalog.length, reserveCrossSell: Math.round(reserveTotale), recurrentShare, autoOpportunities: oppsWritten };
 }
 
 exports.syncCopiloteAccounts = onSchedule(

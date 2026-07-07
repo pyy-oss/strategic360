@@ -520,7 +520,7 @@ function PortfolioDashboard({
   onPick: (id: string) => void;
 }) {
   // Mémoïsé : recalculer reduces + flatMap + sort sur ~800 comptes à chaque rendu serait du gaspillage.
-  const { totalCas, totalPipe, hotDeals, reserveTotale, topPotential, worklist } = useMemo(() => {
+  const { totalCas, totalPipe, hotDeals, reserveTotale, topPotential, worklist, churn } = useMemo(() => {
     const totalCas = accounts.reduce((s, a) => s + (a.nt360?.casTotal ?? 0), 0);
     const totalPipe = accounts.reduce((s, a) => s + (a.nt360?.pipelinePondere ?? 0), 0);
     // Réserve de valeur non captée (audit doubler-CA — leviers PANIER/COUVERTURE) : cross-sell + upsell
@@ -538,6 +538,13 @@ function PortfolioDashboard({
       .flatMap((a) => (a.nt360?.signals ?? []).map((sig) => ({ ...sig, compte: a.nom, accountId: a.id })))
       .sort((x, y) => (y.montant ?? 0) - (x.montant ?? 0))
       .slice(0, 8);
+    // Churn silencieux (levier RÉCURRENCE) : récurrent qui s'éteint = offres dormantes matérielles.
+    let churnComptes = 0, churnMontant = 0;
+    for (const a of accounts) {
+      const dorm = (a.nt360?.signals ?? []).filter((s) => s.type === "dormante");
+      if (dorm.length) { churnComptes += 1; churnMontant += dorm.reduce((s, x) => s + (x.montant ?? 0), 0); }
+    }
+    const churn = { comptes: churnComptes, montant: churnMontant };
     // Deals chauds = opportunités en cours triées par valeur pondérée. Correctif audit 2026-07 : une
     // probabilité INCONNUE ne vaut plus 100 % (elle faisait passer les deals non qualifiés devant des
     // deals qualifiés à 90 %) — repli conservateur à 50 %, probabilité connue bornée 0-100.
@@ -559,7 +566,7 @@ function PortfolioDashboard({
       .flatMap((a) => (a.nt360?.opportunites ?? []).map((o) => ({ ...o, compte: a.nom, accountId: a.id })))
       .sort((x, y) => dealWeight(y) - dealWeight(x))
       .slice(0, 8);
-    return { totalCas, totalPipe, hotDeals, reserveTotale, topPotential, worklist };
+    return { totalCas, totalPipe, hotDeals, reserveTotale, topPotential, worklist, churn };
   }, [accounts]);
 
   if (accounts.length === 0) {
@@ -578,6 +585,14 @@ function PortfolioDashboard({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <MaJournee onPick={onPick} />
+      {churn.montant > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, background: `${T.clay}18`, border: `1px solid ${T.clay}55`, borderRadius: 10, padding: "10px 13px" }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <span style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.45 }}>
+            <b style={{ color: T.clay }}>Récurrent en train de s'éteindre :</b> {churn.comptes} compte{churn.comptes > 1 ? "s" : ""} avec des offres dormantes ≈ <b>{fmt(churn.montant)} XOF</b>/an à relancer. Voir « À traiter cette semaine ».
+          </span>
+        </div>
+      )}
       <Card>
         <Eyebrow color={T.gold}>Portefeuille commercial — vue d'ensemble</Eyebrow>
         <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginTop: 12 }}>
