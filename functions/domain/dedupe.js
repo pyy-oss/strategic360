@@ -53,6 +53,23 @@ function isNearDuplicate(a, b, threshold = 0.6) {
 }
 
 /**
+ * isStrongDuplicate(a, b) — quasi-doublon À FORT RECOUVREMENT : au moins 3 jetons significatifs
+ * partagés ET coefficient de recouvrement ≥ 0.75. Assez robuste pour affirmer « même événement »
+ * MÊME si les deux signaux ont été classés sur des axes différents (une levée de fonds fintech vue
+ * `tech` par un média et `clients_prospects` par un autre). Sert à lever la contrainte d'axe
+ * identique du dédoublonnage (audit pertinence 2026-07). PUR.
+ */
+function isStrongDuplicate(a, b) {
+  const A = titleTokens(a);
+  const B = titleTokens(b);
+  if (!A.size || !B.size) return false;
+  let inter = 0;
+  for (const t of A) if (B.has(t)) inter++;
+  if (inter < 3) return false;
+  return inter / Math.min(A.size, B.size) >= 0.75;
+}
+
+/**
  * dedupeByTitle(items, threshold) — écarte les quasi-doublons d'une liste (garde le PREMIER de
  * chaque grappe). `items` = tableau de chaînes OU d'objets `{title}`. Renvoie la liste filtrée dans
  * l'ordre d'origine. PUR.
@@ -87,7 +104,10 @@ function clusterNearDuplicates(items, threshold = 0.6) {
     const axis = it.axis || "";
     let placed = false;
     for (const c of clusters) {
-      if ((c.rep.axis || "") === axis && isNearDuplicate(c.rep.title, title, threshold)) {
+      // Même axe + quasi-doublon standard, OU fort recouvrement quel que soit l'axe (même événement
+      // classé différemment selon la source) — audit pertinence 2026-07.
+      const sameAxis = (c.rep.axis || "") === axis && isNearDuplicate(c.rep.title, title, threshold);
+      if (sameAxis || isStrongDuplicate(c.rep.title, title)) {
         c.members.push(it);
         placed = true;
         break;
@@ -98,4 +118,4 @@ function clusterNearDuplicates(items, threshold = 0.6) {
   return clusters.filter((c) => c.members.length >= 2).map((c) => c.members);
 }
 
-module.exports = { normalizeTitle, titleSimilarity, isNearDuplicate, dedupeByTitle, clusterNearDuplicates };
+module.exports = { normalizeTitle, titleSimilarity, isNearDuplicate, isStrongDuplicate, dedupeByTitle, clusterNearDuplicates };

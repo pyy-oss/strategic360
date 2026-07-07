@@ -42,19 +42,28 @@ describe("dedupe — similarité de titres", () => {
     expect(dedupeByTitle([])).toEqual([]);
   });
 
-  it("clusterNearDuplicates : regroupe les doublons même axe, sépare les axes, ignore les singletons", () => {
+  it("clusterNearDuplicates : regroupe les doublons même axe ET les doublons trans-axes à fort recouvrement", () => {
     const items = [
       { id: "a1", title: "La BRVM lance un appel d'offres refonte SI", axis: "clients_prospects" },
-      { id: "a2", title: "Appel d'offres BRVM refonte du SI", axis: "clients_prospects" }, // doublon de a1
+      { id: "a2", title: "Appel d'offres BRVM refonte du SI", axis: "clients_prospects" }, // doublon de a1 (même axe)
       { id: "b1", title: "Fortinet augmente ses tarifs de 8%", axis: "tech" },              // singleton → écarté
-      { id: "a3", title: "BRVM refonte SI appel d'offres publié", axis: "tech" },           // titre proche MAIS autre axe → PAS fusionné avec a1/a2
+      { id: "a3", title: "BRVM refonte SI appel d'offres publié", axis: "tech" },           // MÊME événement, autre axe → fusionné (fort recouvrement, audit 2026-07)
     ];
     const clusters = clusterNearDuplicates(items);
-    // Une seule grappe (a1+a2) ; b1 et a3 restent seuls (non retournés).
+    // Une seule grappe (a1+a2+a3, même événement classé sur 2 axes) ; b1 reste seul.
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].map((x) => x.id).sort()).toEqual(["a1", "a2"]);
+    expect(clusters[0].map((x) => x.id).sort()).toEqual(["a1", "a2", "a3"]);
     // Liste vide / sans doublon → aucune grappe.
     expect(clusterNearDuplicates([])).toEqual([]);
     expect(clusterNearDuplicates([{ id: "x", title: "Sujet unique", axis: "tech" }])).toEqual([]);
+  });
+
+  it("isStrongDuplicate : un simple mot commun trans-axes ne suffit PAS à fusionner (≥3 jetons + 0.75)", () => {
+    const items = [
+      { id: "c1", title: "Cisco lance une nouvelle gamme de switches", axis: "tech" },
+      { id: "c2", title: "Cisco remporte un contrat à la SGBCI", axis: "concurrents" },
+    ];
+    // Seul « cisco » est partagé → recouvrement faible → pas de fusion trans-axes.
+    expect(clusterNearDuplicates(items)).toEqual([]);
   });
 });

@@ -150,6 +150,39 @@ describe("Copilote — battlecards confirmées vs marché (competitorBlock via p
   });
 });
 
+describe("Copilote — plan d'action réellement daté & NO_GENERIC déterministe (audit 2026-07)", () => {
+  it("parsePlanActionResponse : normalise S+n / J+n en date ISO depuis today, non normalisable → \"\"", async () => {
+    const { parsePlanActionResponse } = await import("../domain/copilote.js");
+    const ctx = { today: "2026-07-07" };
+    const out = parsePlanActionResponse({
+      plan: [
+        { quand: "0–30 jours", echeance: "S+2", action: "Relancer le DSI" },       // +14 j → 2026-07-21
+        { quand: "0–30 jours", echeance: "J+10", action: "Envoyer la proposition" }, // +10 j → 2026-07-17
+        { quand: "30–60 jours", echeance: "2026-08-15", action: "RDV cadrage" },     // ISO conservée
+        { quand: "Continu", echeance: "la semaine prochaine", action: "Veille compte" }, // non normalisable → ""
+      ],
+    }, ctx);
+    expect(out.plan[0].echeance).toBe("2026-07-21");
+    expect(out.plan[1].echeance).toBe("2026-07-17");
+    expect(out.plan[2].echeance).toBe("2026-08-15");
+    expect(out.plan[3].echeance).toBe("");
+    // Le bucket « quand » découle de l'échéance datée.
+    expect(out.plan[2].quand).toBe("30–60 jours");
+  });
+
+  it("parseCvpResponse : annote « (chiffre à vérifier) » les montants XOF hors valueModel", async () => {
+    const { parseCvpResponse } = await import("../domain/copilote.js");
+    const ctx = { valueModel: { casTotal: 120000000, nextOffer: { montant: 45000000 }, whitespaceValue: [] } };
+    const out = parseCvpResponse(
+      { message: "Nous visons 45 000 000 XOF sur le SOC, et un potentiel de 900 000 000 XOF au global.", differenciateurs: [] },
+      ctx
+    );
+    // 45 M appartient au valueModel → intact ; 900 M inventé → annoté.
+    expect(out.message).toContain("45 000 000 XOF");
+    expect(out.message).toMatch(/900 000 000 XOF \(chiffre à vérifier\)/);
+  });
+});
+
 describe("Copilote — agent planAction (plan d'action daté 90 j)", () => {
   it("buildPlanActionPrompt impose une séquence datée ancrée sur les faits", async () => {
     const { buildPlanActionPrompt } = await import("../domain/copilote.js");

@@ -24,8 +24,8 @@ const { parseFacturationDf } = require("./parsers/facturationDf");
 const { parseFiche } = require("./parsers/fiche");
 const { computePorterForces, computeBcg, computeCasSummary, computePipeline, computeKris, computeValueAtStake, computePipelineInfluenced, computeGranularite } = require("./domain/quanti");
 const { intelItemId } = require("./domain/ids");
-const { buildClassificationPrompt, parseClassificationResponse } = require("./domain/classify");
-const { dedupeByTitle, isNearDuplicate, clusterNearDuplicates } = require("./domain/dedupe");
+const { buildClassificationPrompt, parseClassificationResponse, deriveSourceRatingFromUrl } = require("./domain/classify");
+const { dedupeByTitle, isNearDuplicate, isStrongDuplicate, clusterNearDuplicates } = require("./domain/dedupe");
 const { buildEvaluatePrompt, parseEvaluateResponse } = require("./domain/evaluate");
 const { pickRelevant } = require("./domain/retrieve");
 const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
@@ -615,7 +615,10 @@ async function upsertClassifiedItem(db, classified, dedupeIndex) {
   // primaire (re-merge idempotent d'une même source) ; ceci couvre le cross-source.
   if (!existing.exists && Array.isArray(dedupeIndex)) {
     const axis = classified.axis || "";
-    const dup = dedupeIndex.find((e) => (e.axis || "") === axis && isNearDuplicate(e.title, classified.title || ""));
+    const title = classified.title || "";
+    // Même axe + quasi-doublon standard, OU fort recouvrement quel que soit l'axe (même événement vu
+    // par deux sources et classé sur des axes différents) — audit pertinence 2026-07.
+    const dup = dedupeIndex.find((e) => ((e.axis || "") === axis && isNearDuplicate(e.title, title)) || isStrongDuplicate(e.title, title));
     if (dup) {
       logger.info(`syncSources: skip near-duplicate « ${String(classified.title).slice(0, 60)} » ~ « ${String(dup.title).slice(0, 60)} »`);
       return { id, written: false, duplicate: true };
@@ -687,7 +690,9 @@ async function runSyncSources(db) {
         return 0;
       }
 
-      const context = { sourceName: source.name, defaultSourceRating: source.sourceRating };
+      // Cotation : celle configurée sur la source prime ; sinon on la dérive du domaine d'URL
+      // (officiel/réputé/agrégateur) plutôt que de retomber sur un C3 uniforme non discriminant.
+      const context = { sourceName: source.name, defaultSourceRating: source.sourceRating || deriveSourceRatingFromUrl(source.url) };
       let created = 0;
       let degraded = false;
 
@@ -995,7 +1000,7 @@ exports.classifyAI = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
     sourceName: existing.sourceName,
     url: existing.url,
     defaultDate: existing.date,
-    defaultSourceRating: existing.sourceRating,
+    defaultSourceRating: existing.sourceRating || deriveSourceRatingFromUrl(existing.url),
   });
   if (!classified) {
     throw new HttpsError("internal", "La réponse IA n'a pas pu être exploitée (contenu vide/incomplet).");
@@ -2010,10 +2015,20 @@ async function assembleCopiloteContext(db, accountId) {
   const recoBase = ranked.find((r) => r.csPct > 0) || ranked[0] || null;
   // Chiffrage de la next best offer : panier de référence (médiane du portefeuille) pour son offre.
   const benchmark = meta.buBenchmark && typeof meta.buBenchmark === "object" ? meta.buBenchmark : {};
-  const recommendation = recoBase
-    ? { ...recoBase, montantEstime: Number(benchmark[recoBase.offre]?.medianCas) || 0 }
-    : null;
   const casTotal = Number(nt.casTotal) || 0;
+  // Ancre BORNÉE à l'échelle du compte (audit pertinence 2026-07) : une médiane portefeuille très
+  // supérieure au CAS réalisé du compte donne un « montant d'ancrage à viser » non crédible (ex.
+  // 45 M XOF pour un compte à 8 M) que le commercial ne défendra pas. On plafonne à ~1.5× l'empreinte
+  // et on signale quand l'ancre brute dépassait largement.
+  const ANCHOR_SCALE = 1.5;
+  const recommendation = recoBase
+    ? (() => {
+        const rawMedian = Number(benchmark[recoBase.offre]?.medianCas) || 0;
+        const cap = casTotal > 0 ? Math.round(casTotal * ANCHOR_SCALE) : rawMedian;
+        const montantEstime = casTotal > 0 ? Math.min(rawMedian, cap) : rawMedian;
+        return { ...recoBase, montantEstime, montantReference: rawMedian, anchorCapped: casTotal > 0 && rawMedian > cap };
+      })()
+    : null;
   const pipelinePondere = Number(nt.pipelinePondere) || 0;
   const wins = Number(nt.wins) || 0;
   const enjeux = Array.isArray(a.enjeux) ? a.enjeux : [];

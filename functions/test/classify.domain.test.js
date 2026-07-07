@@ -9,7 +9,19 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildClassificationPrompt, parseClassificationResponse, deriveProxFromDueDate } from "../domain/classify.js";
+import { buildClassificationPrompt, parseClassificationResponse, deriveProxFromDueDate, deriveSourceRatingFromUrl } from "../domain/classify.js";
+
+describe("deriveSourceRatingFromUrl — cotation d'amirauté par domaine (audit 2026-07)", () => {
+  it("officiels → A2, réputés → B2, agrégateurs → D3, inconnu → undefined", () => {
+    expect(deriveSourceRatingFromUrl("https://www.bceao.int/fr/avis")).toBe("A2");
+    expect(deriveSourceRatingFromUrl("https://sigomap.marchespublics.ci/ao/123")).toBe("A2");
+    expect(deriveSourceRatingFromUrl("https://www.jeuneafrique.com/xyz")).toBe("B2");
+    expect(deriveSourceRatingFromUrl("https://securityblog.blogspot.com/post")).toBe("D3");
+    expect(deriveSourceRatingFromUrl("https://un-site-inconnu.example/article")).toBeUndefined();
+    expect(deriveSourceRatingFromUrl("")).toBeUndefined();
+    expect(deriveSourceRatingFromUrl(null)).toBeUndefined();
+  });
+});
 import { intelItemId } from "../domain/ids.js";
 
 describe("buildClassificationPrompt", () => {
