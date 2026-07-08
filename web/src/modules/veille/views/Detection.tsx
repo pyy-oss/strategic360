@@ -422,11 +422,17 @@ function SourceHealthPanel() {
   const okPct = total ? Math.round((counts.ok / total) * 100) : 0;
   // Progression de la synchro EN DIRECT (UX 2026-07) : le bouton reflète summaries/syncStatus quel que
   // soit le déclencheur (bouton ici OU scheduler quotidien), au lieu d'un spinner aveugle.
-  const syncRunning = syncing || !!syncStatus?.running;
+  // Verrou périmé (audit M8) : un run tué au timeout (540 s) ne repasse jamais running:false — on
+  // ignore un running plus vieux que 12 min (aligné sur SYNC_LOCK_TTL_MS serveur) pour ne pas
+  // laisser le bouton en spinner infini.
+  const startedMs = (syncStatus?.startedAt as { toMillis?: () => number } | null | undefined)?.toMillis?.() ?? 0;
+  const syncStale = !!syncStatus?.running && startedMs > 0 && Date.now() - startedMs > 12 * 60_000;
+  const syncLive = !!syncStatus?.running && !syncStale;
+  const syncRunning = syncing || syncLive;
   const PHASE_LABEL: Record<string, string> = { ingestion: "ingestion", dedup: "dédoublonnage", evaluation: "évaluation" };
   const phaseLabel = PHASE_LABEL[syncStatus?.phase ?? ""] ?? "";
-  const syncLabel = syncStatus?.running
-    ? `Synchro… ${syncStatus.processed ?? 0}/${syncStatus.total ?? "?"}${syncStatus.created ? ` · ${syncStatus.created} signaux` : ""}${phaseLabel ? ` · ${phaseLabel}` : ""}`
+  const syncLabel = syncLive
+    ? `Synchro… ${syncStatus?.processed ?? 0}/${syncStatus?.total ?? "?"}${syncStatus?.created ? ` · ${syncStatus.created} signaux` : ""}${phaseLabel ? ` · ${phaseLabel}` : ""}`
     : "Synchro…";
   return (
     <Card style={{ marginBottom: 14 }}>

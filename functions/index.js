@@ -23,10 +23,21 @@ const { parseLive } = require("./parsers/live");
 const { parseFacturationDf } = require("./parsers/facturationDf");
 const { parseFiche } = require("./parsers/fiche");
 const { computePorterForces, computeBcg, computeCasSummary, computePipeline, computeKris, computeValueAtStake, computePipelineInfluenced, computeGranularite } = require("./domain/quanti");
+const dns = require("node:dns/promises");
 const { intelItemId } = require("./domain/ids");
+const { isForbiddenIp, checkPublicHttpUrl } = require("./domain/netguard");
 const { buildClassificationPrompt, parseClassificationResponse, deriveSourceRatingFromUrl } = require("./domain/classify");
 const { dedupeByTitle, isNearDuplicate, isStrongDuplicate, clusterNearDuplicates } = require("./domain/dedupe");
-const { pickOnboardingLinks } = require("./domain/onboarding");
+const {
+  pickOnboardingLinks,
+  buildOnboardingProfilePrompt,
+  parseOnboardingProfileResponse,
+  buildEcosystemMapPrompt,
+  parseEcosystemMapResponse,
+  buildVeillePlanPrompt,
+  parseVeillePlanResponse,
+  buildConfigDocsFromDraft,
+} = require("./domain/onboarding");
 const { buildEvaluatePrompt, parseEvaluateResponse } = require("./domain/evaluate");
 const { pickRelevant } = require("./domain/retrieve");
 const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
@@ -112,6 +123,9 @@ async function closeRenderBrowser() {
  * permanence et n'atteignent jamais l'inactivité réseau → on attend le DOM puis un court délai
  * pour laisser le JS peupler la page. */
 async function fetchRendered(url) {
+  // Garde anti-SSRF sur l'URL initiale (les sous-requêtes de la page rendue restent sous la
+  // responsabilité du navigateur headless sandboxé — risque résiduel documenté dans netguard.js).
+  await assertSafePublicUrl(url);
   const browser = await getRenderBrowser();
   const page = await browser.newPage();
   try {
@@ -126,26 +140,68 @@ async function fetchRendered(url) {
 }
 
 /**
- * fetchSource(url) — récupère une source avec robustesse : UA navigateur, suivi des redirections,
- * timeout dur (12 s) pour ne pas bloquer un lot, et 1 nouvelle tentative sur erreur réseau
- * transitoire. Lève une erreur explicite sur statut HTTP non-2xx (comptée comme échec de santé).
+ * Garde anti-SSRF (audit pré-lancement 2026-07, B1) : toute URL fetchée par l'app (source
+ * configurée, URL d'onboarding, source candidate proposée par l'IA, redirection d'un site tiers)
+ * doit viser un hôte PUBLIC. Validation de forme (domain/netguard, pur) + résolution DNS ici :
+ * chaque adresse résolue est refusée si privée/link-local/loopback/metadata. Limite connue
+ * (documentée) : la résolution de contrôle et celle du fetch sont deux lookups distincts (fenêtre
+ * de DNS-rebinding théorique) — acceptable pour de la lecture de contenu public, ce garde bloque
+ * les canaux réalistes (URL directe, redirection, URL issue de l'IA).
+ */
+async function assertSafePublicUrl(urlString) {
+  const checked = checkPublicHttpUrl(urlString);
+  if (!checked.ok) throw new Error(`URL refusée (SSRF) : ${checked.reason}`);
+  const host = checked.url.hostname.replace(/^\[|\]$/g, "");
+  // IP littérale : déjà validée par checkPublicHttpUrl, pas de DNS à faire.
+  if (/^[\d.]+$/.test(host) || host.includes(":")) return checked.url;
+  let addrs;
+  try {
+    addrs = await dns.lookup(host, { all: true, verbatim: true });
+  } catch {
+    throw new Error(`fetch failed: DNS introuvable (${host})`);
+  }
+  for (const { address } of addrs) {
+    if (isForbiddenIp(address)) throw new Error(`URL refusée (SSRF) : ${host} résout vers une adresse interne`);
+  }
+  return checked.url;
+}
+
+/**
+ * fetchSource(url) — récupère une source avec robustesse : UA navigateur, timeout dur (12 s) pour
+ * ne pas bloquer un lot, et 1 nouvelle tentative sur erreur réseau transitoire. Lève une erreur
+ * explicite sur statut HTTP non-2xx (comptée comme échec de santé). Les redirections sont suivies
+ * MANUELLEMENT (max 5) pour re-passer chaque saut par la garde anti-SSRF — un site public qui
+ * répond 302 vers une adresse interne est refusé.
  */
 async function fetchSource(url) {
   const attempt = async () => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
-    try {
-      const res = await fetch(url, { headers: SOURCE_FETCH_HEADERS, redirect: "follow", signal: controller.signal });
-      if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
-      return await res.text();
-    } finally {
-      clearTimeout(timer);
+    let current = String(url);
+    for (let hop = 0; hop < 5; hop++) {
+      await assertSafePublicUrl(current);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+      try {
+        const res = await fetch(current, { headers: SOURCE_FETCH_HEADERS, redirect: "manual", signal: controller.signal });
+        if (res.status >= 300 && res.status < 400) {
+          const loc = res.headers.get("location");
+          if (!loc) throw new Error(`fetch failed: HTTP ${res.status} sans Location`);
+          current = new URL(loc, current).toString();
+          continue;
+        }
+        if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
+        return await res.text();
+      } finally {
+        clearTimeout(timer);
+      }
     }
+    throw new Error("fetch failed: trop de redirections");
   };
   try {
     return await attempt();
   } catch (err) {
-    // Retente une fois uniquement sur erreur réseau/timeout (pas sur un 4xx déterministe).
+    // Jamais de retry sur un refus SSRF (déterministe) ; retente une fois uniquement sur erreur
+    // réseau/timeout (pas sur un 4xx déterministe).
+    if (/URL refusée/.test(String(err.message))) throw err;
     if (/HTTP [45]\d\d/.test(String(err.message)) && !/HTTP 429|HTTP 5\d\d/.test(String(err.message))) throw err;
     return await attempt();
   }
@@ -220,6 +276,38 @@ const HEAVY_CALLABLE_OPTS = { ...CALLABLE_OPTS, timeoutSeconds: 540, memory: "51
  * boucle strictement séquentielle qui faisait exploser la durée. */
 const AI_CONCURRENCY = 5;
 
+/**
+ * Limiteur GLOBAL de concurrence (audit pré-lancement 2026-07, M6). runInBatches borne le nombre
+ * de SOURCES traitées en parallèle, mais chaque source classifiait ses items via un
+ * Promise.allSettled non borné → concurrence Vertex réelle ≈ 5 sources × 8 items = 40 appels
+ * simultanés (pics 429). Ce sémaphore borne les appels de CLASSIFICATION eux-mêmes, quelle que
+ * soit la structure des lots au-dessus.
+ */
+function makeLimiter(max) {
+  let active = 0;
+  const queue = [];
+  return async (task) => {
+    if (active >= max) await new Promise((resolve) => queue.push(resolve));
+    active += 1;
+    try {
+      return await task();
+    } finally {
+      active -= 1;
+      const wake = queue.shift();
+      if (wake) wake();
+    }
+  };
+}
+const vertexLimit = makeLimiter(AI_CONCURRENCY);
+
+/** Plafond de sources par run de sync (audit M7) : borne le coût IA d'un run quel que soit le
+ * nombre de sources actives configurées. Au-delà, rotation quotidienne pour ne pas affamer la
+ * queue de liste (les sources excédentaires passent aux runs suivants). */
+const MAX_SOURCES_PER_RUN = 80;
+/** Verrou de sync (audit M9) : un run est considéré mort (verrou périmé) au-delà de ce délai —
+ * légèrement supérieur au timeout dur des fonctions (540 s). */
+const SYNC_LOCK_TTL_MS = 12 * 60 * 1000;
+
 /** Statuts « PUBLIÉS » (visibles du fil/radar et comptés dans les agrégats). `pending` (en attente
  * d'évaluation) et `rejected` (écarté par l'évaluateur) et `archived` (doublon/clos) en sont exclus. */
 const PUBLISHED_STATUSES = new Set(["new", "reviewed", "actioned"]);
@@ -241,14 +329,27 @@ async function runInBatches(items, size, worker) {
  * OTHER apps too). To never read/write/overwrite their data:
  *  - FIRESTORE_DATABASE_ID: a dedicated NAMED Firestore database (e.g. "strategic360"), entirely
  *    separate from "(default)" (and from any other named database other apps use). Set via the
- *    functions/.env(.<project-id>) file — see functions/.env.example. Falls back to "(default)"
- *    so this codebase still works standalone against a project with no other apps.
+ *    functions/.env(.<project-id>) file — see functions/.env.example.
  *  - STORAGE_BUCKET_NAME: a dedicated Cloud Storage bucket (e.g. "strategic360"), separate from
  *    the project's default bucket other apps may already be using. Falls back to the default
  *    bucket (`getStorage().bucket()` with no args) when unset.
  * See docs/BUILD_KIT.md / README.md "Checklist de déploiement" for the full multi-app rationale.
+ *
+ * FAIL-FAST (audit pré-lancement 2026-07, M2) : plus AUCUN repli silencieux vers "(default)".
+ * Un oubli de la variable au déploiement faisait écrire toute l'app dans la base par défaut du
+ * projet partagé — c.-à-d. potentiellement la base d'une AUTRE app. On refuse désormais de
+ * démarrer : le déploiement échoue bruyamment au lieu de corrompre un tiers. Un déploiement
+ * mono-app qui VEUT la base par défaut doit le dire explicitement (ALLOW_DEFAULT_DATABASE=true).
  */
-const FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || "(default)";
+const FIRESTORE_DATABASE_ID =
+  process.env.FIRESTORE_DATABASE_ID ||
+  (process.env.ALLOW_DEFAULT_DATABASE === "true" ? "(default)" : null);
+if (!FIRESTORE_DATABASE_ID) {
+  throw new Error(
+    "FIRESTORE_DATABASE_ID manquant : ce projet Firebase est PARTAGÉ — configurer la base nommée de l'app " +
+    "(functions/.env.<project-id>) ou poser explicitement ALLOW_DEFAULT_DATABASE=true pour un projet mono-app."
+  );
+}
 const STORAGE_BUCKET_NAME = process.env.STORAGE_BUCKET_NAME || undefined;
 // Fuseau des schedulers (Phase 0 produit) : paramétrable par déploiement client (les onSchedule sont
 // statiques au déploiement — c'est le bon niveau). Défaut = Neurones (Côte d'Ivoire).
@@ -699,7 +800,9 @@ async function classifyRawText(rawText, watchlistEntities, context, profile) {
     pubDate: context && context.defaultDate ? context.defaultDate : undefined,
     profile, // profil client (Phase 0) : blocs client-spécifiques + taxonomie ; absent → défauts Neurones
   });
-  const response = await generateJson(prompt);
+  // Sémaphore global (M6) : borne la concurrence Vertex réelle à AI_CONCURRENCY, y compris quand
+  // plusieurs sources classifient leurs items en parallèle.
+  const response = await vertexLimit(() => generateJson(prompt));
   // La taxonomie du profil sert AUSSI à valider/normaliser la sortie (axes/subtypes custom).
   return parseClassificationResponse(response, { ...(context || {}), taxonomy: profile && profile.taxonomy });
 }
@@ -771,6 +874,18 @@ async function runSyncSources(db) {
     db.collection("intelWatchlist").where("active", "==", true).get(),
   ]);
   const watchlistEntities = watchlistSnap.docs.map((d) => ({ name: d.data().name, type: d.data().type }));
+
+  // Plafond de coût par run (audit M7) : le nombre de sources actives n'était pas borné — 200
+  // sources × 8 items = ~1600 appels Vertex/run. Au-delà du plafond, ROTATION quotidienne (le point
+  // de départ avance chaque jour) pour que toutes les sources finissent par passer sans affamer la
+  // fin de liste.
+  let sourceDocs = sourcesSnap.docs;
+  if (sourceDocs.length > MAX_SOURCES_PER_RUN) {
+    const start = (new Date().getDate() * MAX_SOURCES_PER_RUN) % sourceDocs.length;
+    sourceDocs = [...sourceDocs.slice(start), ...sourceDocs.slice(0, start)].slice(0, MAX_SOURCES_PER_RUN);
+    logger.warn(`syncSources: ${sourcesSnap.size} sources actives > plafond ${MAX_SOURCES_PER_RUN}/run — rotation quotidienne (départ index ${start})`);
+  }
+
   // Profil client (Phase 0 produit) : surcharge éventuelle de la notation des sources par domaine.
   // Absent → défaut Neurones (aucun changement de comportement).
   const clientProfile = await loadClientProfile(db);
@@ -795,9 +910,36 @@ async function runSyncSources(db) {
   // Suivi de PROGRESSION (UX 2026-07) : on publie l'avancement dans summaries/syncStatus pour que le
   // front affiche « X/Y sources · N signaux · phase » en direct au lieu d'un spinner aveugle.
   // Best-effort : toute écriture échouée est ignorée, jamais d'impact sur la synchro.
-  const total = sourcesSnap.size;
-  const writeSyncStatus = (patch) => db.doc("summaries/syncStatus").set(patch, { merge: true }).catch(() => {});
-  await writeSyncStatus({ running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null, total, processed: 0, created: 0, phase: "ingestion" });
+  const total = sourceDocs.length;
+  const statusRef = db.doc("summaries/syncStatus");
+  const writeSyncStatus = (patch) => statusRef.set(patch, { merge: true }).catch(() => {});
+
+  // VERROU de run (audit M9) : la sync manuelle (syncSourcesNow) et le cron quotidien pouvaient
+  // tourner EN MÊME TEMPS → double coût IA, doublons (dedupeIndex non partagé) et courses sur
+  // syncStatus. Acquisition transactionnelle : si un run est marqué running depuis moins de
+  // SYNC_LOCK_TTL_MS, on refuse de démarrer. Au-delà du TTL le verrou est considéré périmé (run tué
+  // au timeout — c'est aussi la récupération du bug M8 « spinner infini » : le prochain run reprend
+  // la main, et le front ignore un running plus vieux que le TTL).
+  let lockAcquired = false;
+  try {
+    lockAcquired = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(statusRef);
+      const cur = snap.exists ? snap.data() : {};
+      const startedMs = cur.startedAt && typeof cur.startedAt.toMillis === "function" ? cur.startedAt.toMillis() : 0;
+      if (cur.running === true && startedMs && Date.now() - startedMs < SYNC_LOCK_TTL_MS) return false;
+      tx.set(statusRef, { running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null, total, processed: 0, created: 0, phase: "ingestion" }, { merge: true });
+      return true;
+    });
+  } catch (e) {
+    // Transaction indisponible → on continue SANS verrou (mieux vaut une sync que pas de sync).
+    logger.warn(`syncSources: verrou indisponible (${e.message}) — run sans verrou`);
+    lockAcquired = true;
+    await writeSyncStatus({ running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null, total, processed: 0, created: 0, phase: "ingestion" });
+  }
+  if (!lockAcquired) {
+    logger.warn("syncSources: un run est déjà en cours (verrou actif) — démarrage refusé");
+    return { sourcesTotal: sourcesSnap.size, sourcesProcessed: 0, itemsCreated: 0, deduped: 0, evaluated: 0, rejected: 0, skipped: true };
+  }
 
   // Traite UNE source : fetch + extraction + classification. Renvoie le nombre d'items créés.
   // Isolé pour être exécuté en LOTS PARALLÈLES (runInBatches) — la boucle séquentielle précédente
@@ -916,9 +1058,14 @@ async function runSyncSources(db) {
     finally { doneCount += 1; createdCount += n || 0; void writeSyncStatus({ processed: doneCount, created: createdCount }); }
   };
 
+  // M8 : quoi qu'il arrive après l'acquisition du verrou, une exception ne doit JAMAIS laisser
+  // summaries/syncStatus figé à running:true (spinner infini côté front). Le catch libère le
+  // verrou en phase "error" puis propage. (Le kill dur au timeout 540 s reste couvert par le TTL
+  // du verrou + l'ignorance des runs périmés côté front.)
+  try {
   let settled;
   try {
-    settled = await runInBatches(sourcesSnap.docs, AI_CONCURRENCY, trackedSource);
+    settled = await runInBatches(sourceDocs, AI_CONCURRENCY, trackedSource);
   } finally {
     // Toujours refermer le navigateur headless (s'il a été lancé) pour libérer la mémoire du run.
     await closeRenderBrowser();
@@ -952,8 +1099,13 @@ async function runSyncSources(db) {
   // Statut final : synchro terminée (le front repasse le bouton en état normal).
   await writeSyncStatus({ running: false, finishedAt: FieldValue.serverTimestamp(), processed: doneCount, created: createdCount, evaluated: evaluated.published, phase: "done" });
 
-  logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourcesSnap.size} itemsCreated=${itemsCreated} deduped=${deduped.archived} évalués=${evaluated.evaluated} (pub ${evaluated.published}/rej ${evaluated.rejected})`);
+  logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourceDocs.length} itemsCreated=${itemsCreated} deduped=${deduped.archived} évalués=${evaluated.evaluated} (pub ${evaluated.published}/rej ${evaluated.rejected})`);
   return { sourcesTotal: sourcesSnap.size, sourcesProcessed, itemsCreated, deduped: deduped.archived, evaluated: evaluated.published, rejected: evaluated.rejected };
+  } catch (err) {
+    // Libération du verrou en échec (M8) : le front sort du spinner et le prochain run peut démarrer.
+    await writeSyncStatus({ running: false, finishedAt: FieldValue.serverTimestamp(), phase: "error" });
+    throw err;
+  }
 }
 
 /**
@@ -2356,6 +2508,180 @@ exports.copiloteChat = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
 });
 
 /* ------------------------------------------------------------------------------------------- *
+ * ONBOARDING AUTO (Phase 1 « produit agnostique », P3) — `onboardCompany` orchestre, à partir de
+ * l'URL du site d'un prospect/client, la génération de sa configuration de veille : crawl du site
+ * (domain/onboarding.pickOnboardingLinks + crawlSite) → 3 appels IA (profil+contexte, écosystème,
+ * plan de veille) → validation technique des sources candidates (validateCandidateSource) → écriture
+ * d'un BROUILLON éditable `config/onboardingDraft`. RIEN n'est activé : aucun doc `config/*` de
+ * production n'est touché ici (c'est `applyOnboardingDraft`, P4, après revue humaine). Exec-gated :
+ * paramétrer l'outil pour une entreprise est une opération d'administration/déploiement.
+ * ------------------------------------------------------------------------------------------- */
+exports.onboardCompany = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "1GiB" }, async (request) => {
+  requireExecCaller(request, "générer la configuration de veille d'une entreprise (onboarding)");
+  const { url, docsText, hints, maxPages, validateSources } = request.data || {};
+  if (typeof url !== "string" || !/^https?:\/\//i.test(url.trim())) {
+    throw new HttpsError("invalid-argument", "Une URL http(s) du site de l'entreprise est requise.");
+  }
+  const siteUrl = url.trim();
+  const pages = Math.max(1, Math.min(8, Number(maxPages) || 5));
+
+  // 1) Crawl fail-soft du site (home + liens internes prioritaires).
+  let siteText = "";
+  try {
+    siteText = await crawlSite(siteUrl, { maxPages: pages });
+  } finally {
+    await closeRenderBrowser();
+  }
+  if (!siteText || siteText.length < 200) {
+    throw new HttpsError("failed-precondition", "Impossible d'extraire assez de texte depuis ce site (page inaccessible, vide ou entièrement dynamique). Vérifiez l'URL.");
+  }
+  const safeDocs = typeof docsText === "string" ? docsText.slice(0, 8000) : "";
+  const safeHints = hints && typeof hints === "object" ? hints : {};
+
+  // 2) IA — profil + contexte.
+  let profileOut;
+  try {
+    profileOut = parseOnboardingProfileResponse(await generateJson(buildOnboardingProfilePrompt(siteText, safeDocs, safeHints)));
+  } catch (err) {
+    logger.error(`onboardCompany: profil FAILED — ${err.message}`, { err });
+    throw new HttpsError("internal", "L'IA n'a pas pu établir le profil de l'entreprise (réessayez).");
+  }
+  if (!profileOut) throw new HttpsError("failed-precondition", "Profil inexploitable : le site ne contient pas assez d'informations d'entreprise.");
+
+  // 3) IA — écosystème (entités typées + axes + sous-types).
+  let ecosystem = { entities: [], axes: [], subtypes: [] };
+  try {
+    ecosystem = parseEcosystemMapResponse(await generateJson(buildEcosystemMapPrompt(profileOut.contextText, siteText))) || ecosystem;
+  } catch (err) {
+    logger.warn(`onboardCompany: écosystème échoué (${err.message}) — poursuite sans`);
+  }
+
+  // 4) IA — plan de veille (axes prioritaires, guidage classifieur, mots-clés, sources candidates).
+  let plan = { axes: [], classifierGuidance: "", homonymyRule: "", keywords: [], candidateSources: [] };
+  try {
+    plan = parseVeillePlanResponse(await generateJson(buildVeillePlanPrompt(profileOut.profile, ecosystem.entities))) || plan;
+  } catch (err) {
+    logger.warn(`onboardCompany: plan de veille échoué (${err.message}) — poursuite sans`);
+  }
+
+  // 5) Validation TECHNIQUE des sources candidates (on ne retient pas une URL non fetchable/vide).
+  //    Désactivable via validateSources:false (mode rapide / prévisualisation).
+  let candidateSources = plan.candidateSources;
+  if (validateSources !== false && candidateSources.length) {
+    const settled = await runInBatches(candidateSources, AI_CONCURRENCY, (s) => validateCandidateSource(s.url, s.kind));
+    candidateSources = candidateSources.map((s, i) => {
+      const r = settled[i];
+      const v = r && r.status === "fulfilled" ? r.value : { ok: false, itemCount: 0, reason: "validation échouée" };
+      return { ...s, valid: !!v.ok, itemCount: v.itemCount || 0, validationReason: v.reason || "" };
+    });
+  } else {
+    candidateSources = candidateSources.map((s) => ({ ...s, valid: null, itemCount: 0, validationReason: "" }));
+  }
+  const validCount = candidateSources.filter((s) => s.valid === true).length;
+
+  // 6) Écriture du BROUILLON (overwrite complet ; aucun doc de prod modifié).
+  const draft = {
+    status: "draft",
+    sourceUrl: siteUrl,
+    hints: safeHints,
+    profile: profileOut.profile,
+    contextText: profileOut.contextText,
+    ecosystem,
+    plan: { ...plan, candidateSources },
+    stats: {
+      siteTextLength: siteText.length,
+      entities: ecosystem.entities.length,
+      axes: (plan.axes.length || ecosystem.axes.length),
+      candidateSources: candidateSources.length,
+      validSources: validCount,
+    },
+    createdBy: request.auth?.token?.email || request.auth?.uid || null,
+    createdAt: FieldValue.serverTimestamp(),
+  };
+  await firestoreDb().doc("config/onboardingDraft").set(draft, { merge: false });
+  logger.info(`onboardCompany: brouillon écrit pour ${siteUrl} — ${ecosystem.entities.length} entités, ${candidateSources.length} sources (${validCount} valides).`);
+
+  // serverTimestamp() n'est pas encore résolu dans l'objet local → renvoyer sans le sentinel.
+  return { ...draft, createdAt: null };
+});
+
+/* ------------------------------------------------------------------------------------------- *
+ * ONBOARDING AUTO (Phase 1, P4) — `applyOnboardingDraft` transforme le BROUILLON (revu/édité par un
+ * humain, P5) en docs `config/*` de PRODUCTION + graines de veille, en une écriture atomique :
+ *  - config/profile          ← brouillon.profile
+ *  - config/veilleTaxonomy   ← axes + sous-types (omis si vides : on ne remplace pas un défaut par du vide)
+ *  - frameworks/companyContext ← contexte + guidage classifieur + homonymie + concurrents cités
+ *  - intelSources (graines)  ← sources candidates VALIDÉES (créées INACTIVES par défaut : revue avant sync)
+ *  - intelWatchlist (graines) ← entités typées de l'écosystème
+ * Exec-gated. Idempotent (ids de source/entité déterministes). Le front (P5) peut passer un brouillon
+ * édité via data.draft ; sinon on applique le doc stocké. RIEN d'autre que ces docs n'est touché
+ * (scoring/offerMapping/sourceAuthority restent aux défauts, non déductibles d'un site).
+ * ------------------------------------------------------------------------------------------- */
+exports.applyOnboardingDraft = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  requireExecCaller(request, "appliquer la configuration d'onboarding");
+  const db = firestoreDb();
+  const data = request.data || {};
+  let draft = data.draft && typeof data.draft === "object" ? data.draft : null;
+  if (!draft) {
+    const snap = await db.doc("config/onboardingDraft").get();
+    if (!snap.exists) throw new HttpsError("failed-precondition", "Aucun brouillon d'onboarding à appliquer. Lancez d'abord onboardCompany.");
+    draft = snap.data();
+  }
+  const built = buildConfigDocsFromDraft(draft);
+  if (!built) throw new HttpsError("failed-precondition", "Brouillon incomplet (profil sans nom d'entreprise) — impossible à appliquer.");
+
+  const seedSources = data.seedSources !== false;
+  const seedWatchlist = data.seedWatchlist !== false;
+  // Sources créées INACTIVES par défaut : une source qui synchronise doit être revue d'abord.
+  const activateSources = data.activateSources === true;
+
+  const batch = db.batch();
+  batch.set(db.doc("config/profile"), built.profileDoc, { merge: true });
+  if (Object.keys(built.taxonomyDoc).length) batch.set(db.doc("config/veilleTaxonomy"), built.taxonomyDoc, { merge: true });
+  if (built.contextText) {
+    batch.set(db.doc("frameworks/companyContext"), { content: { text: built.contextText }, source: "onboarding", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  }
+
+  let sourcesWritten = 0;
+  if (seedSources) {
+    for (const s of built.sources) {
+      batch.set(db.doc(`intelSources/${s.id}`), {
+        name: s.name, url: s.url, kind: s.kind, axis: s.axis || null,
+        active: activateSources, source: "onboarding", createdAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      sourcesWritten += 1;
+    }
+  }
+  let watchlistWritten = 0;
+  if (seedWatchlist) {
+    for (const w of built.watchlist) {
+      batch.set(db.doc(`intelWatchlist/${w.id}`), {
+        name: w.name, type: w.type, geo: w.geo || null, active: true, source: "onboarding",
+      }, { merge: true });
+      watchlistWritten += 1;
+    }
+  }
+  batch.set(db.doc("config/onboardingDraft"), {
+    status: "applied", appliedAt: FieldValue.serverTimestamp(), appliedBy: request.auth?.token?.email || request.auth?.uid || null,
+  }, { merge: true });
+  await batch.commit();
+
+  // Relecture immédiate par les prochaines synchros (profil + contexte).
+  invalidateCompanyContextCache();
+
+  logger.info(`applyOnboardingDraft: config écrite (${built.profileDoc.companyName}) — ${sourcesWritten} sources${activateSources ? " actives" : " inactives"}, ${watchlistWritten} entités.`);
+  return {
+    ok: true,
+    companyName: built.profileDoc.companyName,
+    axes: (built.taxonomyDoc.axes || []).length,
+    subtypes: (built.taxonomyDoc.subtypes || []).length,
+    sourcesWritten,
+    watchlistWritten,
+    sourcesActive: activateSources,
+  };
+});
+
+/* ------------------------------------------------------------------------------------------- *
  * Sync quanti interne depuis nt360 ("données internes disponibles dans une autre application",
  * 2026-07-02) — the internal P&L/LIVE/Facturation/fiche data lives in the SIBLING app nt360's
  * named Firestore database (same shared project), already parsed from its own Excel imports.
@@ -2903,12 +3229,21 @@ exports.scheduledFirestoreExport = onSchedule(
   { schedule: "0 2 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1" },
   async () => {
     try {
+      // Audit pré-lancement 2026-07 (M1) : l'export doit viser LA base de CETTE app (jamais
+      // "(default)", qui appartient potentiellement à une autre app du projet partagé) et un
+      // bucket DÉDIÉ explicite (jamais le bucket appspot par défaut, lui aussi partagé). Sans
+      // bucket configuré, on n'exporte PAS (mieux vaut un backup manquant signalé qu'une fuite
+      // des données d'un tiers vers un bucket commun).
+      const exportBucket = process.env.FIRESTORE_EXPORT_BUCKET;
+      if (!exportBucket) {
+        logger.error("scheduledFirestoreExport: FIRESTORE_EXPORT_BUCKET non configuré — export SAUTÉ (configurer un bucket dédié à l'app).");
+        return;
+      }
       const client = new firestoreAdminV1.FirestoreAdminClient();
       const projectId = await client.getProjectId();
-      const bucket = process.env.FIRESTORE_EXPORT_BUCKET || `${projectId}.appspot.com`;
       const dateFolder = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-      const outputUriPrefix = `gs://${bucket}/scheduled-exports/${dateFolder}`;
-      const databaseName = client.databasePath(projectId, "(default)");
+      const outputUriPrefix = `gs://${exportBucket}/scheduled-exports/${dateFolder}`;
+      const databaseName = client.databasePath(projectId, FIRESTORE_DATABASE_ID);
 
       const [operation] = await client.exportDocuments({
         name: databaseName,
@@ -2963,8 +3298,24 @@ exports.setUserRole = onCall(CALLABLE_OPTS, async (request) => {
   const isCallerDirection = request.auth != null && callerRole === "direction";
 
   if (!bootstrapDone) {
-    // First-ever call: only allowed to bootstrap the first `direction` user, and only if
-    // no admin caller is required yet (nobody has the claim to call it normally).
+    // Bootstrap VERROUILLÉ (audit pré-lancement 2026-07, M3) : l'Auth du projet est PARTAGÉE entre
+    // apps — un chemin qui pose le claim `direction` sans preuve était une course gagnable par
+    // n'importe quel compte du projet. Désormais le bootstrap exige : (1) l'opt-in explicite
+    // ALLOW_ROLE_BOOTSTRAP=true posé temporairement au déploiement initial, (2) un appelant
+    // AUTHENTIFIÉ, (3) l'auto-attribution uniquement (uid = soi-même). Hors fenêtre de bootstrap,
+    // provisionner via le script admin (functions/adminSetUserRole.js, service account).
+    if (process.env.ALLOW_ROLE_BOOTSTRAP !== "true") {
+      throw new HttpsError(
+        "failed-precondition",
+        "Bootstrap désactivé : provisionner le premier compte 'direction' via le script admin, ou déployer temporairement avec ALLOW_ROLE_BOOTSTRAP=true."
+      );
+    }
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Le bootstrap requiert un appelant authentifié.");
+    }
+    if (uid !== request.auth.uid) {
+      throw new HttpsError("permission-denied", "Le bootstrap ne peut attribuer 'direction' qu'à l'appelant lui-même.");
+    }
     if (role !== "direction") {
       throw new HttpsError(
         "failed-precondition",

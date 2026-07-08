@@ -174,3 +174,30 @@ describe("config/permissions", () => {
     }
   );
 });
+
+// Audit pré-lancement 2026-07 (M4) : les autres docs config/* (dont le brouillon d'onboarding,
+// qui contient le crawl concurrentiel + l'analyse IA) sont réservés en LECTURE aux exécutifs.
+describe("config/* (hors permissions) — lecture exec-only", () => {
+  it.each(EXEC_ROLES)("read onboardingDraft allowed for exec role=%s", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertSucceeds(db.doc("config/onboardingDraft").get());
+  });
+
+  it.each(ALL_ROLES.filter((r) => !EXEC_ROLES.includes(r)))(
+    "read onboardingDraft rejected for role=%s",
+    async (role) => {
+      const db = ctxFor(role).firestore();
+      await assertFails(db.doc("config/onboardingDraft").get());
+    }
+  );
+
+  it("config/permissions reste lisible par un rôle non-exec (RBAC front)", async () => {
+    const db = ctxFor("commercial").firestore();
+    await assertSucceeds(db.doc("config/permissions").get());
+  });
+
+  it.each(ALL_ROLES)("write config/onboardingDraft always rejected for role=%s", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertFails(db.doc("config/onboardingDraft").set({ status: "draft" }));
+  });
+});

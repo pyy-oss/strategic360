@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import { T } from "../../design/tokens";
@@ -13,12 +13,12 @@ const NAV_LABEL = (k: string) => NAV.find(([kk]) => kk === k)?.[1] ?? k;
  * vues. Rang 1 : les 4 groupes (le groupe actif surligné). Rang 2 : les vues du groupe actif. Rien
  * n'est masqué, le contexte courant est toujours visible, et ça tient à toute largeur (chaque rang,
  * court, passe à la ligne au besoin). Cliquer un groupe ouvre sa vue principale. */
-function GroupedNav({ view, setView }: { view: string; setView: (v: string) => void }) {
-  const activeGroup = NAV_GROUPS.find((g) => g.items.includes(view)) ?? NAV_GROUPS[0];
+function GroupedNav({ view, setView, groups }: { view: string; setView: (v: string) => void; groups: typeof NAV_GROUPS }) {
+  const activeGroup = groups.find((g) => g.items.includes(view)) ?? groups[0];
   return (
     <div style={{ marginBottom: 18 }}>
       <div style={{ display: "flex", gap: 2, flexWrap: "wrap", borderBottom: `1px solid ${T.line}` }}>
-        {NAV_GROUPS.map((g) => {
+        {groups.map((g) => {
           const on = g.label === activeGroup.label;
           return (
             <button
@@ -68,8 +68,12 @@ import { Execution } from "./views/Execution";
 import { PlanAction } from "./views/PlanAction";
 import { Briefing } from "./views/Briefing";
 import { Copilote } from "./views/Copilote";
+import { Onboarding } from "./views/Onboarding";
+import { useIsExec } from "../../lib/rbac";
 
 const VIEW_KEYS = NAV.map(([k]) => k);
+/** Vues réservées aux profils exécutifs (paramétrage produit) — masquées de la nav aux autres. */
+const EXEC_ONLY_VIEWS = new Set(["onboarding"]);
 
 /** App shell — header (logo + lens pill selector) + nav tab bar + view switcher + footer.
  * Ported from the maquette's `export default function App()`. The active view now comes from
@@ -81,8 +85,17 @@ export default function VeilleApp() {
   const navigate = useNavigate();
   const { view } = useParams<{ view: string }>();
   const { user, role } = useAuthClaims();
+  const isExec = useIsExec();
 
-  if (!view || !VIEW_KEYS.includes(view)) {
+  // Nav filtrée par rôle : le groupe « Config » (onboarding) n'apparaît qu'aux exécutifs.
+  const visibleGroups = useMemo(
+    () => NAV_GROUPS
+      .map((g) => ({ ...g, items: g.items.filter((k) => isExec || !EXEC_ONLY_VIEWS.has(k)) }))
+      .filter((g) => g.items.length > 0),
+    [isExec]
+  );
+
+  if (!view || !VIEW_KEYS.includes(view) || (EXEC_ONLY_VIEWS.has(view) && !isExec)) {
     return <Navigate to="/veille/radar" replace />;
   }
   const setView = (v: string) => navigate(`/veille/${v}`);
@@ -139,7 +152,7 @@ export default function VeilleApp() {
           </button>
         </div>
       </header>
-      <GroupedNav view={view} setView={setView} />
+      <GroupedNav view={view} setView={setView} groups={visibleGroups} />
 
       {view === "radar" && <RadarExecutif lens={lens} setView={setView} />}
       {view === "fil" && <Fil />}
@@ -157,6 +170,7 @@ export default function VeilleApp() {
       {view === "plan" && <PlanAction />}
       {view === "briefing" && <Briefing />}
       {view === "copilote" && <Copilote />}
+      {view === "onboarding" && <Onboarding />}
 
       <footer style={{ marginTop: 22, paddingTop: 14, borderTop: `1px solid ${T.line}`, fontSize: 11.5, color: T.faint, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <span>Veille Stratégique · données réelles (Firestore) · IA Gemini avec revue humaine</span>

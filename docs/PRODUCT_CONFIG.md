@@ -96,3 +96,40 @@ Le profil est assemblé par `loadClientProfile(db)` (cache 10 min) et fusionné 
 Après avoir écrit ces docs, lancer `syncSourcesNow` puis `enrichNow` (ou attendre les schedulers) pour
 peupler la première cartographie. La **Phase 1 (onboarding auto)** générera ces docs automatiquement à
 partir du site web + des documents corporate du client.
+
+## Onboarding auto (Phase 1) — `config/onboardingDraft`
+
+Plutôt que de rédiger les docs `config/*` à la main, le callable **`onboardCompany`** (exec
+uniquement) les pré-génère à partir de l'URL du site du client :
+
+1. **Crawl** de la home + des pages internes prioritaires (à-propos / offres / clients / contact).
+2. **3 appels IA** : (a) profil + contexte, (b) écosystème (entités typées : concurrents, clients,
+   partenaires, régulateurs, éditeurs + axes de veille du secteur), (c) plan de veille (axes
+   prioritaires, guidage du classifieur, règle d'homonymie, mots-clés, **sources candidates**).
+3. **Validation technique** de chaque source candidate (`validateCandidateSource` : la source
+   renvoie-t-elle réellement des items exploitables ?) — désactivable via `validateSources:false`.
+4. Écriture d'un **BROUILLON** `config/onboardingDraft` (`status:"draft"`). **Aucun doc `config/*` de
+   production n'est modifié** : le brouillon est destiné à une revue humaine (écran d'onboarding, P5)
+   puis à un « appliquer » explicite (`applyOnboardingDraft`, P4) qui, seul, écrit les `config/*`.
+
+Entrée : `onboardCompany({ url, docsText?, hints?: {name?, sector?}, maxPages?, validateSources? })`.
+Le contrat garantit l'**objectivité** (aucun fait non présent dans le texte du site) et ne persiste
+jamais une source non fetchable/vide.
+
+### Application du brouillon — `applyOnboardingDraft` (P4)
+
+Une fois le brouillon revu (écran d'onboarding, P5), **`applyOnboardingDraft`** (exec) le transforme en
+docs `config/*` de production en une écriture atomique :
+
+- `config/profile` ← `brouillon.profile`
+- `config/veilleTaxonomy` ← axes (union plan + écosystème) + sous-types (**omis si vides** : on ne
+  remplace jamais un défaut par du vide)
+- `frameworks/companyContext` ← contexte + guidage du classifieur + règle d'homonymie + concurrents cités
+- **graines** `intelSources` ← sources candidates **validées** (créées **inactives** par défaut : une
+  source qui synchronise doit être revue) et `intelWatchlist` ← entités typées de l'écosystème
+
+Entrée : `applyOnboardingDraft({ draft?, seedSources?, seedWatchlist?, activateSources? })`. `draft`
+permet à l'écran de revue d'appliquer une version **éditée** ; sinon le doc stocké est appliqué. Les
+ids de source/entité sont **déterministes** (idempotent à la ré-application). `scoring`,
+`offerMapping` et `sourceAuthority` ne sont **pas** dérivables d'un site → laissés aux défauts. Le
+brouillon est marqué `status:"applied"` et les caches profil/contexte sont invalidés.

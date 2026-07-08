@@ -146,7 +146,7 @@ export function useCopiloteAccounts(): {
 
   const reload = useCallback(() => {
     setLoading(true);
-    const call = httpsCallable<void, { accounts: CopiloteAccount[]; scoped: boolean }>(functions, "listCopiloteAccounts");
+    const call = httpsCallable<void, { accounts: CopiloteAccount[]; scoped: boolean }>(functions, "listCopiloteAccounts", HEAVY_CALL);
     call()
       .then(({ data }) => {
         setAccounts((data.accounts || []).map(normalizeAccount));

@@ -250,10 +250,95 @@ function pickOnboardingLinks(html, baseUrl) {
   return [...picked.values()];
 }
 
+/* ------------------------------------------------------------------------------------------- *
+ * Étape 6 (P4) — MAPPING brouillon -> docs `config/*` de production (PUR, testable). Traduit le
+ * brouillon `config/onboardingDraft` (sortie de onboardCompany) en la forme exacte attendue par
+ * loadClientProfile (config/profile, config/veilleTaxonomy) + le contexte (frameworks/companyContext)
+ * + les graines de sources (intelSources) et d'entités (intelWatchlist). L'écriture Firestore
+ * (applyOnboardingDraft) vit dans index.js. On ne dérive QUE ce qui est présent dans le brouillon —
+ * scoring/offerMapping/sourceAuthority restent aux défauts (non déductibles d'un site).
+ * ------------------------------------------------------------------------------------------- */
+function slugifyName(s) {
+  return String(s == null ? "" : s)
+    .toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+}
+
+/** Identifiant déterministe (donc idempotent à la ré-application) d'une source depuis son URL. */
+function sourceIdFromUrl(url) {
+  try {
+    const u = new URL(url);
+    const base = `${u.hostname.replace(/^www\./, "")}${u.pathname}`;
+    const slug = slugifyName(base) || "src";
+    return `onb-${slug}`;
+  } catch { return null; }
+}
+
+/** Assemble le texte de contexte entreprise (frameworks/companyContext.content.text) depuis le brouillon. */
+function assembleContextTextFromDraft(draft) {
+  const parts = [];
+  const ctx = coerceStr(draft && draft.contextText);
+  if (ctx) parts.push(ctx);
+  const plan = (draft && draft.plan) || {};
+  const cg = coerceStr(plan.classifierGuidance);
+  if (cg) parts.push(cg);
+  const hr = coerceStr(plan.homonymyRule);
+  if (hr) parts.push(hr);
+  const eco = (draft && draft.ecosystem) || {};
+  const comps = (Array.isArray(eco.entities) ? eco.entities : []).filter((e) => e && e.type === "concurrent" && coerceStr(e.name)).map((e) => coerceStr(e.name));
+  if (comps.length) parts.push(`CONCURRENTS : ${comps.slice(0, 20).join(", ")}.`);
+  return parts.join("\n\n");
+}
+
+/**
+ * buildConfigDocsFromDraft(draft) -> { profileDoc, taxonomyDoc, contextText, sources[], watchlist[] }
+ * ou null si le brouillon n'a pas de nom d'entreprise exploitable. PUR (aucune I/O).
+ *  - profileDoc  : surcharge config/profile (le sous-objet `profile` du brouillon).
+ *  - taxonomyDoc : { axes:[{key,alignWeight}], subtypes:[...] } — omis si vides (on ne remplace pas
+ *                  les défauts par du vide, cf. mergeProfile).
+ *  - sources     : graines intelSources { id, name, url, kind, axis } — sources VALIDÉES uniquement
+ *                  (valid===true) si une validation a eu lieu ; sinon toutes (valid null/undefined).
+ *  - watchlist   : graines intelWatchlist { id, name, type, geo } depuis les entités de l'écosystème.
+ */
+function buildConfigDocsFromDraft(draft) {
+  if (!draft || typeof draft !== "object") return null;
+  const profile = draft.profile && typeof draft.profile === "object" ? draft.profile : {};
+  if (!coerceStr(profile.companyName)) return null;
+  const eco = draft.ecosystem && typeof draft.ecosystem === "object" ? draft.ecosystem : {};
+  const plan = draft.plan && typeof draft.plan === "object" ? draft.plan : {};
+
+  // Axes : union plan de veille (prioritaire) + écosystème, dédupliqués par clé.
+  const axisMap = new Map();
+  for (const a of [...(Array.isArray(eco.axes) ? eco.axes : []), ...(Array.isArray(plan.axes) ? plan.axes : [])]) {
+    if (a && coerceStr(a.key)) axisMap.set(coerceStr(a.key), { key: coerceStr(a.key), alignWeight: clamp01(a.alignWeight, 0.6) });
+  }
+  const axes = [...axisMap.values()];
+  const subtypes = coerceStrArray(eco.subtypes, 40);
+  const taxonomyDoc = {};
+  if (axes.length) taxonomyDoc.axes = axes;
+  if (subtypes.length) taxonomyDoc.subtypes = subtypes;
+
+  const cands = Array.isArray(plan.candidateSources) ? plan.candidateSources : [];
+  const validated = cands.some((s) => s && s.valid === true) || cands.some((s) => s && s.valid === false);
+  const sources = cands
+    .filter((s) => s && coerceStr(s.url) && (validated ? s.valid === true : true))
+    .map((s) => ({ id: sourceIdFromUrl(coerceStr(s.url)), name: coerceStr(s.name) || coerceStr(s.url), url: coerceStr(s.url), kind: SOURCE_KINDS.includes(s.kind) ? s.kind : "web", axis: coerceStr(s.axis) }))
+    .filter((s) => s.id);
+
+  const watchlist = (Array.isArray(eco.entities) ? eco.entities : [])
+    .filter((e) => e && coerceStr(e.name))
+    .map((e) => ({ id: `onb-${slugifyName(coerceStr(e.name))}`, name: coerceStr(e.name), type: ENTITY_TYPES.includes(e.type) ? e.type : "concurrent", geo: coerceStrOrNull(e.geo) }))
+    .filter((e) => e.id !== "onb-");
+
+  return { profileDoc: profile, taxonomyDoc, contextText: assembleContextTextFromDraft(draft), sources, watchlist };
+}
+
 module.exports = {
   buildOnboardingProfilePrompt,
   parseOnboardingProfileResponse,
   pickOnboardingLinks,
+  buildConfigDocsFromDraft,
+  sourceIdFromUrl,
   buildEcosystemMapPrompt,
   parseEcosystemMapResponse,
   buildVeillePlanPrompt,

@@ -32,6 +32,11 @@ on:
         description: 'Tapez "confirm" pour valider'
         required: true
 
+# GITHUB_TOKEN réduit à la lecture (audit 2026-07) : ces workflows s'authentifient via le
+# service account GCP et n'écrivent jamais dans GitHub.
+permissions:
+  contents: read
+
 jobs:
   set-role:
     name: Assign role

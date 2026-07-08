@@ -18,6 +18,11 @@ on:
         description: 'Tapez "deploy" pour confirmer un déploiement dans le projet partagé propulse-business-87f7a'
         required: true
 
+# Durcissement (audit 2026-07) : ce workflow s'authentifie via le service account GCP — il n'a
+# besoin d'AUCUNE écriture GitHub. Le GITHUB_TOKEN est réduit à la lecture du contenu.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     name: Build & deploy
@@ -59,14 +64,16 @@ jobs:
           # App Check site key: not yet registered in the Firebase Console for this app — left
           # blank on purpose (see README.md § Créer le secret GitHub Actions / App Check step).
           VITE_FIREBASE_APPCHECK_SITE_KEY: ""
+        # npm ci (audit 2026-07, M2 CI/CD) : installe EXACTEMENT le package-lock testé en CI —
+        # npm install résolvait des versions flottantes et pouvait déployer des deps non testées.
         run: |
-          npm install
+          npm ci
           npm run typecheck
           npm run build
 
       - name: Install functions dependencies
         working-directory: functions
-        run: npm install
+        run: npm ci
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2

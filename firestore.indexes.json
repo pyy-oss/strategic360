@@ -25,6 +25,31 @@
       ]
     },
     {
+      "collectionGroup": "intelItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "axis", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "intelItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "intelItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "axis", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "actions",
       "queryScope": "COLLECTION",
       "fields": [
