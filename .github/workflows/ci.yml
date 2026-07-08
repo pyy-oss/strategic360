@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# La CI ne fait que lire le repo (audit 2026-07) : GITHUB_TOKEN réduit à la lecture.
+permissions:
+  contents: read
+
 jobs:
   web:
     name: Web — build & typecheck
@@ -19,7 +23,9 @@ jobs:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: web/package-lock.json
-      - run: npm install
+      # npm ci (audit 2026-07) : installe EXACTEMENT le package-lock (reproductible), là où
+      # npm install résolvait des versions flottantes différentes de celles testées.
+      - run: npm ci
       - run: npm run typecheck
       - run: npm run build
 
@@ -34,13 +40,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+          cache-dependency-path: functions/package-lock.json
       # L'émulateur Firestore (tests de règles) tourne sur la JVM.
       # firebase-tools requiert un JDK >= 21.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
-      - run: npm install
+      - run: npm ci
       # Lint no-undef (durcissement 2026-07) : attrape les variables non déclarées (ex. le
       # ReferenceError clientProfile qui a cassé le Copilote en prod) que `node --check` ne voit pas.
       - run: npm run lint
