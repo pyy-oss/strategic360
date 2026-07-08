@@ -306,7 +306,7 @@ function invalidateCompanyContextCache() {
  * suivantes câbleront). Tant qu'aucun doc `config/*` n'existe, le profil résolu == DEFAULT_PROFILE
  * (= comportement Neurones actuel). Même patron de cache que getCompanyContext (TTL 10 min).
  * ------------------------------------------------------------------------------------------- */
-const { buildClientProfile } = require("./domain/profile");
+const { buildClientProfile, scoringConfig } = require("./domain/profile");
 // Docs Firestore surchargeant le profil par défaut (clé profil ← chemin doc / champ lu).
 const PROFILE_CONFIG_DOCS = [
   ["profile", "config/profile", (d) => d],
@@ -1108,9 +1108,9 @@ exports.onIntelItemWrite = onDocumentWritten({ document: "intelItems/{id}", regi
   if (after && after.exists) {
     const item = after.data();
     // accountValueFactor : un signal concernant un gros compte client remonte (boucle interne → veille).
-    const clientValue = await loadClientValueIndex(db);
+    const [clientValue, profile] = await Promise.all([loadClientValueIndex(db), loadClientProfile(db)]);
     const accountValue = resolveItemAccountValue(item, clientValue);
-    const computed = computePriorityScore(item, Date.now(), { accountValue });
+    const computed = computePriorityScore(item, Date.now(), { accountValue, scoring: scoringConfig(profile) });
     if (item.priorityScore !== computed) {
       // Le score a bougé : on l'écrit et on sort. La mise à jour re-déclenche ce trigger, et c'est
       // à cette passe-là (score stabilisé) que les agrégats seront recalculés — évite de les
@@ -1146,17 +1146,19 @@ exports.onIntelItemWrite = onDocumentWritten({ document: "intelItems/{id}", regi
  * écritures inutiles). Seuls les scores dont la valeur change déclenchent une réécriture.
  */
 async function runRescoreActive(db) {
-  const [snap, clientValue] = await Promise.all([
+  const [snap, clientValue, profile] = await Promise.all([
     db.collection("intelItems").get(),
     loadClientValueIndex(db),
+    loadClientProfile(db),
   ]);
+  const scoring = scoringConfig(profile);
   // Filtre en mémoire (collection de petite taille) : un `!=` Firestore exclurait les docs sans
   // champ `status`. On re-score tout ce qui n'est pas archivé.
   const active = snap.docs.filter((d) => (d.data().status || "new") !== "archived");
   const updates = active.map(async (doc) => {
     const item = doc.data();
     const accountValue = resolveItemAccountValue(item, clientValue);
-    const computed = computePriorityScore(item, Date.now(), { accountValue });
+    const computed = computePriorityScore(item, Date.now(), { accountValue, scoring });
     if (item.priorityScore === computed) return false;
     await doc.ref.update({ priorityScore: computed });
     return true;
