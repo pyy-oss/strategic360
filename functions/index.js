@@ -276,6 +276,38 @@ const HEAVY_CALLABLE_OPTS = { ...CALLABLE_OPTS, timeoutSeconds: 540, memory: "51
  * boucle strictement séquentielle qui faisait exploser la durée. */
 const AI_CONCURRENCY = 5;
 
+/**
+ * Limiteur GLOBAL de concurrence (audit pré-lancement 2026-07, M6). runInBatches borne le nombre
+ * de SOURCES traitées en parallèle, mais chaque source classifiait ses items via un
+ * Promise.allSettled non borné → concurrence Vertex réelle ≈ 5 sources × 8 items = 40 appels
+ * simultanés (pics 429). Ce sémaphore borne les appels de CLASSIFICATION eux-mêmes, quelle que
+ * soit la structure des lots au-dessus.
+ */
+function makeLimiter(max) {
+  let active = 0;
+  const queue = [];
+  return async (task) => {
+    if (active >= max) await new Promise((resolve) => queue.push(resolve));
+    active += 1;
+    try {
+      return await task();
+    } finally {
+      active -= 1;
+      const wake = queue.shift();
+      if (wake) wake();
+    }
+  };
+}
+const vertexLimit = makeLimiter(AI_CONCURRENCY);
+
+/** Plafond de sources par run de sync (audit M7) : borne le coût IA d'un run quel que soit le
+ * nombre de sources actives configurées. Au-delà, rotation quotidienne pour ne pas affamer la
+ * queue de liste (les sources excédentaires passent aux runs suivants). */
+const MAX_SOURCES_PER_RUN = 80;
+/** Verrou de sync (audit M9) : un run est considéré mort (verrou périmé) au-delà de ce délai —
+ * légèrement supérieur au timeout dur des fonctions (540 s). */
+const SYNC_LOCK_TTL_MS = 12 * 60 * 1000;
+
 /** Statuts « PUBLIÉS » (visibles du fil/radar et comptés dans les agrégats). `pending` (en attente
  * d'évaluation) et `rejected` (écarté par l'évaluateur) et `archived` (doublon/clos) en sont exclus. */
 const PUBLISHED_STATUSES = new Set(["new", "reviewed", "actioned"]);
@@ -768,7 +800,9 @@ async function classifyRawText(rawText, watchlistEntities, context, profile) {
     pubDate: context && context.defaultDate ? context.defaultDate : undefined,
     profile, // profil client (Phase 0) : blocs client-spécifiques + taxonomie ; absent → défauts Neurones
   });
-  const response = await generateJson(prompt);
+  // Sémaphore global (M6) : borne la concurrence Vertex réelle à AI_CONCURRENCY, y compris quand
+  // plusieurs sources classifient leurs items en parallèle.
+  const response = await vertexLimit(() => generateJson(prompt));
   // La taxonomie du profil sert AUSSI à valider/normaliser la sortie (axes/subtypes custom).
   return parseClassificationResponse(response, { ...(context || {}), taxonomy: profile && profile.taxonomy });
 }
@@ -840,6 +874,18 @@ async function runSyncSources(db) {
     db.collection("intelWatchlist").where("active", "==", true).get(),
   ]);
   const watchlistEntities = watchlistSnap.docs.map((d) => ({ name: d.data().name, type: d.data().type }));
+
+  // Plafond de coût par run (audit M7) : le nombre de sources actives n'était pas borné — 200
+  // sources × 8 items = ~1600 appels Vertex/run. Au-delà du plafond, ROTATION quotidienne (le point
+  // de départ avance chaque jour) pour que toutes les sources finissent par passer sans affamer la
+  // fin de liste.
+  let sourceDocs = sourcesSnap.docs;
+  if (sourceDocs.length > MAX_SOURCES_PER_RUN) {
+    const start = (new Date().getDate() * MAX_SOURCES_PER_RUN) % sourceDocs.length;
+    sourceDocs = [...sourceDocs.slice(start), ...sourceDocs.slice(0, start)].slice(0, MAX_SOURCES_PER_RUN);
+    logger.warn(`syncSources: ${sourcesSnap.size} sources actives > plafond ${MAX_SOURCES_PER_RUN}/run — rotation quotidienne (départ index ${start})`);
+  }
+
   // Profil client (Phase 0 produit) : surcharge éventuelle de la notation des sources par domaine.
   // Absent → défaut Neurones (aucun changement de comportement).
   const clientProfile = await loadClientProfile(db);
@@ -864,9 +910,36 @@ async function runSyncSources(db) {
   // Suivi de PROGRESSION (UX 2026-07) : on publie l'avancement dans summaries/syncStatus pour que le
   // front affiche « X/Y sources · N signaux · phase » en direct au lieu d'un spinner aveugle.
   // Best-effort : toute écriture échouée est ignorée, jamais d'impact sur la synchro.
-  const total = sourcesSnap.size;
-  const writeSyncStatus = (patch) => db.doc("summaries/syncStatus").set(patch, { merge: true }).catch(() => {});
-  await writeSyncStatus({ running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null, total, processed: 0, created: 0, phase: "ingestion" });
+  const total = sourceDocs.length;
+  const statusRef = db.doc("summaries/syncStatus");
+  const writeSyncStatus = (patch) => statusRef.set(patch, { merge: true }).catch(() => {});
+
+  // VERROU de run (audit M9) : la sync manuelle (syncSourcesNow) et le cron quotidien pouvaient
+  // tourner EN MÊME TEMPS → double coût IA, doublons (dedupeIndex non partagé) et courses sur
+  // syncStatus. Acquisition transactionnelle : si un run est marqué running depuis moins de
+  // SYNC_LOCK_TTL_MS, on refuse de démarrer. Au-delà du TTL le verrou est considéré périmé (run tué
+  // au timeout — c'est aussi la récupération du bug M8 « spinner infini » : le prochain run reprend
+  // la main, et le front ignore un running plus vieux que le TTL).
+  let lockAcquired = false;
+  try {
+    lockAcquired = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(statusRef);
+      const cur = snap.exists ? snap.data() : {};
+      const startedMs = cur.startedAt && typeof cur.startedAt.toMillis === "function" ? cur.startedAt.toMillis() : 0;
+      if (cur.running === true && startedMs && Date.now() - startedMs < SYNC_LOCK_TTL_MS) return false;
+      tx.set(statusRef, { running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null, total, processed: 0, created: 0, phase: "ingestion" }, { merge: true });
+      return true;
+    });
+  } catch (e) {
+    // Transaction indisponible → on continue SANS verrou (mieux vaut une sync que pas de sync).
+    logger.warn(`syncSources: verrou indisponible (${e.message}) — run sans verrou`);
+    lockAcquired = true;
+    await writeSyncStatus({ running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null, total, processed: 0, created: 0, phase: "ingestion" });
+  }
+  if (!lockAcquired) {
+    logger.warn("syncSources: un run est déjà en cours (verrou actif) — démarrage refusé");
+    return { sourcesTotal: sourcesSnap.size, sourcesProcessed: 0, itemsCreated: 0, deduped: 0, evaluated: 0, rejected: 0, skipped: true };
+  }
 
   // Traite UNE source : fetch + extraction + classification. Renvoie le nombre d'items créés.
   // Isolé pour être exécuté en LOTS PARALLÈLES (runInBatches) — la boucle séquentielle précédente
@@ -985,9 +1058,14 @@ async function runSyncSources(db) {
     finally { doneCount += 1; createdCount += n || 0; void writeSyncStatus({ processed: doneCount, created: createdCount }); }
   };
 
+  // M8 : quoi qu'il arrive après l'acquisition du verrou, une exception ne doit JAMAIS laisser
+  // summaries/syncStatus figé à running:true (spinner infini côté front). Le catch libère le
+  // verrou en phase "error" puis propage. (Le kill dur au timeout 540 s reste couvert par le TTL
+  // du verrou + l'ignorance des runs périmés côté front.)
+  try {
   let settled;
   try {
-    settled = await runInBatches(sourcesSnap.docs, AI_CONCURRENCY, trackedSource);
+    settled = await runInBatches(sourceDocs, AI_CONCURRENCY, trackedSource);
   } finally {
     // Toujours refermer le navigateur headless (s'il a été lancé) pour libérer la mémoire du run.
     await closeRenderBrowser();
@@ -1021,8 +1099,13 @@ async function runSyncSources(db) {
   // Statut final : synchro terminée (le front repasse le bouton en état normal).
   await writeSyncStatus({ running: false, finishedAt: FieldValue.serverTimestamp(), processed: doneCount, created: createdCount, evaluated: evaluated.published, phase: "done" });
 
-  logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourcesSnap.size} itemsCreated=${itemsCreated} deduped=${deduped.archived} évalués=${evaluated.evaluated} (pub ${evaluated.published}/rej ${evaluated.rejected})`);
+  logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourceDocs.length} itemsCreated=${itemsCreated} deduped=${deduped.archived} évalués=${evaluated.evaluated} (pub ${evaluated.published}/rej ${evaluated.rejected})`);
   return { sourcesTotal: sourcesSnap.size, sourcesProcessed, itemsCreated, deduped: deduped.archived, evaluated: evaluated.published, rejected: evaluated.rejected };
+  } catch (err) {
+    // Libération du verrou en échec (M8) : le front sort du spinner et le prochain run peut démarrer.
+    await writeSyncStatus({ running: false, finishedAt: FieldValue.serverTimestamp(), phase: "error" });
+    throw err;
+  }
 }
 
 /**
