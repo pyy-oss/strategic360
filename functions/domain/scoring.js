@@ -136,19 +136,45 @@ const SUBTYPE_BUSINESS = {
 // (audit pertinence 2026-07, biais sectoriel résiduel).
 const ANCHOR_REQUIRED_SUBTYPES = new Set(["vulnerability", "cve", "supply"]);
 const UNANCHORED_DECOTE = 0.6;
+// Défauts géographiques Neurones (CI/UEMOA/Afrique). Externalisables par le profil client (Phase 0
+// produit) via `cfg.anchorGeoMarkers` / `cfg.localGeoMarkers`.
+const DEFAULT_ANCHOR_GEO = ["ci", "ivoire", "uemoa", "afrique"];
+const DEFAULT_LOCAL_GEO = [
+  { markers: ["ci", "ivoire"], bonus: 0.15 },
+  { markers: ["uemoa", "afrique"], bonus: 0.08 },
+];
 
-function hasLocalAnchor(item) {
-  if (item && typeof item.ent === "string" && item.ent.trim()) return true;
-  const geo = typeof item?.geo === "string" ? item.geo.toLowerCase() : "";
-  return geo === "ci" || geo.includes("ivoire") || geo.includes("uemoa") || geo.includes("afrique");
+// Un marqueur COURT (≤2 car., ex. code pays « ci ») exige une égalité exacte du geo ; un marqueur plus
+// long (« ivoire », « afrique ») matche par inclusion. Cette règle reproduit EXACTEMENT la logique
+// historique (geo === "ci" vs includes(...)) — garantie de non-régression avec les défauts.
+function geoMatches(geo, m) {
+  return geo === m || (typeof m === "string" && m.length > 2 && geo.includes(m));
 }
 
-function businessFactor(item) {
-  let f = SUBTYPE_BUSINESS[item?.subtype] ?? 0.4;
+function hasLocalAnchor(item, markers) {
+  if (item && typeof item.ent === "string" && item.ent.trim()) return true;
+  const geo = typeof item?.geo === "string" ? item.geo.toLowerCase() : "";
+  const list = Array.isArray(markers) ? markers : DEFAULT_ANCHOR_GEO;
+  return list.some((m) => geoMatches(geo, m));
+}
+
+/**
+ * businessFactor(item, cfg?) — cfg (profil client, Phase 0 produit) surcharge les tables ; ABSENT →
+ * défauts Neurones (comportement identique). PUR.
+ */
+function businessFactor(item, cfg) {
+  const c = cfg || {};
+  const table = c.subtypeBusiness || SUBTYPE_BUSINESS;
+  const def = Number.isFinite(c.defaultBusiness) ? c.defaultBusiness : 0.4;
+  const oppBonus = Number.isFinite(c.opportunityBonus) ? c.opportunityBonus : 0.1;
+  const budgetBonus = Number.isFinite(c.budgetIdentifiedBonus) ? c.budgetIdentifiedBonus : 0.1;
+  const anchorReq = Array.isArray(c.anchorRequiredSubtypes) ? new Set(c.anchorRequiredSubtypes) : ANCHOR_REQUIRED_SUBTYPES;
+  const decote = Number.isFinite(c.unanchoredDecote) ? c.unanchoredDecote : UNANCHORED_DECOTE;
+  let f = table[item?.subtype] ?? def;
   // Décote des subtypes techniques sans ancrage local (parc/compte ou zone) — cf. commentaire ci-dessus.
-  if (ANCHOR_REQUIRED_SUBTYPES.has(item?.subtype) && !hasLocalAnchor(item)) f *= UNANCHORED_DECOTE;
-  if (item?.stance === "opportunity") f = Math.min(1, f + 0.1);
-  if (item?.budgetIdentified) f = Math.min(1, f + 0.1);
+  if (anchorReq.has(item?.subtype) && !hasLocalAnchor(item, c.anchorGeoMarkers)) f *= decote;
+  if (item?.stance === "opportunity") f = Math.min(1, f + oppBonus);
+  if (item?.budgetIdentified) f = Math.min(1, f + budgetBonus);
   return f;
 }
 
@@ -169,12 +195,23 @@ const AXIS_ALIGN = {
   tech: 0.45,
 };
 
-function alignementFactor(item) {
-  const base = AXIS_ALIGN[item?.axis] ?? 0.6;
+function alignementFactor(item, cfg) {
+  const c = cfg || {};
+  const axisAlign = c.axisAlign && typeof c.axisAlign === "object" ? c.axisAlign : AXIS_ALIGN;
+  const defAxis = Number.isFinite(c.defaultAxisWeight) ? c.defaultAxisWeight : 0.6;
+  const base = axisAlign[item?.axis] ?? defAxis;
   // Bonus géographique (2026-07, rééquilibrage du fil) : un signal ancré CI/UEMOA/Afrique de
   // l'Ouest pèse plus qu'une brève mondiale — complète la règle de pertinence du classifieur.
   const geo = typeof item?.geo === "string" ? item.geo.toLowerCase() : "";
-  const geoBonus = geo === "ci" || geo.includes("ivoire") ? 0.15 : geo.includes("afrique") || geo.includes("uemoa") ? 0.08 : 0;
+  const tiers = Array.isArray(c.localGeoMarkers) ? c.localGeoMarkers : DEFAULT_LOCAL_GEO;
+  let geoBonus = 0;
+  for (const tier of tiers) {
+    if (tier && Array.isArray(tier.markers) && tier.markers.some((m) => geoMatches(geo, m))) {
+      geoBonus = Number(tier.bonus) || 0;
+      break;
+    }
+  }
+  // Bonus watchlist (présence d'une entité résolue) — générique, reste en dur.
   return Math.min(1, base + (item?.ent ? 0.2 : 0) + geoBonus);
 }
 
@@ -258,10 +295,11 @@ function proximiteFactor(item, now = Date.now()) {
  * @param {number} [now] injectable clock (ms epoch) for deterministic tests.
  */
 function computePriorityScore(item, now = Date.now(), opts = {}) {
+  const scoring = opts && opts.scoring; // config du profil client (Phase 0) ; absent → défauts Neurones
   const impact = impactFactor(item && item.impact);
   const credibilite = credibiliteFactor(item && item.sourceRating);
-  const potentielBusiness = businessFactor(item);
-  const alignement = alignementFactor(item);
+  const potentielBusiness = businessFactor(item, scoring);
+  const alignement = alignementFactor(item, scoring);
   const probabilite = probabiliteFactor(item);
   const proximite = proximiteFactor(item, now);
 

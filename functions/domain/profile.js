@@ -120,4 +120,22 @@ function buildClientProfile(overrides) {
   return mergeProfile(DEFAULT_PROFILE, overrides || {});
 }
 
-module.exports = { DEFAULT_PROFILE, mergeProfile, buildClientProfile, isPlainObject };
+/**
+ * scoringConfig(profile) -> config plate consommée par le scorer (scoring.js#computePriorityScore
+ * via opts.scoring). Assemble profile.scoring + l'`axisAlign` dérivé de la taxonomie (source unique
+ * des poids d'axe). Avec DEFAULT_PROFILE, produit une config équivalente aux défauts du scorer. PUR.
+ */
+function scoringConfig(profile) {
+  const p = profile || DEFAULT_PROFILE;
+  const axisAlign = {};
+  for (const a of (p.taxonomy && Array.isArray(p.taxonomy.axes)) ? p.taxonomy.axes : []) {
+    if (a && a.key) axisAlign[a.key] = a.alignWeight;
+  }
+  return {
+    ...(p.scoring || {}),
+    axisAlign,
+    defaultAxisWeight: (p.taxonomy && Number.isFinite(p.taxonomy.defaultAxisWeight)) ? p.taxonomy.defaultAxisWeight : 0.6,
+  };
+}
+
+module.exports = { DEFAULT_PROFILE, mergeProfile, buildClientProfile, scoringConfig, isPlainObject };

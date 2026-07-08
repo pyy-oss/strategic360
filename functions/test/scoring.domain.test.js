@@ -26,6 +26,57 @@ import {
   AXIS_ALIGN,
   PROX_TABLE,
 } from "../domain/scoring.js";
+import { DEFAULT_PROFILE, scoringConfig } from "../domain/profile.js";
+
+describe("PR C — non-régression : profil par défaut == scoring intégré", () => {
+  const NOW = Date.parse("2026-07-08T00:00:00Z");
+  const def = scoringConfig(DEFAULT_PROFILE);
+  // Échantillon large couvrant subtypes ancrés/non-ancrés, axes, géo CI/UEMOA/mondial, ent, budget.
+  const fixtures = [
+    { title: "AO BRVM", axis: "clients_prospects", subtype: "tender", impact: "high", stance: "opportunity", geo: "ci", ent: "BRVM", sourceRating: "A1", budgetIdentified: true, dueDate: "2026-08-01" },
+    { title: "CVE mondiale", axis: "tech", subtype: "cve", impact: "high", stance: "neutral", geo: "monde", sourceRating: "C3" },
+    { title: "CVE locale", axis: "tech", subtype: "vulnerability", impact: "high", stance: "opportunity", geo: "ci", ent: "SGCI", sourceRating: "B2" },
+    { title: "Supply UEMOA", axis: "partenaires", subtype: "supply", impact: "medium", stance: "threat", geo: "uemoa", sourceRating: "B3" },
+    { title: "Concurrent", axis: "concurrents", subtype: "win", impact: "medium", stance: "threat", geo: "afrique", sourceRating: "C2" },
+    { title: "Régulation", axis: "reglementaire", subtype: "regulation", impact: "high", stance: "opportunity", geo: "ci", sourceRating: "A2" },
+    { title: "Macro sans géo", axis: "tech", subtype: "macro", impact: "low", stance: "neutral", sourceRating: "D3" },
+    { title: "Sans subtype", axis: "partenaires", impact: "medium", stance: "neutral", geo: "ivoire", ent: "Cisco", sourceRating: "B1" },
+  ];
+
+  it("computePriorityScore : identique avec scoringConfig(DEFAULT_PROFILE) et sans config, pour tous les cas", () => {
+    for (const it of fixtures) {
+      for (const av of [0, 0.5, 1]) {
+        const withDefault = computePriorityScore(it, NOW, { accountValue: av, scoring: def });
+        const legacy = computePriorityScore(it, NOW, { accountValue: av });
+        expect(withDefault, `${it.title} @av=${av}`).toBe(legacy);
+      }
+    }
+  });
+
+  it("businessFactor & alignementFactor : config par défaut == sans arg", () => {
+    for (const it of fixtures) {
+      expect(businessFactor(it, def)).toBe(businessFactor(it));
+      expect(alignementFactor(it, def)).toBe(alignementFactor(it));
+    }
+  });
+
+  it("une config CUSTOM change bien le résultat (secteur/géo différents)", () => {
+    // Cabinet juridique en France : axes repondérés, géo FR, subtypes valorisés autrement.
+    const custom = {
+      subtypeBusiness: { regulation: 1.0, tender: 0.5 },
+      defaultBusiness: 0.3,
+      opportunityBonus: 0.1, budgetIdentifiedBonus: 0.1,
+      anchorRequiredSubtypes: [], unanchoredDecote: 0.6,
+      anchorGeoMarkers: ["fr", "france"],
+      localGeoMarkers: [{ markers: ["fr", "paris"], bonus: 0.2 }],
+      axisAlign: { reglementaire: 1.0, clients_prospects: 0.6 }, defaultAxisWeight: 0.4,
+    };
+    const item = { title: "Nouvelle loi", axis: "reglementaire", subtype: "regulation", impact: "high", stance: "opportunity", geo: "fr", sourceRating: "A2" };
+    expect(computePriorityScore(item, NOW, { scoring: custom })).not.toBe(computePriorityScore(item, NOW, {}));
+    // regulation vaut 1.0 ici (vs 0.85 par défaut) → businessFactor plus élevé
+    expect(businessFactor(item, custom)).toBeGreaterThan(businessFactor(item));
+  });
+});
 
 describe("impactFactor", () => {
   it("maps the 3 known levels", () => {
