@@ -21,7 +21,7 @@
  * functions/index.js at the call site too).
  */
 
-const XLSX = require("xlsx");
+const { readWorkbook } = require("./workbook");
 
 const HEADER_ALIASES = {
   fournisseur: ["fournisseur", "supplier"],
@@ -51,13 +51,13 @@ function buildFieldMap(headerRow) {
  * @param {Buffer} buffer raw .xlsx bytes
  * @returns {{ bcLines: Array<object>, rowsIn: number, rowsOk: number, warnings: string[] }}
  */
-function parseFiche(buffer) {
+async function parseFiche(buffer) {
   const warnings = [];
-  const workbook = XLSX.read(buffer, { type: "buffer" });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  if (!sheet) return { bcLines: [], rowsIn: 0, rowsOk: 0, warnings: ["no sheet found"] };
+  const workbook = await readWorkbook(buffer);
+  const firstName = workbook.SheetNames[0];
+  if (!firstName) return { bcLines: [], rowsIn: 0, rowsOk: 0, warnings: ["no sheet found"] };
 
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, blankrows: false });
+  const rows = (firstName && workbook.sheets[firstName]) || [];
   if (rows.length === 0) return { bcLines: [], rowsIn: 0, rowsOk: 0, warnings: ["empty sheet"] };
 
   const fieldMap = buildFieldMap(rows[0]);

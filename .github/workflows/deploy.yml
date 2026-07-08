@@ -42,7 +42,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       # VITE_FIREBASE_* are Vite build-time env vars — Vite inlines them into the bundle at
       # `npm run build` time, they don't exist at runtime. Without them here, the deployed app

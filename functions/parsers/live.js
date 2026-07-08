@@ -27,7 +27,7 @@
  * Output: { opportunities: [{ client, montant, etape, idc, datePrev, mbPct }], rowsIn, rowsOk, warnings }
  */
 
-const XLSX = require("xlsx");
+const { readWorkbook } = require("./workbook");
 
 const HEADER_ALIASES = {
   client: ["client", "compte", "client/compte"],
@@ -56,22 +56,21 @@ function buildFieldMap(headerRow) {
   return map;
 }
 
-function pickSheet(workbook) {
-  const byName = workbook.SheetNames.find((n) => normalizeHeader(n) === "live");
-  return workbook.Sheets[byName || workbook.SheetNames[0]];
+function pickSheetName(names) {
+  return names.find((n) => normalizeHeader(n) === "live") || names[0];
 }
 
 /**
  * @param {Buffer} buffer raw .xlsx bytes
  * @returns {{ opportunities: Array<object>, rowsIn: number, rowsOk: number, warnings: string[] }}
  */
-function parseLive(buffer) {
+async function parseLive(buffer) {
   const warnings = [];
-  const workbook = XLSX.read(buffer, { type: "buffer" });
-  const sheet = pickSheet(workbook);
-  if (!sheet) return { opportunities: [], rowsIn: 0, rowsOk: 0, warnings: ["no sheet found"] };
+  const workbook = await readWorkbook(buffer);
+  const name = pickSheetName(workbook.SheetNames);
+  if (!name) return { opportunities: [], rowsIn: 0, rowsOk: 0, warnings: ["no sheet found"] };
 
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, blankrows: false });
+  const rows = workbook.sheets[name] || [];
   if (rows.length === 0) return { opportunities: [], rowsIn: 0, rowsOk: 0, warnings: ["empty sheet"] };
 
   const fieldMap = buildFieldMap(rows[0]);

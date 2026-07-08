@@ -668,7 +668,7 @@ exports.ingestInternal = onObjectFinalized(
     const bucket = getStorage().bucket(event.data.bucket);
     const [buffer] = await bucket.file(filePath).download();
 
-    const parsed = config.parse(buffer);
+    const parsed = await config.parse(buffer); // parseurs xlsx→exceljs désormais asynchrones (M4)
     const rows = parsed[config.resultKey] || [];
     const { rowsIn, rowsOk, warnings } = parsed;
 
