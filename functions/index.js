@@ -2200,6 +2200,9 @@ async function assembleCopiloteContext(db, accountId) {
     winStats,      // taux de victoire réel (global + par concurrent + leçons)
     valueModel,    // modèle de valeur chiffré (paniers de référence réels) — pour le business case
     today: new Date().toISOString().slice(0, 10), // ancrage temporel des séquences/plans datés
+    // Rôle système du profil client (Phase 0 produit) : injecté dans les prompts copilote via roleOf(c).
+    // Absent/défaut → NT_ROLE (comportement identique pour Neurones).
+    systemRole: clientProfile.profile && clientProfile.profile.systemRole,
     account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte, eventOffers, battlecards, battlecardsMarket, winStats, valueModel, today: new Date().toISOString().slice(0, 10) },
   };
 }
