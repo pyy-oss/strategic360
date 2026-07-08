@@ -1,5 +1,28 @@
 import { describe, it, expect } from "vitest";
 
+describe("PR E — rôle système copilote paramétrable (non-régression)", () => {
+  it("sans systemRole == défaut Neurones ; un systemRole custom remplace le rôle dans le prompt", async () => {
+    const { buildCvpPrompt, NT_ROLE } = await import("../domain/copilote.js");
+    // Défaut (aucun systemRole) → NT_ROLE présent.
+    const def = buildCvpPrompt({ compte: "SGCI" });
+    expect(def).toContain(NT_ROLE);
+    // systemRole custom → il remplace, NT_ROLE ne fuit plus.
+    const custom = buildCvpPrompt({ compte: "Cabinet X", systemRole: "Tu es le copilote commercial de Cabinet X (avocats d'affaires, Paris)." });
+    expect(custom).toContain("Cabinet X (avocats d'affaires, Paris)");
+    expect(custom).not.toContain(NT_ROLE);
+  });
+
+  it("buildSystemRole génère un rôle depuis le profil (nom, secteur, géo, homonymes)", async () => {
+    const { buildSystemRole } = await import("../domain/copilote.js");
+    const r = buildSystemRole({ legalName: "ACME SAS", sector: "cabinet conseil", geographies: ["fr", "be"], homonyms: ["ACME Inc. USA"] });
+    expect(r).toContain("ACME SAS");
+    expect(r).toContain("cabinet conseil");
+    expect(r).toContain("zone fr/be");
+    expect(r).toContain("ACME Inc. USA");
+    expect(r).toContain("JSON valide"); // consigne de format conservée
+  });
+});
+
 describe("Copilote — prompt builders (reuse contexte veille)", () => {
   it("buildCvpPrompt ancre sur les faits du compte (anti-générique) et garde le PESTEL en simple angle", async () => {
     const { buildCvpPrompt } = await import("../domain/copilote.js");

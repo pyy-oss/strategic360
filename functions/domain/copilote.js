@@ -330,6 +330,37 @@ function analyticsBlock(c) {
   return `DIAGNOSTIC PRÉ-CALCULÉ (données DÉJÀ interprétées — sers-t'en comme socle, va PLUS LOIN, ne le répète pas mot pour mot) :\n${lines.join("\n")}`;
 }
 
+/**
+ * roleOf(c) — rôle système à injecter dans les prompts copilote : celui du profil client (Phase 0
+ * produit, `ctx.systemRole`) s'il est fourni, sinon le défaut Neurones (`NT_ROLE`). Garantie de
+ * non-régression : sans surcharge, tous les prompts restent identiques.
+ */
+function roleOf(c) {
+  return c && typeof c.systemRole === "string" && c.systemRole.trim() ? c.systemRole : NT_ROLE;
+}
+
+/**
+ * buildSystemRole(p) — GÉNÈRE un rôle système à partir d'un profil client (companyName/legalName/
+ * sector/geographies/homonyms). Utilisé par l'onboarding / l'auteur d'une config `config/profile`
+ * pour produire `profile.systemRole`. PUR. (Ne reproduit pas NT_ROLE mot pour mot : NT garde son
+ * NT_ROLE rédigé à la main comme défaut.)
+ */
+function buildSystemRole(p) {
+  const o = p && typeof p === "object" ? p : {};
+  const name = coerceStr(o.legalName) || coerceStr(o.companyName) || "l'entreprise";
+  const sector = coerceStr(o.sector);
+  const geos = Array.isArray(o.geographies) && o.geographies.length ? o.geographies.join("/") : "";
+  const homonyms = Array.isArray(o.homonyms) && o.homonyms.length ? o.homonyms.join(", ") : "";
+  return (
+    `Tu es le copilote commercial de ${name}` +
+    (sector ? ` (${sector}` : "") + (geos ? `${sector ? ", " : " ("}zone ${geos}` : "") + (sector || geos ? ")" : "") +
+    (homonyms ? `, à NE JAMAIS confondre avec les homonymes : ${homonyms}` : "") +
+    ". Tu sers un commercial/DRO. Français, concis, concret, orienté action. Aucune donnée client " +
+    "inventée : si une information manque, écris-le explicitement plutôt que de l'estimer. Réponds " +
+    "UNIQUEMENT avec un objet JSON valide conforme au schéma demandé, sans texte ni balises autour."
+  );
+}
+
 /* ------------------------------------------------------------------------------------------- *
  * §B — PROSPECTION (comptes cibles)
  * ------------------------------------------------------------------------------------------- */
@@ -343,7 +374,7 @@ function buildProspectionPrompt(ctx) {
   const anchor = c.compte
     ? `\nCompte de référence (chercher des JUMEAUX — même secteur / profil d'achat comparable) :\n${factBase(c)}\n${competitorBlock(c)}\n${winStatsBlock(c)}\n`
     : "";
-  return `${NT_ROLE}
+  return `${roleOf(c)}
 ${anchor}
 Propose une liste priorisée de comptes cibles pour le secteur "${coerceStr(c.secteur, "non précisé")}" en Côte d'Ivoire / Afrique de l'Ouest.
 Tendances d'achat : ${list(c.tendances)}.
@@ -401,7 +432,7 @@ function buildCvpPrompt(ctx) {
     .slice(0, 1)
     .map((p) => `${coerceStr(p.axe, "?")} : ${coerceStr(p.texte)}`)
     .join("");
-  return `${NT_ROLE}
+  return `${roleOf(c)}
 ${STRATEGE}
 ${ANTI_VERBIAGE}
 ${NO_GENERIC}
@@ -471,7 +502,7 @@ const ANNEES = ["An 1", "An 2", "An 3"];
 
 function buildTriennalPrompt(ctx) {
   const c = ctx || {};
-  return `${NT_ROLE}
+  return `${roleOf(c)}
 ${STRATEGE}
 ${ANTI_VERBIAGE}
 ${NO_GENERIC}
@@ -522,7 +553,7 @@ const NIVEAUX = ["Élevé", "Moyen", "Faible"];
 
 function buildPlanComptePrompt(ctx) {
   const c = ctx || {};
-  return `${NT_ROLE}
+  return `${roleOf(c)}
 ${STRATEGE}
 ${ANTI_VERBIAGE}
 ${NO_GENERIC}
@@ -574,7 +605,7 @@ const QUANDS = ["0–30 jours", "30–60 jours", "60–90 jours", "Continu"];
 
 function buildPlanActionPrompt(ctx) {
   const c = ctx || {};
-  return `${NT_ROLE}
+  return `${roleOf(c)}
 ${STRATEGE}
 ${ANTI_VERBIAGE}
 ${NO_GENERIC}
@@ -759,7 +790,7 @@ function buildRedactionPrompt(ctx) {
   const destBlock = dest
     ? `Destinataire : ${dest}. Ouvre par une salutation NOMINATIVE et cale l'accroche sur la douleur de son rôle (DSI → continuité/sécurité/dette technique ; DAF → coût/ROI/cash ; Achats → conditions/TCO ; DG → impact métier/risque).`
     : `${contactsBlock(c)} Si un décideur est connu ci-dessus, adresse-lui le message nominativement et cale l'angle sur son rôle ; sinon reste au niveau compte sans inventer de nom.`;
-  return `${NT_ROLE}
+  return `${roleOf(c)}
 Tu rédiges des messages commerciaux prêts à envoyer.
 ${faits}
 Rédige un message de type "${coerceStr(c.kind, "prise de contact")}" pour le compte ${coerceStr(c.compte, "le compte")}.
@@ -795,7 +826,7 @@ function parseRedactionResponse(raw, ctx) {
  * ------------------------------------------------------------------------------------------- */
 function buildMeddicPrompt(ctx) {
   const c = ctx || {};
-  return `${NT_ROLE}
+  return `${roleOf(c)}
 ${STRATEGE}
 ${ANTI_VERBIAGE}
 ${NO_GENERIC}
@@ -855,7 +886,7 @@ function parseMeddicResponse(raw) {
 function buildBriefPrompt(ctx) {
   const c = ctx || {};
   const objectif = coerceStr(c.contexte) || coerceStr(c.objectif);
-  return `${NT_ROLE}
+  return `${roleOf(c)}
 ${STRATEGE}
 ${ANTI_VERBIAGE}
 ${NO_GENERIC}
@@ -902,7 +933,7 @@ function parseBriefResponse(raw) {
 const PROBAS = ["Élevée", "Moyenne", "Faible"];
 function buildDealAnalysisPrompt(ctx) {
   const c = ctx || {};
-  return `${NT_ROLE}
+  return `${roleOf(c)}
 ${STRATEGE}
 ${ANTI_VERBIAGE}
 ${NO_GENERIC}
@@ -958,7 +989,7 @@ function parseDealAnalysisResponse(raw) {
  * ------------------------------------------------------------------------------------------- */
 function buildBusinessCasePrompt(ctx) {
   const c = ctx || {};
-  return `${NT_ROLE}
+  return `${roleOf(c)}
 ${STRATEGE}
 ${ANTI_VERBIAGE}
 ${NO_GENERIC}
@@ -1006,7 +1037,7 @@ function parseBusinessCaseResponse(raw, ctx) {
 const SEQ_CANAUX = ["E-mail", "WhatsApp", "LinkedIn", "Appel", "RDV"];
 function buildSequencePrompt(ctx) {
   const c = ctx || {};
-  return `${NT_ROLE}
+  return `${roleOf(c)}
 ${STRATEGE}
 ${ANTI_VERBIAGE}
 ${NO_GENERIC}
@@ -1048,7 +1079,7 @@ const POUVOIRS = ["Élevé", "Moyen", "Faible"];
 const POSTURES = ["Champion", "Favorable", "Neutre", "Sceptique", "Détracteur", "Inconnu"];
 function buildStakeholdersPrompt(ctx) {
   const c = ctx || {};
-  return `${NT_ROLE}
+  return `${roleOf(c)}
 ${STRATEGE}
 ${ANTI_VERBIAGE}
 ${NO_GENERIC}
@@ -1113,6 +1144,7 @@ const AGENTS = {
 
 module.exports = {
   NT_ROLE,
+  buildSystemRole,
   AGENTS,
   buildProspectionPrompt, parseProspectionResponse,
   buildCvpPrompt, parseCvpResponse,
