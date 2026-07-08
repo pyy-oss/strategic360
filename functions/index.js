@@ -23,7 +23,9 @@ const { parseLive } = require("./parsers/live");
 const { parseFacturationDf } = require("./parsers/facturationDf");
 const { parseFiche } = require("./parsers/fiche");
 const { computePorterForces, computeBcg, computeCasSummary, computePipeline, computeKris, computeValueAtStake, computePipelineInfluenced, computeGranularite } = require("./domain/quanti");
+const dns = require("node:dns/promises");
 const { intelItemId } = require("./domain/ids");
+const { isForbiddenIp, checkPublicHttpUrl } = require("./domain/netguard");
 const { buildClassificationPrompt, parseClassificationResponse, deriveSourceRatingFromUrl } = require("./domain/classify");
 const { dedupeByTitle, isNearDuplicate, isStrongDuplicate, clusterNearDuplicates } = require("./domain/dedupe");
 const {
@@ -121,6 +123,9 @@ async function closeRenderBrowser() {
  * permanence et n'atteignent jamais l'inactivité réseau → on attend le DOM puis un court délai
  * pour laisser le JS peupler la page. */
 async function fetchRendered(url) {
+  // Garde anti-SSRF sur l'URL initiale (les sous-requêtes de la page rendue restent sous la
+  // responsabilité du navigateur headless sandboxé — risque résiduel documenté dans netguard.js).
+  await assertSafePublicUrl(url);
   const browser = await getRenderBrowser();
   const page = await browser.newPage();
   try {
@@ -135,26 +140,68 @@ async function fetchRendered(url) {
 }
 
 /**
- * fetchSource(url) — récupère une source avec robustesse : UA navigateur, suivi des redirections,
- * timeout dur (12 s) pour ne pas bloquer un lot, et 1 nouvelle tentative sur erreur réseau
- * transitoire. Lève une erreur explicite sur statut HTTP non-2xx (comptée comme échec de santé).
+ * Garde anti-SSRF (audit pré-lancement 2026-07, B1) : toute URL fetchée par l'app (source
+ * configurée, URL d'onboarding, source candidate proposée par l'IA, redirection d'un site tiers)
+ * doit viser un hôte PUBLIC. Validation de forme (domain/netguard, pur) + résolution DNS ici :
+ * chaque adresse résolue est refusée si privée/link-local/loopback/metadata. Limite connue
+ * (documentée) : la résolution de contrôle et celle du fetch sont deux lookups distincts (fenêtre
+ * de DNS-rebinding théorique) — acceptable pour de la lecture de contenu public, ce garde bloque
+ * les canaux réalistes (URL directe, redirection, URL issue de l'IA).
+ */
+async function assertSafePublicUrl(urlString) {
+  const checked = checkPublicHttpUrl(urlString);
+  if (!checked.ok) throw new Error(`URL refusée (SSRF) : ${checked.reason}`);
+  const host = checked.url.hostname.replace(/^\[|\]$/g, "");
+  // IP littérale : déjà validée par checkPublicHttpUrl, pas de DNS à faire.
+  if (/^[\d.]+$/.test(host) || host.includes(":")) return checked.url;
+  let addrs;
+  try {
+    addrs = await dns.lookup(host, { all: true, verbatim: true });
+  } catch {
+    throw new Error(`fetch failed: DNS introuvable (${host})`);
+  }
+  for (const { address } of addrs) {
+    if (isForbiddenIp(address)) throw new Error(`URL refusée (SSRF) : ${host} résout vers une adresse interne`);
+  }
+  return checked.url;
+}
+
+/**
+ * fetchSource(url) — récupère une source avec robustesse : UA navigateur, timeout dur (12 s) pour
+ * ne pas bloquer un lot, et 1 nouvelle tentative sur erreur réseau transitoire. Lève une erreur
+ * explicite sur statut HTTP non-2xx (comptée comme échec de santé). Les redirections sont suivies
+ * MANUELLEMENT (max 5) pour re-passer chaque saut par la garde anti-SSRF — un site public qui
+ * répond 302 vers une adresse interne est refusé.
  */
 async function fetchSource(url) {
   const attempt = async () => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
-    try {
-      const res = await fetch(url, { headers: SOURCE_FETCH_HEADERS, redirect: "follow", signal: controller.signal });
-      if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
-      return await res.text();
-    } finally {
-      clearTimeout(timer);
+    let current = String(url);
+    for (let hop = 0; hop < 5; hop++) {
+      await assertSafePublicUrl(current);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+      try {
+        const res = await fetch(current, { headers: SOURCE_FETCH_HEADERS, redirect: "manual", signal: controller.signal });
+        if (res.status >= 300 && res.status < 400) {
+          const loc = res.headers.get("location");
+          if (!loc) throw new Error(`fetch failed: HTTP ${res.status} sans Location`);
+          current = new URL(loc, current).toString();
+          continue;
+        }
+        if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
+        return await res.text();
+      } finally {
+        clearTimeout(timer);
+      }
     }
+    throw new Error("fetch failed: trop de redirections");
   };
   try {
     return await attempt();
   } catch (err) {
-    // Retente une fois uniquement sur erreur réseau/timeout (pas sur un 4xx déterministe).
+    // Jamais de retry sur un refus SSRF (déterministe) ; retente une fois uniquement sur erreur
+    // réseau/timeout (pas sur un 4xx déterministe).
+    if (/URL refusée/.test(String(err.message))) throw err;
     if (/HTTP [45]\d\d/.test(String(err.message)) && !/HTTP 429|HTTP 5\d\d/.test(String(err.message))) throw err;
     return await attempt();
   }
@@ -250,14 +297,27 @@ async function runInBatches(items, size, worker) {
  * OTHER apps too). To never read/write/overwrite their data:
  *  - FIRESTORE_DATABASE_ID: a dedicated NAMED Firestore database (e.g. "strategic360"), entirely
  *    separate from "(default)" (and from any other named database other apps use). Set via the
- *    functions/.env(.<project-id>) file — see functions/.env.example. Falls back to "(default)"
- *    so this codebase still works standalone against a project with no other apps.
+ *    functions/.env(.<project-id>) file — see functions/.env.example.
  *  - STORAGE_BUCKET_NAME: a dedicated Cloud Storage bucket (e.g. "strategic360"), separate from
  *    the project's default bucket other apps may already be using. Falls back to the default
  *    bucket (`getStorage().bucket()` with no args) when unset.
  * See docs/BUILD_KIT.md / README.md "Checklist de déploiement" for the full multi-app rationale.
+ *
+ * FAIL-FAST (audit pré-lancement 2026-07, M2) : plus AUCUN repli silencieux vers "(default)".
+ * Un oubli de la variable au déploiement faisait écrire toute l'app dans la base par défaut du
+ * projet partagé — c.-à-d. potentiellement la base d'une AUTRE app. On refuse désormais de
+ * démarrer : le déploiement échoue bruyamment au lieu de corrompre un tiers. Un déploiement
+ * mono-app qui VEUT la base par défaut doit le dire explicitement (ALLOW_DEFAULT_DATABASE=true).
  */
-const FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || "(default)";
+const FIRESTORE_DATABASE_ID =
+  process.env.FIRESTORE_DATABASE_ID ||
+  (process.env.ALLOW_DEFAULT_DATABASE === "true" ? "(default)" : null);
+if (!FIRESTORE_DATABASE_ID) {
+  throw new Error(
+    "FIRESTORE_DATABASE_ID manquant : ce projet Firebase est PARTAGÉ — configurer la base nommée de l'app " +
+    "(functions/.env.<project-id>) ou poser explicitement ALLOW_DEFAULT_DATABASE=true pour un projet mono-app."
+  );
+}
 const STORAGE_BUCKET_NAME = process.env.STORAGE_BUCKET_NAME || undefined;
 // Fuseau des schedulers (Phase 0 produit) : paramétrable par déploiement client (les onSchedule sont
 // statiques au déploiement — c'est le bon niveau). Défaut = Neurones (Côte d'Ivoire).
@@ -3086,12 +3146,21 @@ exports.scheduledFirestoreExport = onSchedule(
   { schedule: "0 2 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1" },
   async () => {
     try {
+      // Audit pré-lancement 2026-07 (M1) : l'export doit viser LA base de CETTE app (jamais
+      // "(default)", qui appartient potentiellement à une autre app du projet partagé) et un
+      // bucket DÉDIÉ explicite (jamais le bucket appspot par défaut, lui aussi partagé). Sans
+      // bucket configuré, on n'exporte PAS (mieux vaut un backup manquant signalé qu'une fuite
+      // des données d'un tiers vers un bucket commun).
+      const exportBucket = process.env.FIRESTORE_EXPORT_BUCKET;
+      if (!exportBucket) {
+        logger.error("scheduledFirestoreExport: FIRESTORE_EXPORT_BUCKET non configuré — export SAUTÉ (configurer un bucket dédié à l'app).");
+        return;
+      }
       const client = new firestoreAdminV1.FirestoreAdminClient();
       const projectId = await client.getProjectId();
-      const bucket = process.env.FIRESTORE_EXPORT_BUCKET || `${projectId}.appspot.com`;
       const dateFolder = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-      const outputUriPrefix = `gs://${bucket}/scheduled-exports/${dateFolder}`;
-      const databaseName = client.databasePath(projectId, "(default)");
+      const outputUriPrefix = `gs://${exportBucket}/scheduled-exports/${dateFolder}`;
+      const databaseName = client.databasePath(projectId, FIRESTORE_DATABASE_ID);
 
       const [operation] = await client.exportDocuments({
         name: databaseName,
@@ -3146,8 +3215,24 @@ exports.setUserRole = onCall(CALLABLE_OPTS, async (request) => {
   const isCallerDirection = request.auth != null && callerRole === "direction";
 
   if (!bootstrapDone) {
-    // First-ever call: only allowed to bootstrap the first `direction` user, and only if
-    // no admin caller is required yet (nobody has the claim to call it normally).
+    // Bootstrap VERROUILLÉ (audit pré-lancement 2026-07, M3) : l'Auth du projet est PARTAGÉE entre
+    // apps — un chemin qui pose le claim `direction` sans preuve était une course gagnable par
+    // n'importe quel compte du projet. Désormais le bootstrap exige : (1) l'opt-in explicite
+    // ALLOW_ROLE_BOOTSTRAP=true posé temporairement au déploiement initial, (2) un appelant
+    // AUTHENTIFIÉ, (3) l'auto-attribution uniquement (uid = soi-même). Hors fenêtre de bootstrap,
+    // provisionner via le script admin (functions/adminSetUserRole.js, service account).
+    if (process.env.ALLOW_ROLE_BOOTSTRAP !== "true") {
+      throw new HttpsError(
+        "failed-precondition",
+        "Bootstrap désactivé : provisionner le premier compte 'direction' via le script admin, ou déployer temporairement avec ALLOW_ROLE_BOOTSTRAP=true."
+      );
+    }
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Le bootstrap requiert un appelant authentifié.");
+    }
+    if (uid !== request.auth.uid) {
+      throw new HttpsError("permission-denied", "Le bootstrap ne peut attribuer 'direction' qu'à l'appelant lui-même.");
+    }
     if (role !== "direction") {
       throw new HttpsError(
         "failed-precondition",

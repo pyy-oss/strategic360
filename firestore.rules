@@ -161,8 +161,12 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if role() == 'direction';
     }
+    // Audit pré-lancement 2026-07 (M4) : les autres docs config/* (profil client, taxonomie,
+    // scoring, brouillon d'onboarding — qui contient le crawl concurrentiel et l'analyse IA) ne
+    // sont lisibles que par les EXÉCUTIFS. `config/permissions` reste lisible par tout utilisateur
+    // authentifié (règle dédiée ci-dessus) car le front en a besoin pour évaluer la matrice RBAC.
     match /config/{d} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && exec();
       allow write: if false;
     }
     match /auditLog/{id} {
