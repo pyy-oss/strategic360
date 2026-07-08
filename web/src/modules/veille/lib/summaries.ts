@@ -138,6 +138,31 @@ export function useAiHealth(): { data: AiHealth | null; loading: boolean } {
   return { data, loading };
 }
 
+/** Progression de la synchro (summaries/syncStatus, écrit par runSyncSources) — pour l'UI live. */
+export interface SyncStatus {
+  running?: boolean;
+  total?: number;
+  processed?: number;
+  created?: number;
+  evaluated?: number;
+  phase?: "ingestion" | "dedup" | "evaluation" | "done" | string;
+  startedAt?: Timestamp | FieldValue | null;
+  finishedAt?: Timestamp | FieldValue | null;
+}
+
+export function useSyncStatus(): { data: SyncStatus | null } {
+  const [data, setData] = useState<SyncStatus | null>(null);
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, "summaries", "syncStatus"),
+      (snap) => setData(snap.exists() ? (snap.data() as SyncStatus) : null),
+      () => setData(null)
+    );
+    return unsub;
+  }, []);
+  return { data };
+}
+
 export function useVeilleExecSummary(): { data: VeilleExecSummary | null; loading: boolean; error: Error | null } {
   const [data, setData] = useState<VeilleExecSummary | null>(null);
   const [loading, setLoading] = useState(true);

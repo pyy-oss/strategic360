@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { T, fmt as fmtC } from "../../../design/tokens";
 import { Eyebrow, Card, Badge, Kpi } from "../../../design/ui";
@@ -779,6 +779,11 @@ function useAgent<T>(agent: CopiloteAgent, accountId?: string) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(Boolean(cacheGet(cacheKey)));
+  // Bouton déclencheur capturé au clic : après une génération fraîche on le remonte en haut du
+  // viewport pour révéler le livrable rendu juste en dessous (sinon il apparaît hors écran et
+  // l'utilisateur doit deviner qu'il faut faire défiler vers le bas).
+  const triggerElRef = useRef<HTMLElement | null>(null);
+  const justRan = useRef(false);
   // Changement de compte/agent : on réhydrate depuis le cache (livrable déjà généré ré-affiché
   // instantanément) au lieu de repartir vide — tout en garantissant que le livrable montré
   // correspond au compte courant (la clé de cache porte l'accountId).
@@ -786,13 +791,23 @@ function useAgent<T>(agent: CopiloteAgent, accountId?: string) {
     const cached = cacheGet<T>(cacheKey);
     setData(cached ?? null); setErr(null); setDone(Boolean(cached));
   }, [cacheKey]);
+  // Remontée uniquement après une génération fraîche (justRan), jamais sur une réhydratation cache.
+  useEffect(() => {
+    if (!justRan.current || busy || !done) return;
+    justRan.current = false;
+    const el = triggerElRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [done, busy]);
   const run = async (extra?: Record<string, unknown>) => {
     const forKey = cacheKey; // capture : on ignore la réponse si le compte a changé entre-temps
+    triggerElRef.current = typeof document !== "undefined" ? (document.activeElement as HTMLElement | null) : null;
     setBusy(true); setErr(null);
     try {
       const res = await copiloteGenerate<T>(agent, accountId || undefined, extra);
       if (forKey !== `${agent}:${accountId || ""}`) return; // course : compte changé → on jette
       cacheSet(forKey, res);
+      justRan.current = true;
       setData(res); setDone(true);
     } catch (e) {
       if (forKey !== `${agent}:${accountId || ""}`) return;

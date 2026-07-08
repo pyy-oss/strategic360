@@ -792,6 +792,13 @@ async function runSyncSources(db) {
   let sourcesProcessed = 0;
   let itemsCreated = 0;
 
+  // Suivi de PROGRESSION (UX 2026-07) : on publie l'avancement dans summaries/syncStatus pour que le
+  // front affiche « X/Y sources · N signaux · phase » en direct au lieu d'un spinner aveugle.
+  // Best-effort : toute écriture échouée est ignorée, jamais d'impact sur la synchro.
+  const total = sourcesSnap.size;
+  const writeSyncStatus = (patch) => db.doc("summaries/syncStatus").set(patch, { merge: true }).catch(() => {});
+  await writeSyncStatus({ running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null, total, processed: 0, created: 0, phase: "ingestion" });
+
   // Traite UNE source : fetch + extraction + classification. Renvoie le nombre d'items créés.
   // Isolé pour être exécuté en LOTS PARALLÈLES (runInBatches) — la boucle séquentielle précédente
   // dépassait le timeout avant d'avoir traité toutes les sources (C4 audit 2026-07).
@@ -900,9 +907,18 @@ async function runSyncSources(db) {
     }
   };
 
+  // Compteurs LIVE (progression) — incrémentés au fil de l'eau dans un wrapper, écrits par source.
+  let doneCount = 0;
+  let createdCount = 0;
+  const trackedSource = async (doc) => {
+    let n = 0;
+    try { n = await processSource(doc); return n; }
+    finally { doneCount += 1; createdCount += n || 0; void writeSyncStatus({ processed: doneCount, created: createdCount }); }
+  };
+
   let settled;
   try {
-    settled = await runInBatches(sourcesSnap.docs, AI_CONCURRENCY, processSource);
+    settled = await runInBatches(sourcesSnap.docs, AI_CONCURRENCY, trackedSource);
   } finally {
     // Toujours refermer le navigateur headless (s'il a été lancé) pour libérer la mémoire du run.
     await closeRenderBrowser();
@@ -917,6 +933,7 @@ async function runSyncSources(db) {
   // Auto-nettoyage des quasi-doublons résiduels (le même événement vu par plusieurs sources) : rendu
   // AUTOMATIQUE à chaque synchro — plus besoin d'action manuelle. Best-effort (n'échoue jamais la synchro).
   let deduped = { clusters: 0, archived: 0 };
+  await writeSyncStatus({ phase: "dedup" });
   try {
     deduped = await runDedupeIntelItems(db);
   } catch (e) {
@@ -926,11 +943,14 @@ async function runSyncSources(db) {
   // PORTE DE QUALITÉ : on évalue les nouveaux signaux (pending) dans la foulée — ils passent en `new`
   // (publiés) ou `rejected`. Best-effort ; fail-open par item (une panne IA publie au lieu de retenir).
   let evaluated = { evaluated: 0, published: 0, rejected: 0 };
+  await writeSyncStatus({ phase: "evaluation" });
   try {
     evaluated = await runEvaluateIntelItems(db);
   } catch (e) {
     logger.warn(`syncSources: évaluation ignorée (${e.message})`);
   }
+  // Statut final : synchro terminée (le front repasse le bouton en état normal).
+  await writeSyncStatus({ running: false, finishedAt: FieldValue.serverTimestamp(), processed: doneCount, created: createdCount, evaluated: evaluated.published, phase: "done" });
 
   logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourcesSnap.size} itemsCreated=${itemsCreated} deduped=${deduped.archived} évalués=${evaluated.evaluated} (pub ${evaluated.published}/rej ${evaluated.rejected})`);
   return { sourcesTotal: sourcesSnap.size, sourcesProcessed, itemsCreated, deduped: deduped.archived, evaluated: evaluated.published, rejected: evaluated.rejected };
