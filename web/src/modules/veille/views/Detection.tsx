@@ -6,6 +6,7 @@ import { useIntelItems, useSources, withDetectionFields, createSource, updateSou
 import { createAction } from "../lib/execution";
 import { useCan, useIsExec } from "../../../lib/rbac";
 import { effectiveProx, isPastDue } from "../lib/freshness";
+import { useSyncStatus } from "../lib/summaries";
 import { usePaged, Pager } from "../components/Pager";
 import { Select, Input } from "../../../design/fields";
 import { Modal, useToast } from "../../../design/overlay";
@@ -385,6 +386,7 @@ function SourceHealthPanel() {
   const { sources, loading } = useSources();
   const isExec = useIsExec();
   const toast = useToast();
+  const { data: syncStatus } = useSyncStatus();
   const [open, setOpen] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -418,12 +420,20 @@ function SourceHealthPanel() {
   }
   const total = sources.length;
   const okPct = total ? Math.round((counts.ok / total) * 100) : 0;
+  // Progression de la synchro EN DIRECT (UX 2026-07) : le bouton reflète summaries/syncStatus quel que
+  // soit le déclencheur (bouton ici OU scheduler quotidien), au lieu d'un spinner aveugle.
+  const syncRunning = syncing || !!syncStatus?.running;
+  const PHASE_LABEL: Record<string, string> = { ingestion: "ingestion", dedup: "dédoublonnage", evaluation: "évaluation" };
+  const phaseLabel = PHASE_LABEL[syncStatus?.phase ?? ""] ?? "";
+  const syncLabel = syncStatus?.running
+    ? `Synchro… ${syncStatus.processed ?? 0}/${syncStatus.total ?? "?"}${syncStatus.created ? ` · ${syncStatus.created} signaux` : ""}${phaseLabel ? ` · ${phaseLabel}` : ""}`
+    : "Synchro…";
   return (
     <Card style={{ marginBottom: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <Eyebrow color={T.emerald}>Santé des sources — {counts.ok}/{total} actives ({okPct}%)</Eyebrow>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {isExec && <button className="pill" disabled={syncing} onClick={() => void syncNow()}>{syncing ? <><span className="cop-spin" /> Synchro…</> : "↻ Relancer la synchro"}</button>}
+          {isExec && <button className="pill" disabled={syncRunning} onClick={() => void syncNow()}>{syncRunning ? <><span className="cop-spin" /> {syncLabel}</> : "↻ Relancer la synchro"}</button>}
           {isExec && <button className="pill" disabled={deduping} onClick={() => void dedupeNow()} title="Archiver les quasi-doublons (même événement vu par plusieurs sources)">{deduping ? <><span className="cop-spin" /> Nettoyage…</> : "⧉ Dédoublonner"}</button>}
           {isExec && <button className="pill" disabled={evaluating} onClick={() => void evaluateNow()} title="Passer les signaux en attente au juge de pertinence (publie ou écarte avant affichage)">{evaluating ? <><span className="cop-spin" /> Évaluation…</> : "▶ Évaluer"}</button>}
           {isExec && <button className="pill on" onClick={() => setShowAdd(true)}>+ Ajouter</button>}
