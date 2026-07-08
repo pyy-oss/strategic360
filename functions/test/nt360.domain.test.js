@@ -379,6 +379,19 @@ describe("matchOffersToEvents — la veille déclenche le cross-sell (offre oppo
     expect(matchOffersToEvents([{ title: "X", subtype: "vulnerability" }], [])).toEqual([]);
   });
 
+  it("profil client (Phase 0) : sans 3e arg == mapping par défaut ; un offerMarkers custom change l'affinité", async () => {
+    const { matchOffersToEvents, SUBTYPE_OFFER_MARKERS } = await import("../domain/nt360.js");
+    const top = [{ title: "Nouvelle loi sectorielle", subtype: "regulation" }];
+    const offers = [{ offre: "Audit conformité", montant: 20, kind: "cross-sell" }, { offre: "Contentieux", montant: 30, kind: "cross-sell" }];
+    // Non-régression : passer explicitement le mapping par défaut == ne rien passer.
+    expect(matchOffersToEvents(top, offers, SUBTYPE_OFFER_MARKERS)).toEqual(matchOffersToEvents(top, offers));
+    // Mapping d'un AUTRE secteur (cabinet juridique) : "regulation" → offres juridiques.
+    const legalMarkers = { regulation: ["audit", "conform", "contentieux", "juridique"] };
+    const out = matchOffersToEvents(top, offers, legalMarkers).map((o) => o.offre);
+    expect(out).toContain("Audit conformité");
+    expect(out).toContain("Contentieux");
+  });
+
   it("rapprochement par MOT, pas sous-chaîne : « soc » (SOC) ne matche pas « Société », « ia » ne matche pas « fiabilité »", async () => {
     const { matchOffersToEvents, isManagedOffer } = await import("../domain/nt360.js");
     // Faux positifs corrigés : une offre au libellé contenant « soc »/« ia » par hasard n'est PAS déclenchée.

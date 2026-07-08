@@ -249,6 +249,9 @@ async function runInBatches(items, size, worker) {
  */
 const FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || "(default)";
 const STORAGE_BUCKET_NAME = process.env.STORAGE_BUCKET_NAME || undefined;
+// Fuseau des schedulers (Phase 0 produit) : paramétrable par déploiement client (les onSchedule sont
+// statiques au déploiement — c'est le bon niveau). Défaut = Neurones (Côte d'Ivoire).
+const TENANT_TIMEZONE = process.env.TENANT_TIMEZONE || "Africa/Abidjan";
 
 /** Firestore handle scoped to FIRESTORE_DATABASE_ID — use this everywhere instead of a bare
  * `getFirestore()` call, so every read/write in this codebase stays confined to this app's
@@ -711,6 +714,9 @@ async function runSyncSources(db) {
     db.collection("intelWatchlist").where("active", "==", true).get(),
   ]);
   const watchlistEntities = watchlistSnap.docs.map((d) => ({ name: d.data().name, type: d.data().type }));
+  // Profil client (Phase 0 produit) : surcharge éventuelle de la notation des sources par domaine.
+  // Absent → défaut Neurones (aucun changement de comportement).
+  const clientProfile = await loadClientProfile(db);
 
   // Index anti-quasi-doublon (bug « doublons dans les signaux ») : titres+axes des signaux NON archivés
   // déjà présents. Partagé (mutable) entre les sources d'un même run pour aussi capter les doublons
@@ -743,7 +749,7 @@ async function runSyncSources(db) {
 
       // Cotation : celle configurée sur la source prime ; sinon on la dérive du domaine d'URL
       // (officiel/réputé/agrégateur) plutôt que de retomber sur un C3 uniforme non discriminant.
-      const context = { sourceName: source.name, defaultSourceRating: source.sourceRating || deriveSourceRatingFromUrl(source.url) };
+      const context = { sourceName: source.name, defaultSourceRating: source.sourceRating || deriveSourceRatingFromUrl(source.url, clientProfile.sourceAuthority) };
       let created = 0;
       let degraded = false;
 
@@ -879,7 +885,7 @@ async function runSyncSources(db) {
  */
 // 2 GiB : le rendu headless (kind "web-js") lance Chromium, gourmand en mémoire. Les sources
 // web-js sont peu nombreuses (portails anti-bot) mais le navigateur doit tenir dans l'instance.
-exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "2GiB" }, async () => {
+exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "2GiB" }, async () => {
   await runSyncSources(firestoreDb());
 });
 
@@ -1003,7 +1009,7 @@ exports.evaluateIntelItemsNow = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "1GiB" 
  * La synchro quotidienne évalue déjà dans la foulée ; ce cron garantit qu'un signal ne stagne jamais.
  */
 exports.evaluateIntelItemsScheduled = onSchedule(
-  { schedule: "every 60 minutes", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "1GiB" },
+  { schedule: "every 60 minutes", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "1GiB" },
   async () => {
     const result = await runEvaluateIntelItems(firestoreDb());
     logger.info(`evaluateIntelItemsScheduled: ${JSON.stringify(result)}`);
@@ -1046,12 +1052,13 @@ exports.classifyAI = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   const watchlistSnap = await db.collection("intelWatchlist").where("active", "==", true).get();
   const watchlistEntities = watchlistSnap.docs.map((d) => ({ name: d.data().name, type: d.data().type }));
 
+  const clientProfile = await loadClientProfile(db);
   const rawText = `${existing.title || ""}\n${existing.summary || ""}`.trim();
   const classified = await classifyRawText(rawText, watchlistEntities, {
     sourceName: existing.sourceName,
     url: existing.url,
     defaultDate: existing.date,
-    defaultSourceRating: existing.sourceRating || deriveSourceRatingFromUrl(existing.url),
+    defaultSourceRating: existing.sourceRating || deriveSourceRatingFromUrl(existing.url, clientProfile.sourceAuthority),
   });
   if (!classified) {
     throw new HttpsError("internal", "La réponse IA n'a pas pu être exploitée (contenu vide/incomplet).");
@@ -1161,7 +1168,7 @@ async function runRescoreActive(db) {
 }
 
 exports.rescoreDaily = onSchedule(
-  { schedule: "30 4 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
+  { schedule: "30 4 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
     await runRescoreActive(firestoreDb());
   }
@@ -1191,7 +1198,7 @@ async function runAiHealthCheck(db) {
 }
 
 exports.aiHealthCheck = onSchedule(
-  { schedule: "15 6 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 120, memory: "256MiB" },
+  { schedule: "15 6 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 120, memory: "256MiB" },
   async () => {
     await runAiHealthCheck(firestoreDb());
   }
@@ -1356,7 +1363,7 @@ async function computeVeilleExecSummary(db) {
  * Construit summaries/veille_exec (boardKpis, decisionsPending, porter, winRateByCompetitor, ...).
  * Roadmap: V3 Scoring & agrégats veille.
  */
-exports.aggregateVeilleExec = onSchedule({ schedule: "every 60 minutes", timeZone: "Africa/Abidjan", region: "europe-west1" }, async () => {
+exports.aggregateVeilleExec = onSchedule({ schedule: "every 60 minutes", timeZone: TENANT_TIMEZONE, region: "europe-west1" }, async () => {
   const db = firestoreDb();
   try {
     const summary = await computeVeilleExecSummary(db);
@@ -1437,7 +1444,7 @@ exports.generateBriefing = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
  * revue humaine reste obligatoire avant toute diffusion (garde dans parseBriefingResponse).
  */
 exports.generateBriefingWeekly = onSchedule(
-  { schedule: "0 7 * * 5", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
+  { schedule: "0 7 * * 5", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
     const result = await runGenerateBriefing(firestoreDb(), "vertex-ai:scheduled");
     if (!result) {
@@ -1933,7 +1940,7 @@ async function runEnrichment(db) {
  * Regenerates the strategic artifacts from the week's accumulated signals via `runEnrichment`.
  */
 exports.enrichStrategicArtifacts = onSchedule(
-  { schedule: "0 5 * * 1", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
+  { schedule: "0 5 * * 1", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
     await runEnrichment(firestoreDb());
   }
@@ -2374,7 +2381,7 @@ async function runInternalQuantiSync(db) {
  * workflow GHA run-quanti-now.yml.
  */
 exports.syncInternalQuanti = onSchedule(
-  { schedule: "30 5 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
+  { schedule: "30 5 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
     await runInternalQuantiSync(firestoreDb());
   }
@@ -2418,6 +2425,10 @@ async function runSyncCopiloteAccounts(db) {
   const affinity = nt360DeriveBuAffinity(derived);
   const buBenchmark = nt360DeriveBuBenchmark(derived);
   const meta = { buCatalog, affinity, buBenchmark };
+  // Profil client (Phase 0 produit) : surcharge éventuelle du mapping événement de veille → famille
+  // d'offre. Absent → défaut Neurones (aucun changement de comportement).
+  const clientProfile = await loadClientProfile(db);
+  const offerMarkers = clientProfile.offerMapping.subtypeOfferMarkers;
   const todayIso = new Date().toISOString().slice(0, 10);
   await db.doc("summaries/copiloteMeta").set(
     { buCatalog, affinity, buBenchmark, updatedAt: FieldValue.serverTimestamp() },
@@ -2467,7 +2478,7 @@ async function runSyncCopiloteAccounts(db) {
         ...val.whitespaceValue.map((w) => ({ offre: w.offre, montant: w.montant, kind: "cross-sell" })),
         ...val.upsellByOffre.map((u) => ({ offre: u.offre, montant: u.montant, kind: "upsell" })),
       ];
-      const eventOffers = nt360MatchOffersToEvents(veille.top, offersForEvents).slice(0, 3);
+      const eventOffers = nt360MatchOffersToEvents(veille.top, offersForEvents, offerMarkers).slice(0, 3);
       val.eventOffers = eventOffers;
       const eventByOffre = new Map(eventOffers.map((e) => [e.offre, e.event]));
       // Relance churn ARMÉE par la veille (levier RÉCURRENCE) : une offre dormante devient prioritaire
@@ -2614,7 +2625,7 @@ async function runSyncCopiloteAccounts(db) {
 }
 
 exports.syncCopiloteAccounts = onSchedule(
-  { schedule: "45 5 * * *", timeZone: "Africa/Abidjan", region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
+  { schedule: "45 5 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
     await runSyncCopiloteAccounts(firestoreDb());
   }
@@ -2806,7 +2817,7 @@ exports.exportPdf = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
  *     dedicated bucket is preferred.
  */
 exports.scheduledFirestoreExport = onSchedule(
-  { schedule: "0 2 * * *", timeZone: "Africa/Abidjan", region: "europe-west1" },
+  { schedule: "0 2 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1" },
   async () => {
     try {
       const client = new firestoreAdminV1.FirestoreAdminClient();

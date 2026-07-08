@@ -229,15 +229,23 @@ const REPUTABLE_DOMAIN_MARKERS = ["jeuneafrique", "reuters", "afp.com", "financi
 const AGGREGATOR_DOMAIN_MARKERS = ["blogspot", "wordpress", "medium.com", "actucia", "abidjan.net", "linfodrome", "koaci"];
 
 /**
- * deriveSourceRatingFromUrl(url) -> "A2" | "B2" | "C3" | "D3" | undefined — note d'amirauté par
- * défaut dérivée du domaine, utilisée seulement quand la source n'a pas de cotation explicite. PUR.
+ * deriveSourceRatingFromUrl(url, sourceAuthority?) -> "A2" | "B2" | "D3" | (custom) | undefined —
+ * note d'amirauté par défaut dérivée du domaine, utilisée quand la source n'a pas de cotation
+ * explicite. `sourceAuthority` (profil client, Phase 0 produit) permet de surcharger les listes de
+ * domaines et les notes ; ABSENT → constantes Neurones par défaut (aucun changement de comportement).
+ * PUR.
  */
-function deriveSourceRatingFromUrl(url) {
+function deriveSourceRatingFromUrl(url, sourceAuthority) {
   if (typeof url !== "string" || !url.trim()) return undefined;
+  const cfg = sourceAuthority && typeof sourceAuthority === "object" ? sourceAuthority : {};
+  const official = Array.isArray(cfg.officialDomains) ? cfg.officialDomains : OFFICIAL_DOMAIN_MARKERS;
+  const reputable = Array.isArray(cfg.reputableDomains) ? cfg.reputableDomains : REPUTABLE_DOMAIN_MARKERS;
+  const aggregator = Array.isArray(cfg.aggregatorDomains) ? cfg.aggregatorDomains : AGGREGATOR_DOMAIN_MARKERS;
+  const ratings = cfg.ratings && typeof cfg.ratings === "object" ? cfg.ratings : {};
   const u = url.toLowerCase();
-  if (OFFICIAL_DOMAIN_MARKERS.some((m) => u.includes(m))) return "A2";
-  if (REPUTABLE_DOMAIN_MARKERS.some((m) => u.includes(m))) return "B2";
-  if (AGGREGATOR_DOMAIN_MARKERS.some((m) => u.includes(m))) return "D3";
+  if (official.some((m) => u.includes(m))) return ratings.official || "A2";
+  if (reputable.some((m) => u.includes(m))) return ratings.reputable || "B2";
+  if (aggregator.some((m) => u.includes(m))) return ratings.aggregator || "D3";
   return undefined; // inconnu → l'appelant retombe sur le défaut conservateur C3
 }
 
