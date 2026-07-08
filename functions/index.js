@@ -27,7 +27,7 @@ const dns = require("node:dns/promises");
 const { intelItemId } = require("./domain/ids");
 const { isForbiddenIp, checkPublicHttpUrl } = require("./domain/netguard");
 const { buildClassificationPrompt, parseClassificationResponse, deriveSourceRatingFromUrl } = require("./domain/classify");
-const { dedupeByTitle, isNearDuplicate, isStrongDuplicate, clusterNearDuplicates } = require("./domain/dedupe");
+const { dedupeByTitle, isNearDuplicate, isStrongDuplicate, blocksMerge, clusterNearDuplicates } = require("./domain/dedupe");
 const {
   pickOnboardingLinks,
   buildOnboardingProfilePrompt,
@@ -123,14 +123,43 @@ async function closeRenderBrowser() {
  * permanence et n'atteignent jamais l'inactivité réseau → on attend le DOM puis un court délai
  * pour laisser le JS peupler la page. */
 async function fetchRendered(url) {
-  // Garde anti-SSRF sur l'URL initiale (les sous-requêtes de la page rendue restent sous la
-  // responsabilité du navigateur headless sandboxé — risque résiduel documenté dans netguard.js).
   await assertSafePublicUrl(url);
   const browser = await getRenderBrowser();
   const page = await browser.newPage();
+  // Garde anti-SSRF COMPLÈTE (audit 2026-07, M1) : sans interception, le navigateur suivait
+  // lui-même les redirections 3xx du frame principal et chargeait les sous-ressources sans
+  // repasser par assertSafePublicUrl → une page publique redirigeant vers une IP interne
+  // exfiltrait son contenu. On intercepte CHAQUE requête réseau et on refuse tout hôte qui
+  // résout vers une adresse interne (redirections + sous-requêtes comprises). Cache DNS par page
+  // pour ne pas multiplier les lookups.
+  const dnsCache = new Map();
   try {
+    await page.setRequestInterception(true);
+    page.on("request", async (req) => {
+      try {
+        let u;
+        try { u = new URL(req.url()); } catch { await req.abort(); return; }
+        // Schémas locaux (data:/blob:/about:) : pas de réseau, on laisse passer.
+        if (u.protocol !== "http:" && u.protocol !== "https:") { await req.continue(); return; }
+        const checked = checkPublicHttpUrl(req.url());
+        if (!checked.ok) { await req.abort(); return; }
+        const host = checked.url.hostname.replace(/^\[|\]$/g, "");
+        if (/^[\d.]+$/.test(host) || host.includes(":")) { await req.continue(); return; } // IP littérale déjà validée
+        let internal = dnsCache.get(host);
+        if (internal === undefined) {
+          try {
+            const addrs = await dns.lookup(host, { all: true, verbatim: true });
+            internal = addrs.some((a) => isForbiddenIp(a.address));
+          } catch { internal = true; } // DNS en échec → on refuse par défaut
+          dnsCache.set(host, internal);
+        }
+        if (internal) await req.abort(); else await req.continue();
+      } catch { try { await req.abort(); } catch { /* déjà géré */ } }
+    });
     await page.setUserAgent(SOURCE_FETCH_HEADERS["User-Agent"]);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    // Re-validation de l'URL FINALE après la chaîne de redirections du frame principal.
+    await assertSafePublicUrl(page.url());
     // Laisse le JS rendre le contenu (listes d'AO, actualités) après le DOMContentLoaded.
     await new Promise((r) => setTimeout(r, 3500));
     return await page.content();
@@ -862,13 +891,17 @@ async function upsertClassifiedItem(db, classified, dedupeIndex) {
     const axis = classified.axis || "";
     const title = classified.title || "";
     // Même axe + quasi-doublon standard, OU fort recouvrement quel que soit l'axe (même événement vu
-    // par deux sources et classé sur des axes différents) — audit pertinence 2026-07.
-    const dup = dedupeIndex.find((e) => ((e.axis || "") === axis && isNearDuplicate(e.title, title)) || isStrongDuplicate(e.title, title));
+    // par deux sources et classé sur des axes différents) — audit pertinence 2026-07. Garde M3 : un
+    // discriminant fort divergent (référence d'AO/acheteur/entité) empêche la fusion d'AO distincts.
+    const dup = dedupeIndex.find((e) =>
+      !blocksMerge(e.item, classified) &&
+      (((e.axis || "") === axis && isNearDuplicate(e.title, title)) || isStrongDuplicate(e.title, title))
+    );
     if (dup) {
       logger.info(`syncSources: skip near-duplicate « ${String(classified.title).slice(0, 60)} » ~ « ${String(dup.title).slice(0, 60)} »`);
       return { id, written: false, duplicate: true };
     }
-    dedupeIndex.push({ title: classified.title || "", axis });
+    dedupeIndex.push({ title: classified.title || "", axis, item: classified });
   }
   const { status: _classifiedStatus, ...rest } = classified;
   await ref.set(
@@ -930,7 +963,7 @@ async function runSyncSources(db) {
     dedupeIndex = existingSnap.docs
       .map((d) => d.data())
       .filter((x) => x && (x.status || "new") !== "archived" && x.title)
-      .map((x) => ({ title: x.title, axis: x.axis || "" }));
+      .map((x) => ({ title: x.title, axis: x.axis || "", item: x }));
   } catch (e) {
     logger.warn(`syncSources: index anti-doublon indisponible (${e.message}) — dédup par id seulement`);
   }

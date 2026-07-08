@@ -3,7 +3,40 @@
 /** Pure-function tests for functions/domain/dedupe.js (dédoublonnage intelligent — Vague C). */
 
 import { describe, it, expect } from "vitest";
-import { normalizeTitle, titleSimilarity, isNearDuplicate, dedupeByTitle, clusterNearDuplicates } from "../domain/dedupe.js";
+import { normalizeTitle, titleSimilarity, isNearDuplicate, discriminantKey, blocksMerge, dedupeByTitle, clusterNearDuplicates } from "../domain/dedupe.js";
+
+describe("dedupe — discriminant fort (M3, audit intégral)", () => {
+  it("discriminantKey lit la référence d'AO / l'acheteur / l'entité", () => {
+    expect(discriminantKey({ tenderRef: "AO-2026-042" })).toBe("ao 2026 042");
+    expect(discriminantKey({ businessAngle: { buyer: "Ministère de la Santé" } })).toBe("ministere de la sante");
+    expect(discriminantKey({ ent: "ARTCI" })).toBe("artci");
+    expect(discriminantKey({ title: "x" })).toBe("");
+  });
+
+  it("blocksMerge : deux discriminants forts divergents interdisent la fusion", () => {
+    expect(blocksMerge({ tenderRef: "AO-1" }, { tenderRef: "AO-2" })).toBe(true);
+    expect(blocksMerge({ tenderRef: "AO-1" }, { tenderRef: "AO-1" })).toBe(false);
+    expect(blocksMerge({ tenderRef: "AO-1" }, { title: "sans disc" })).toBe(false); // l'un sans disc → pas de blocage
+  });
+
+  it("clusterNearDuplicates NE fusionne PAS deux AO distincts à titre générique", () => {
+    const items = [
+      { id: "a1", title: "Avis d'appel d'offres fourniture de matériel informatique", axis: "clients_prospects", tenderRef: "AO-2026-01", businessAngle: { buyer: "Ministère A" } },
+      { id: "a2", title: "Avis d'appel d'offres fourniture de matériel informatique", axis: "clients_prospects", tenderRef: "AO-2026-99", businessAngle: { buyer: "Ministère B" } },
+    ];
+    expect(clusterNearDuplicates(items)).toEqual([]); // discriminants différents → pas de fusion
+  });
+
+  it("clusterNearDuplicates fusionne le MÊME AO vu deux fois (même référence)", () => {
+    const items = [
+      { id: "b1", title: "Appel d'offres réhabilitation réseau électrique Abidjan", axis: "marche", tenderRef: "AO-7" },
+      { id: "b2", title: "Appel d'offres réhabilitation du réseau électrique à Abidjan", axis: "marche", tenderRef: "AO-7" },
+    ];
+    const clusters = clusterNearDuplicates(items);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].map((x) => x.id).sort()).toEqual(["b1", "b2"]);
+  });
+});
 
 describe("dedupe — similarité de titres", () => {
   it("normalizeTitle : minuscule, sans accents, ponctuation → espaces", () => {

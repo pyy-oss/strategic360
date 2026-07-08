@@ -81,8 +81,20 @@ function parseEvaluateResponse(raw) {
   const raison = coerce(raw.raison);
   // Score absent → ne bloque pas (fail-open sur réponse partielle) ; sinon exige le seuil.
   const scoreOk = pertinence == null ? true : pertinence >= RELEVANCE_MIN;
-  const publier = raw.publier === false ? false : scoreOk; // rejet explicite respecté ; sinon couplé au seuil
+  // Rejet explicite (m10 audit intégral) : Gemini renvoie souvent le booléen STRINGIFIÉ ("false")
+  // en mode JSON — `raw.publier === false` strict laissait alors passer un signal que le modèle
+  // voulait écarter. On normalise false / "false" / 0 / "no" / "non".
+  const rejette = isFalsey(raw.publier);
+  const publier = rejette ? false : scoreOk; // rejet explicite respecté ; sinon couplé au seuil
   return { pertinence, publier, raison };
+}
+
+/** Vrai si la valeur exprime un « non » : false, "false", 0, "0", "no", "non" (insensible à la casse). */
+function isFalsey(v) {
+  if (v === false) return true;
+  if (typeof v === "number") return v === 0;
+  if (typeof v === "string") return ["false", "0", "no", "non"].includes(v.trim().toLowerCase());
+  return false;
 }
 
 module.exports = { RELEVANCE_MIN, buildEvaluatePrompt, parseEvaluateResponse };

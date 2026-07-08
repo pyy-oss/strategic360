@@ -151,8 +151,18 @@ service cloud.firestore {
     }
 
     // — Agrégats (écrits par Cloud Functions / Admin SDK uniquement) —
+    // Audit intégral 2026-07 (m3) : les agrégats EXÉCUTIFS/FINANCIERS ne sont lisibles que par les
+    // exécutifs. `summaries/veille_exec` (taux de victoire par concurrent, pipeline en XOF, KPIs
+    // board) et `summaries/quanti` (données financières dérivées de l'app sœur nt360) étaient
+    // exposés à tout rôle authentifié (commercial cloisonné, pmo, achats, lecture) — incohérent
+    // avec le durcissement config/*. Les autres agrégats (summaries/veille, aiHealth, syncStatus)
+    // restent lisibles par tous les authentifiés (fil/radar/santé).
+    // NB : les blocs `match` Firestore se combinent en OU — une règle spécifique restrictive ne peut
+    // pas « surcharger » une règle générale permissive. On exprime donc la restriction DANS l'unique
+    // règle summaries/{d} : veille_exec & quanti exigent exec(), les autres agrégats restent
+    // lisibles par tout authentifié.
     match /summaries/{d} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && (!(d in ['veille_exec', 'quanti']) || exec());
       allow write: if false;
     }
 
