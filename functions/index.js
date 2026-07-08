@@ -293,6 +293,57 @@ async function getCompanyContext() {
  * suivantes du même run utilisent immédiatement la nouvelle version. */
 function invalidateCompanyContextCache() {
   companyContextCache = { text: null, ts: 0 };
+  clientProfileCache = { profile: null, ts: 0 };
+}
+
+/* ------------------------------------------------------------------------------------------- *
+ * PROFIL CLIENT (Phase 0 « produit agnostique ») — surcouche de config lisible depuis Firestore
+ * pour rendre l'outil paramétrable/agnostique à l'entreprise (déploiement par client). Cette PR
+ * établit le CHARGEMENT et le FALLBACK ; aucun prompt ni scoring ne le consomme encore (les PR
+ * suivantes câbleront). Tant qu'aucun doc `config/*` n'existe, le profil résolu == DEFAULT_PROFILE
+ * (= comportement Neurones actuel). Même patron de cache que getCompanyContext (TTL 10 min).
+ * ------------------------------------------------------------------------------------------- */
+const { buildClientProfile } = require("./domain/profile");
+// Docs Firestore surchargeant le profil par défaut (clé profil ← chemin doc / champ lu).
+const PROFILE_CONFIG_DOCS = [
+  ["profile", "config/profile", (d) => d],
+  ["taxonomy", "config/veilleTaxonomy", (d) => d],
+  ["scoring", "config/scoring", (d) => d],
+  ["offerMapping", "config/offerMapping", (d) => d],
+  ["sourceAuthority", "config/sourceAuthority", (d) => d],
+  ["internalData", "config/internalData", (d) => d],
+];
+let clientProfileCache = { profile: null, ts: 0 };
+
+/**
+ * loadClientProfile(db?) -> profil résolu (DEFAULT_PROFILE + surcharges Firestore). Lit les docs
+ * `config/*` + le contexte (frameworks/companyContext, déjà géré par getCompanyContext) et fusionne.
+ * Best-effort : toute lecture échouée retombe sur le défaut, jamais d'exception propagée.
+ */
+async function loadClientProfile(db) {
+  const now = Date.now();
+  if (clientProfileCache.profile && now - clientProfileCache.ts < COMPANY_CONTEXT_TTL_MS) {
+    return clientProfileCache.profile;
+  }
+  const database = db || firestoreDb();
+  const overrides = {};
+  try {
+    const snaps = await Promise.all(PROFILE_CONFIG_DOCS.map(([, path]) => database.doc(path).get().catch(() => null)));
+    PROFILE_CONFIG_DOCS.forEach(([key, , pick], i) => {
+      const snap = snaps[i];
+      if (snap && snap.exists) {
+        const data = pick(snap.data());
+        if (data && typeof data === "object") overrides[key] = data;
+      }
+    });
+    // Le contexte réutilise le chargement/cache existant (source unique).
+    overrides.contextText = await getCompanyContext();
+  } catch (err) {
+    logger.warn(`loadClientProfile: lecture config/* échouée (${err.message}) — profil par défaut`);
+  }
+  const profile = buildClientProfile(overrides);
+  clientProfileCache = { profile, ts: now };
+  return profile;
 }
 
 const NOT_IMPLEMENTED = (fn, phase) => {

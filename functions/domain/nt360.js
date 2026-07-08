@@ -759,6 +759,10 @@ function copiloteAccountMatchesScope(account, scope) {
 
 module.exports = {
   STAGE_TO_ETAPE,
+  // Constantes métier exposées pour le futur profil client (Phase 0 produit) — source unique de vérité.
+  SUBTYPE_OFFER_MARKERS,
+  MANAGED_MARKERS,
+  PLACEHOLDER_BU,
   isMeaningfulBu,
   isManagedOffer,
   mapOrders,

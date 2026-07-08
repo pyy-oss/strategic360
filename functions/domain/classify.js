@@ -383,4 +383,10 @@ module.exports = {
   VALID_PROX,
   VALID_BUS,
   AXIS_TO_DETECTION_CAT,
+  // Exposés pour le futur profil client (Phase 0 produit) — source unique de vérité.
+  VALID_SUBTYPES,
+  SUBTYPE_SYNONYMS,
+  OFFICIAL_DOMAIN_MARKERS,
+  REPUTABLE_DOMAIN_MARKERS,
+  AGGREGATOR_DOMAIN_MARKERS,
 };
