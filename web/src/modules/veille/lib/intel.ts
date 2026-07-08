@@ -16,6 +16,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -209,11 +210,20 @@ export interface IntelItemFilters {
   status?: IntelStatus | "all";
 }
 
+/**
+ * Plafond de garde des listeners live (audit intégral 2026-07, m4) : les collections croissent en
+ * continu ; sans borne, chaque `onSnapshot` chargeait l'INTÉGRALITÉ à chaque utilisateur (coût de
+ * lectures et mémoire non bornés). On plafonne à un volume large mais fini — la pagination locale
+ * (`usePaged`) opère au sein de cette fenêtre, la plus récente (orderBy date/name).
+ */
+export const LIST_LISTENER_CAP = 500;
+
 function intelItemsQueryConstraints(filters?: IntelItemFilters): QueryConstraint[] {
   const constraints: QueryConstraint[] = [];
   if (filters?.axis && filters.axis !== "all") constraints.push(where("axis", "==", filters.axis));
   if (filters?.status && filters.status !== "all") constraints.push(where("status", "==", filters.status));
   constraints.push(orderBy("date", "desc"));
+  constraints.push(limit(LIST_LISTENER_CAP));
   return constraints;
 }
 
@@ -276,7 +286,7 @@ export function useWatchlist(): { entries: IntelWatchlistEntry[]; loading: boole
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const q = query(collection(db, "intelWatchlist"), orderBy("name", "asc"));
+    const q = query(collection(db, "intelWatchlist"), orderBy("name", "asc"), limit(LIST_LISTENER_CAP));
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -310,7 +320,7 @@ export function useSources(): { sources: IntelSource[]; loading: boolean; error:
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const q = query(collection(db, "intelSources"), orderBy("name", "asc"));
+    const q = query(collection(db, "intelSources"), orderBy("name", "asc"), limit(LIST_LISTENER_CAP));
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -420,7 +430,7 @@ export function useBizOpportunities(): { opportunities: BizOpportunity[]; loadin
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const q = query(collection(db, "bizOpportunities"));
+    const q = query(collection(db, "bizOpportunities"), limit(LIST_LISTENER_CAP));
     const unsub = onSnapshot(
       q,
       (snap) => {

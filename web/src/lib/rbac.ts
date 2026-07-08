@@ -38,27 +38,54 @@ export interface Claims {
   loading: boolean;
 }
 
-/** Subscribes to auth state, forces an ID token refresh, and exposes the `role` custom claim. */
+/**
+ * Abonnement auth PARTAGÉ (audit intégral 2026-07, m5) — un SEUL `onAuthStateChanged` +
+ * `getIdTokenResult(true)` pour toute l'app, quel que soit le nombre de composants qui appellent
+ * `useClaims`/`useCan`/`useIsExec`. Auparavant chaque consommateur ouvrait son propre listener et
+ * forçait un refresh de token à chaque montage. Singleton module : la source démarre au 1er
+ * abonné, diffuse l'état à tous, et se maintient tant qu'il reste des abonnés.
+ */
+let claimsState: Claims = { user: null, role: null, loading: true };
+const claimsSubscribers = new Set<(c: Claims) => void>();
+let claimsAuthUnsub: (() => void) | null = null;
+
+function emitClaims(next: Claims) {
+  claimsState = next;
+  for (const fn of claimsSubscribers) fn(next);
+}
+
+function startClaimsSource() {
+  if (claimsAuthUnsub) return;
+  claimsAuthUnsub = onAuthStateChanged(auth, async (user) => {
+    if (!user) { emitClaims({ user: null, role: null, loading: false }); return; }
+    try {
+      // Force refresh so a role granted server-side (setUserRole) is picked up without
+      // requiring the user to sign out/in again.
+      const tokenResult = await user.getIdTokenResult(true);
+      const role = (tokenResult.claims.role as Role | undefined) ?? null;
+      emitClaims({ user, role, loading: false });
+    } catch {
+      emitClaims({ user, role: null, loading: false });
+    }
+  });
+}
+
+/** Subscribes to the SHARED auth-state source and exposes the `role` custom claim. */
 export function useClaims(): Claims {
-  const [state, setState] = useState<Claims>({ user: null, role: null, loading: true });
+  const [state, setState] = useState<Claims>(claimsState);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setState({ user: null, role: null, loading: false });
-        return;
+    claimsSubscribers.add(setState);
+    startClaimsSource();
+    setState(claimsState); // synchronise le nouvel abonné sur l'état courant
+    return () => {
+      claimsSubscribers.delete(setState);
+      // Dernier abonné parti : on ferme la source (elle redémarrera au prochain montage).
+      if (claimsSubscribers.size === 0 && claimsAuthUnsub) {
+        claimsAuthUnsub();
+        claimsAuthUnsub = null;
       }
-      try {
-        // Force refresh so a role granted server-side (setUserRole) is picked up without
-        // requiring the user to sign out/in again.
-        const tokenResult = await user.getIdTokenResult(true);
-        const role = (tokenResult.claims.role as Role | undefined) ?? null;
-        setState({ user, role, loading: false });
-      } catch {
-        setState({ user, role: null, loading: false });
-      }
-    });
-    return unsub;
+    };
   }, []);
 
   return state;

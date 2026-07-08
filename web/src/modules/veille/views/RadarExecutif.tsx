@@ -130,12 +130,23 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
       innovation: "Signaux technologiques et d'innovation à fort potentiel.",
     } as Record<string, string>
   )[lens];
+  // Canari IA (m14 audit intégral) : on alerte si le dernier check a ÉCHOUÉ, mais AUSSI s'il est
+  // PÉRIMÉ — le canari tourne quotidiennement, donc un checkedAt vieux de > 30 h signale que le
+  // planificateur lui-même est à l'arrêt (panne silencieuse : sans ça, un ancien ok:true restait
+  // affiché indéfiniment).
+  const healthMs = (aiHealth?.checkedAt as { toMillis?: () => number } | undefined)?.toMillis?.() ?? 0;
+  const healthStale = !!aiHealth && (!healthMs || Date.now() - healthMs > 30 * 3600 * 1000);
+  const healthDown = !!aiHealth && (aiHealth.ok === false || healthStale);
   return (
     <div>
-      {aiHealth && aiHealth.ok === false && (
+      {healthDown && (
         <div style={{ fontSize: 12.5, color: T.clay, marginBottom: 14, background: T.clay + "18", border: `1px solid ${T.clay}55`, borderRadius: 8, padding: "9px 12px", fontWeight: 600 }}>
-          ⚠️ Chaîne IA indisponible — les analyses (Copilote, briefings, battlecards) peuvent être vides ou obsolètes.
-          Modèle {aiHealth.model ?? "?"} en échec{aiHealth.lastError ? ` : ${aiHealth.lastError}` : ""}.
+          {aiHealth && aiHealth.ok === false ? (
+            <>⚠️ Chaîne IA indisponible — les analyses (Copilote, briefings, battlecards) peuvent être vides ou obsolètes.
+              Modèle {aiHealth.model ?? "?"} en échec{aiHealth.lastError ? ` : ${aiHealth.lastError}` : ""}.</>
+          ) : (
+            <>⚠️ Supervision IA muette — aucun contrôle de santé réussi depuis plus de 30 h (planificateur possiblement à l'arrêt). Les analyses peuvent être obsolètes.</>
+          )}
         </div>
       )}
       <div style={{ fontSize: 12, color: T.plum, marginBottom: 14, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 12px" }}>

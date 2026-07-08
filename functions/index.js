@@ -333,9 +333,40 @@ const vertexLimit = makeLimiter(AI_CONCURRENCY);
  * nombre de sources actives configurées. Au-delà, rotation quotidienne pour ne pas affamer la
  * queue de liste (les sources excédentaires passent aux runs suivants). */
 const MAX_SOURCES_PER_RUN = 80;
-/** Verrou de sync (audit M9) : un run est considéré mort (verrou périmé) au-delà de ce délai —
+/** Verrou de run (audit M9/M2) : un run est considéré mort (verrou périmé) au-delà de ce délai —
  * légèrement supérieur au timeout dur des fonctions (540 s). */
 const SYNC_LOCK_TTL_MS = 12 * 60 * 1000;
+
+/**
+ * acquireRunLock(db, path, ttlMs) -> bool — verrou transactionnel générique (audit intégral 2026-07,
+ * M2/m6) pour empêcher deux runs coûteux (enrichissement, évaluation) de tourner en parallèle
+ * (manuel + planifié) : double facturation Vertex sur un projet PARTAGÉ et écritures concurrentes
+ * last-writer-wins. Écrit `{ running:true, startedAt }` si aucun run vivant. Un verrou plus vieux
+ * que ttlMs est réputé périmé (run tué au timeout) et repris. Best-effort : si la transaction
+ * échoue (émulateur, indisponibilité), on autorise le run (mieux vaut un run que pas de run).
+ */
+async function acquireRunLock(db, path, ttlMs = SYNC_LOCK_TTL_MS) {
+  const ref = db.doc(path);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const cur = snap.exists ? snap.data() : {};
+      const startedMs = cur.startedAt && typeof cur.startedAt.toMillis === "function" ? cur.startedAt.toMillis() : 0;
+      if (cur.running === true && startedMs && Date.now() - startedMs < ttlMs) return false;
+      tx.set(ref, { running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null }, { merge: true });
+      return true;
+    });
+  } catch (e) {
+    logger.warn(`acquireRunLock(${path}): transaction indisponible (${e.message}) — run sans verrou`);
+    return true;
+  }
+}
+/** Libère un verrou de run (best-effort). */
+async function releaseRunLock(db, path, patch = {}) {
+  try {
+    await db.doc(path).set({ running: false, finishedAt: FieldValue.serverTimestamp(), ...patch }, { merge: true });
+  } catch { /* best-effort */ }
+}
 
 /** Statuts « PUBLIÉS » (visibles du fil/radar et comptés dans les agrégats). `pending` (en attente
  * d'évaluation) et `rejected` (écarté par l'évaluateur) et `archived` (doublon/clos) en sont exclus. */
@@ -1259,8 +1290,17 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
   const snap = await db.collection("intelItems").where("status", "==", "pending").limit(limit).get();
   const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   if (!items.length) return { evaluated: 0, published: 0, rejected: 0 };
+  // Verrou anti-double-évaluation (audit intégral 2026-07, m6) : l'évaluation en fin de synchro et
+  // le cron horaire pouvaient noter les MÊMES items `pending` simultanément (jusqu'à 150×2 appels
+  // Vertex). Un seul évaluateur à la fois ; l'autre reprendra les restants au prochain tick.
+  const EVAL_LOCK = "summaries/evalStatus";
+  if (!(await acquireRunLock(db, EVAL_LOCK))) {
+    logger.info("runEvaluateIntelItems: une évaluation est déjà en cours (verrou actif) — passe ignorée");
+    return { evaluated: 0, published: 0, rejected: 0, locked: true };
+  }
   let published = 0, rejected = 0;
   const stamp = () => FieldValue.serverTimestamp();
+  try {
   await runInBatches(items, AI_CONCURRENCY, async (it) => {
     try {
       const parsed = parseEvaluateResponse(await generateJson(buildEvaluatePrompt(it, companyContext)));
@@ -1286,6 +1326,9 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
   });
   logger.info(`runEvaluateIntelItems: ${items.length} évalués — ${published} publiés, ${rejected} écartés`);
   return { evaluated: items.length, published, rejected };
+  } finally {
+    await releaseRunLock(db, EVAL_LOCK);
+  }
 }
 
 /** evaluateIntelItemsNow — callable exec-gated : évalue à la demande les signaux en attente. */
@@ -1877,6 +1920,16 @@ async function runEnrichment(db) {
     return { skipped: true };
   }
 
+  // Verrou anti-runs-concurrents (audit intégral 2026-07, M2) : enrichNow (manuel) et
+  // enrichStrategicArtifacts (cron hebdo) ne doivent pas tourner ensemble — ~18 générations Vertex
+  // ×2 sur le projet PARTAGÉ + courses last-writer-wins sur frameworks/*.
+  const ENRICH_LOCK = "summaries/enrichStatus";
+  if (!(await acquireRunLock(db, ENRICH_LOCK))) {
+    logger.warn("runEnrichment: un enrichissement est déjà en cours (verrou actif) — démarrage refusé");
+    return { skipped: true, locked: true };
+  }
+  try {
+
   // 0. Rafraîchissement du contexte entreprise (dynamique) — AVANT les autres générations pour
   // qu'elles utilisent la version à jour. writeFrameworkDoc applique la garde humaine : un
   // contexte édité par la Direction n'est jamais réécrit par l'IA.
@@ -2228,6 +2281,9 @@ async function runEnrichment(db) {
 
   logger.info(`runEnrichment: done — ${JSON.stringify(summary)} (signals=${signals.length})`);
   return summary;
+  } finally {
+    await releaseRunLock(db, ENRICH_LOCK);
+  }
 }
 
 /**
