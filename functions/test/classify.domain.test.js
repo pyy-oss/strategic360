@@ -10,6 +10,48 @@
 
 import { describe, it, expect } from "vitest";
 import { buildClassificationPrompt, parseClassificationResponse, deriveProxFromDueDate, deriveSourceRatingFromUrl } from "../domain/classify.js";
+import { DEFAULT_PROFILE, buildClientProfile } from "../domain/profile.js";
+
+describe("PR D — prompt de classification paramétrable (non-régression)", () => {
+  const wl = [{ name: "BRVM", type: "client" }];
+
+  it("sans profil == avec DEFAULT_PROFILE (prompt byte-identique)", () => {
+    const a = buildClassificationPrompt("texte", wl, "CTX", { today: "2026-07-08" });
+    const b = buildClassificationPrompt("texte", wl, "CTX", { today: "2026-07-08", profile: DEFAULT_PROFILE });
+    expect(a).toBe(b);
+    // Ancres NT par défaut présentes.
+    expect(a).toContain("HOMONYMIE");
+    expect(a).toContain("AXES DE GUET PRIORITAIRES");
+    expect(a).toContain('"partenaires" | "concurrents" | "clients_prospects" | "tech" | "reglementaire"');
+  });
+
+  it("un profil client custom change homonymie, axes et guidage du prompt", () => {
+    const profile = buildClientProfile({
+      taxonomy: {
+        homonymyRule: "RÈGLE HOMONYMIE : ignorer le cabinet homonyme Dupont & Associés Paris.",
+        classifierGuidance: "AXES DE GUET : contentieux, fusions-acquisitions, nouvelles jurisprudences.",
+        axes: [{ key: "clients", alignWeight: 0.9 }, { key: "concurrents", alignWeight: 0.6 }, { key: "reglementaire", alignWeight: 0.8 }],
+      },
+    });
+    const p = buildClassificationPrompt("texte", wl, "CTX", { today: "2026-07-08", profile });
+    expect(p).toContain("cabinet homonyme Dupont");
+    expect(p).toContain("contentieux, fusions-acquisitions");
+    expect(p).toContain('"clients" | "concurrents" | "reglementaire"');
+    // les défauts NT ne fuient plus.
+    expect(p).not.toContain("AXES DE GUET PRIORITAIRES");
+    expect(p).not.toContain("Hiperdist");
+  });
+
+  it("parseClassificationResponse : une taxonomie custom accepte un axe hors des 5 par défaut", () => {
+    const taxonomy = { axes: [{ key: "clients" }, { key: "reglementaire" }], subtypes: ["contentieux", "tender"], subtypeSynonyms: {} };
+    const item = parseClassificationResponse({ title: "Affaire", summary: "x", axis: "clients", subtype: "contentieux" }, { taxonomy });
+    expect(item.axis).toBe("clients"); // accepté (custom), pas rabattu sur "tech"
+    expect(item.subtype).toBe("contentieux");
+    // Sans taxonomie (défaut), un axe inconnu retombe sur "tech".
+    const legacy = parseClassificationResponse({ title: "Affaire", summary: "x", axis: "clients" }, {});
+    expect(legacy.axis).toBe("tech");
+  });
+});
 
 describe("deriveSourceRatingFromUrl — cotation d'amirauté par domaine (audit 2026-07)", () => {
   it("officiels → A2, réputés → B2, agrégateurs → D3, inconnu → undefined", () => {

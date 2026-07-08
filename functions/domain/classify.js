@@ -66,11 +66,14 @@ const SUBTYPE_SYNONYMS = {
   recrutement: "hire", hiring: "hire", nomination: "leadership",
   tendance: "trend", macroeconomie: "macro",
 };
-function normalizeSubtype(value) {
+function normalizeSubtype(value, subtypes, synonyms) {
   if (typeof value !== "string" || !value.trim()) return undefined;
   const k = value.trim().toLowerCase().replace(/[\s'/]+/g, "_").replace(/[^a-z0-9_]/g, "");
-  if (VALID_SUBTYPES.has(k)) return k;
-  if (SUBTYPE_SYNONYMS[k]) return SUBTYPE_SYNONYMS[k];
+  // Profil client (Phase 0) : taxonomie surchargeable ; absente → défauts Neurones (identique).
+  const valid = subtypes instanceof Set ? subtypes : Array.isArray(subtypes) && subtypes.length ? new Set(subtypes) : VALID_SUBTYPES;
+  const syn = synonyms && typeof synonyms === "object" ? synonyms : SUBTYPE_SYNONYMS;
+  if (valid.has(k)) return k;
+  if (syn[k]) return syn[k];
   return k || undefined; // inconnu : conservé sous forme normalisée (pas de perte d'information)
 }
 function normalizeGeo(value) {
@@ -101,7 +104,47 @@ const AXIS_TO_DETECTION_CAT = {
  *   the model so it can disambiguate entities and sharpen soWhat/recommendedAction (Action 4.5).
  * @returns {string}
  */
+// Blocs CLIENT-SPÉCIFIQUES du prompt de classification (règle d'homonymie + « axes de guet » &
+// pertinence géographique). Externalisables par le profil client (Phase 0 produit) via
+// `profile.taxonomy.homonymyRule` / `profile.taxonomy.classifierGuidance` ; ABSENTS → ces défauts
+// Neurones verbatim (garantie de non-régression : prompt byte-identique avec le profil par défaut).
+const DEFAULT_HOMONYMY_RULE = `RÈGLE DE FILTRAGE — HOMONYMIE : si le texte concerne le groupe français coté NEURONES (neurones.net), Neurones Technologies SA (Genève) ou Neurones IT Asia, ce N'EST PAS notre entreprise — ne le rattache à aucune entité de la watchlist, classe impact "low", stance "neutral", et signale-le dans le summary, sauf lien explicite avec la Côte d'Ivoire/UEMOA.`;
+
+const DEFAULT_CLASSIFIER_GUIDANCE = `AXES DE GUET PRIORITAIRES (à détecter activement dans le texte) :
+- CRÉATION / ARRIVÉE D'ENTREPRISES : nouvelle société, filiale, banque, fintech, assurance ou
+  institution qui se crée ou s'implante en CI/UEMOA → subtype "implantation" ; c'est une
+  OPPORTUNITÉ (nouveau client potentiel à équiper : réseau, cyber, cloud, formation) sauf si
+  c'est un acteur IT/ESN → alors "market_entry", MENACE nouvel entrant.
+- EXPANSION DE GROUPES régionaux ou internationaux (ouverture de pays, rachat, croissance,
+  nouveau siège, datacenter, levée de fonds) → subtype "expansion" ; opportunité si client
+  potentiel, menace si concurrent/désintermédiation.
+- ACTUALITÉ TECHNOLOGIQUE (angle BUSINESS pour une ESN en CI/UEMOA, TOUS domaines à parts égales —
+  NE PAS tout ramener à la cybersécurité : elle n'est qu'UN domaine parmi d'autres). Détecte au même
+  titre : IA générative & agents métier, automatisation (RPA/BPA), data/analytics & plateformes,
+  open banking / mobile money / fintech, e-commerce & omnicanal, IoT & edge (industrie, énergie,
+  logistique), e-gov/GovTech, verticaux (insurtech, agritech, healthtech, edtech) → subtype "trend"
+  ou "product_launch", opportunité d'offre NT (intégration, data/IA, formation). Le CLOUD et la
+  CYBERSÉCURITÉ sont des ENABLERS, pas la finalité : une vulnérabilité majeure sur les technologies
+  de nos éditeurs (Cisco, Fortinet, Palo Alto, HPE, Microsoft, Wallix) → subtype "vulnerability",
+  opportunité de patch/upgrade/audit — MAIS ne la surclasse pas par rapport aux autres domaines sans
+  raison métier réelle.
+- SOURCING / APPROVISIONNEMENT : pénurie, rupture, allongement des délais, changement de conditions
+  de crédit d'un distributeur (Hiperdist, Westcon, Exclusive, Ingram, TD SYNNEX) → subtype "supply" ;
+  déterminant pour la marge et la trésorerie (cycle long, backlog à financer).
+
+RÈGLE DE PERTINENCE GÉOGRAPHIQUE : une actualité tech/cyber MONDIALE sans lien exploitable avec
+la Côte d'Ivoire/UEMOA, nos clients, nos concurrents ou les technologies de nos éditeurs doit être
+classée impact "low" et stance "neutral" (elle ne doit pas noyer le fil) — n'y rattache un angle
+business QUE s'il est réel et actionnable localement.`;
+
 function buildClassificationPrompt(rawText, watchlistEntities, companyContext = COMPANY_CONTEXT, opts = {}) {
+  // Profil client (Phase 0 produit) : surcharge éventuelle des blocs client-spécifiques + des axes.
+  // Absent → défauts Neurones (prompt identique).
+  const tax = opts.profile && opts.profile.taxonomy && typeof opts.profile.taxonomy === "object" ? opts.profile.taxonomy : {};
+  const homonymyRule = typeof tax.homonymyRule === "string" && tax.homonymyRule.trim() ? tax.homonymyRule : DEFAULT_HOMONYMY_RULE;
+  const classifierGuidance = typeof tax.classifierGuidance === "string" && tax.classifierGuidance.trim() ? tax.classifierGuidance : DEFAULT_CLASSIFIER_GUIDANCE;
+  const axisKeys = Array.isArray(tax.axes) && tax.axes.length ? tax.axes.map((a) => a && a.key).filter(Boolean) : VALID_AXES;
+  const axisEnum = axisKeys.map((k) => `"${k}"`).join(" | ");
   const watchlist = Array.isArray(watchlistEntities) ? watchlistEntities : [];
   const watchlistLines = watchlist.length
     ? watchlist.map((e) => `- ${e.name}${e.type ? ` (${e.type})` : ""}${e.note ? ` — ${e.note}` : ""}`).join("\n")
@@ -122,7 +165,7 @@ function buildClassificationPrompt(rawText, watchlistEntities, companyContext = 
 ${companyContext}
 ${temporalBlock}
 
-RÈGLE DE FILTRAGE — HOMONYMIE : si le texte concerne le groupe français coté NEURONES (neurones.net), Neurones Technologies SA (Genève) ou Neurones IT Asia, ce N'EST PAS notre entreprise — ne le rattache à aucune entité de la watchlist, classe impact "low", stance "neutral", et signale-le dans le summary, sauf lien explicite avec la Côte d'Ivoire/UEMOA.
+${homonymyRule}
 
 Analyse le texte source ci-dessous et réponds
 UNIQUEMENT avec un objet JSON valide (pas de markdown, pas de texte hors JSON) respectant
@@ -131,7 +174,7 @@ exactement ce schéma :
 {
   "title": string,               // titre court et factuel du signal
   "summary": string,              // résumé en 2-3 phrases
-  "axis": "partenaires" | "concurrents" | "clients_prospects" | "tech" | "reglementaire",
+  "axis": ${axisEnum},
   "subtype": string,               // ex: product_launch, eol, supply (pénurie/appro/crédit distributeur),
                                     // vulnerability (faille/CVE sur techno d'un éditeur → campagne patch),
                                     // program_change, pricing, ma, tender, funding, budget, leadership,
@@ -157,32 +200,7 @@ exactement ce schéma :
   "budgetIdentified": boolean    // true si un budget/montant est explicitement mentionné
 }
 
-AXES DE GUET PRIORITAIRES (à détecter activement dans le texte) :
-- CRÉATION / ARRIVÉE D'ENTREPRISES : nouvelle société, filiale, banque, fintech, assurance ou
-  institution qui se crée ou s'implante en CI/UEMOA → subtype "implantation" ; c'est une
-  OPPORTUNITÉ (nouveau client potentiel à équiper : réseau, cyber, cloud, formation) sauf si
-  c'est un acteur IT/ESN → alors "market_entry", MENACE nouvel entrant.
-- EXPANSION DE GROUPES régionaux ou internationaux (ouverture de pays, rachat, croissance,
-  nouveau siège, datacenter, levée de fonds) → subtype "expansion" ; opportunité si client
-  potentiel, menace si concurrent/désintermédiation.
-- ACTUALITÉ TECHNOLOGIQUE (angle BUSINESS pour une ESN en CI/UEMOA, TOUS domaines à parts égales —
-  NE PAS tout ramener à la cybersécurité : elle n'est qu'UN domaine parmi d'autres). Détecte au même
-  titre : IA générative & agents métier, automatisation (RPA/BPA), data/analytics & plateformes,
-  open banking / mobile money / fintech, e-commerce & omnicanal, IoT & edge (industrie, énergie,
-  logistique), e-gov/GovTech, verticaux (insurtech, agritech, healthtech, edtech) → subtype "trend"
-  ou "product_launch", opportunité d'offre NT (intégration, data/IA, formation). Le CLOUD et la
-  CYBERSÉCURITÉ sont des ENABLERS, pas la finalité : une vulnérabilité majeure sur les technologies
-  de nos éditeurs (Cisco, Fortinet, Palo Alto, HPE, Microsoft, Wallix) → subtype "vulnerability",
-  opportunité de patch/upgrade/audit — MAIS ne la surclasse pas par rapport aux autres domaines sans
-  raison métier réelle.
-- SOURCING / APPROVISIONNEMENT : pénurie, rupture, allongement des délais, changement de conditions
-  de crédit d'un distributeur (Hiperdist, Westcon, Exclusive, Ingram, TD SYNNEX) → subtype "supply" ;
-  déterminant pour la marge et la trésorerie (cycle long, backlog à financer).
-
-RÈGLE DE PERTINENCE GÉOGRAPHIQUE : une actualité tech/cyber MONDIALE sans lien exploitable avec
-la Côte d'Ivoire/UEMOA, nos clients, nos concurrents ou les technologies de nos éditeurs doit être
-classée impact "low" et stance "neutral" (elle ne doit pas noyer le fil) — n'y rattache un angle
-business QUE s'il est réel et actionnable localement.
+${classifierGuidance}
 
 Consignes impératives :
 - "soWhat" : impact concret citant la BU, le client ou le concurrent concerné (jamais de généralité).
@@ -313,13 +331,17 @@ function parseClassificationResponse(rawJsonResponse, context) {
   const ctx = context || {};
   const today = new Date().toISOString().slice(0, 10);
 
-  const axis = coerceEnum(r.axis, VALID_AXES, "tech");
+  // Taxonomie du profil client (Phase 0) : axes/subtypes surchargeables ; absente → défauts Neurones.
+  const tax = ctx.taxonomy && typeof ctx.taxonomy === "object" ? ctx.taxonomy : {};
+  const axes = Array.isArray(tax.axes) && tax.axes.length ? tax.axes.map((a) => a && a.key).filter(Boolean) : VALID_AXES;
+  const axisFallback = axes.includes("tech") ? "tech" : (axes[axes.length - 1] || "tech");
+  const axis = coerceEnum(r.axis, axes, axisFallback);
   const item = {
     title: title || summary.slice(0, 80),
     summary: summary || title,
     axis,
     cat: AXIS_TO_DETECTION_CAT[axis],
-    subtype: normalizeSubtype(r.subtype),
+    subtype: normalizeSubtype(r.subtype, tax.subtypes, tax.subtypeSynonyms),
     impact: coerceEnum(r.impact, VALID_IMPACTS, "low"),
     stance: coerceEnum(r.stance, VALID_STANCES, "neutral"),
     ent: coerceString(r.entity, undefined),

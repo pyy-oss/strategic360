@@ -636,15 +636,17 @@ function isDegradedWebPage(text) {
  * parseClassificationResponse) and returns the parsed IntelItem fields, or `null` if the AI
  * response was unusable (mirrors `parseClassificationResponse`'s contract).
  */
-async function classifyRawText(rawText, watchlistEntities, context) {
+async function classifyRawText(rawText, watchlistEntities, context, profile) {
   const companyContext = await getCompanyContext();
   // Repères temporels : date de publication de la source (context.defaultDate) → le classifieur
   // juge passé/à-venir sur des dates réelles plutôt que sur le ton du texte (anti-obsolescence).
   const prompt = buildClassificationPrompt(rawText, watchlistEntities, companyContext, {
     pubDate: context && context.defaultDate ? context.defaultDate : undefined,
+    profile, // profil client (Phase 0) : blocs client-spécifiques + taxonomie ; absent → défauts Neurones
   });
   const response = await generateJson(prompt);
-  return parseClassificationResponse(response, context);
+  // La taxonomie du profil sert AUSSI à valider/normaliser la sortie (axes/subtypes custom).
+  return parseClassificationResponse(response, { ...(context || {}), taxonomy: profile && profile.taxonomy });
 }
 
 /**
@@ -768,7 +770,7 @@ async function runSyncSources(db) {
               url: rssItem.link || source.url,
               // Date d'événement = pubDate du flux si dispo (m3 audit) → ID stable, pas de doublon quotidien.
               defaultDate: rssItem.pubDate || undefined,
-            });
+            }, clientProfile);
             if (!classified) return false;
             const { written } = await upsertClassifiedItem(db, classified, dedupeIndex);
             return written;
@@ -790,7 +792,7 @@ async function runSyncSources(db) {
                 ...context,
                 // Pas de lien propre → on N'ANCRE PAS sur l'URL du portail (sinon collapse) : ID = titre+date.
                 url: perItemLink,
-              });
+              }, clientProfile);
               if (!classified) return false;
               const { written } = await upsertClassifiedItem(db, classified, dedupeIndex);
               return written;
@@ -802,7 +804,7 @@ async function runSyncSources(db) {
           const rawText = extractWebText(html);
           degraded = isDegradedWebPage(rawText); // M1 : page coquille (SPA) = source dégradée
           if (rawText && !degraded) {
-            const classified = await classifyRawText(rawText, watchlistEntities, { ...context });
+            const classified = await classifyRawText(rawText, watchlistEntities, { ...context }, clientProfile);
             if (classified) {
               const { written } = await upsertClassifiedItem(db, classified, dedupeIndex);
               if (written) created = 1;
@@ -1059,7 +1061,7 @@ exports.classifyAI = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
     url: existing.url,
     defaultDate: existing.date,
     defaultSourceRating: existing.sourceRating || deriveSourceRatingFromUrl(existing.url, clientProfile.sourceAuthority),
-  });
+  }, clientProfile);
   if (!classified) {
     throw new HttpsError("internal", "La réponse IA n'a pas pu être exploitée (contenu vide/incomplet).");
   }
