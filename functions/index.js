@@ -26,7 +26,15 @@ const { computePorterForces, computeBcg, computeCasSummary, computePipeline, com
 const { intelItemId } = require("./domain/ids");
 const { buildClassificationPrompt, parseClassificationResponse, deriveSourceRatingFromUrl } = require("./domain/classify");
 const { dedupeByTitle, isNearDuplicate, isStrongDuplicate, clusterNearDuplicates } = require("./domain/dedupe");
-const { pickOnboardingLinks } = require("./domain/onboarding");
+const {
+  pickOnboardingLinks,
+  buildOnboardingProfilePrompt,
+  parseOnboardingProfileResponse,
+  buildEcosystemMapPrompt,
+  parseEcosystemMapResponse,
+  buildVeillePlanPrompt,
+  parseVeillePlanResponse,
+} = require("./domain/onboarding");
 const { buildEvaluatePrompt, parseEvaluateResponse } = require("./domain/evaluate");
 const { pickRelevant } = require("./domain/retrieve");
 const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
@@ -2353,6 +2361,104 @@ exports.copiloteChat = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   }
   if (!parsed) throw new HttpsError("failed-precondition", "Réponse IA inexploitable.");
   return parsed;
+});
+
+/* ------------------------------------------------------------------------------------------- *
+ * ONBOARDING AUTO (Phase 1 « produit agnostique », P3) — `onboardCompany` orchestre, à partir de
+ * l'URL du site d'un prospect/client, la génération de sa configuration de veille : crawl du site
+ * (domain/onboarding.pickOnboardingLinks + crawlSite) → 3 appels IA (profil+contexte, écosystème,
+ * plan de veille) → validation technique des sources candidates (validateCandidateSource) → écriture
+ * d'un BROUILLON éditable `config/onboardingDraft`. RIEN n'est activé : aucun doc `config/*` de
+ * production n'est touché ici (c'est `applyOnboardingDraft`, P4, après revue humaine). Exec-gated :
+ * paramétrer l'outil pour une entreprise est une opération d'administration/déploiement.
+ * ------------------------------------------------------------------------------------------- */
+exports.onboardCompany = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "1GiB" }, async (request) => {
+  requireExecCaller(request, "générer la configuration de veille d'une entreprise (onboarding)");
+  const { url, docsText, hints, maxPages, validateSources } = request.data || {};
+  if (typeof url !== "string" || !/^https?:\/\//i.test(url.trim())) {
+    throw new HttpsError("invalid-argument", "Une URL http(s) du site de l'entreprise est requise.");
+  }
+  const siteUrl = url.trim();
+  const pages = Math.max(1, Math.min(8, Number(maxPages) || 5));
+
+  // 1) Crawl fail-soft du site (home + liens internes prioritaires).
+  let siteText = "";
+  try {
+    siteText = await crawlSite(siteUrl, { maxPages: pages });
+  } finally {
+    await closeRenderBrowser();
+  }
+  if (!siteText || siteText.length < 200) {
+    throw new HttpsError("failed-precondition", "Impossible d'extraire assez de texte depuis ce site (page inaccessible, vide ou entièrement dynamique). Vérifiez l'URL.");
+  }
+  const safeDocs = typeof docsText === "string" ? docsText.slice(0, 8000) : "";
+  const safeHints = hints && typeof hints === "object" ? hints : {};
+
+  // 2) IA — profil + contexte.
+  let profileOut;
+  try {
+    profileOut = parseOnboardingProfileResponse(await generateJson(buildOnboardingProfilePrompt(siteText, safeDocs, safeHints)));
+  } catch (err) {
+    logger.error(`onboardCompany: profil FAILED — ${err.message}`, { err });
+    throw new HttpsError("internal", "L'IA n'a pas pu établir le profil de l'entreprise (réessayez).");
+  }
+  if (!profileOut) throw new HttpsError("failed-precondition", "Profil inexploitable : le site ne contient pas assez d'informations d'entreprise.");
+
+  // 3) IA — écosystème (entités typées + axes + sous-types).
+  let ecosystem = { entities: [], axes: [], subtypes: [] };
+  try {
+    ecosystem = parseEcosystemMapResponse(await generateJson(buildEcosystemMapPrompt(profileOut.contextText, siteText))) || ecosystem;
+  } catch (err) {
+    logger.warn(`onboardCompany: écosystème échoué (${err.message}) — poursuite sans`);
+  }
+
+  // 4) IA — plan de veille (axes prioritaires, guidage classifieur, mots-clés, sources candidates).
+  let plan = { axes: [], classifierGuidance: "", homonymyRule: "", keywords: [], candidateSources: [] };
+  try {
+    plan = parseVeillePlanResponse(await generateJson(buildVeillePlanPrompt(profileOut.profile, ecosystem.entities))) || plan;
+  } catch (err) {
+    logger.warn(`onboardCompany: plan de veille échoué (${err.message}) — poursuite sans`);
+  }
+
+  // 5) Validation TECHNIQUE des sources candidates (on ne retient pas une URL non fetchable/vide).
+  //    Désactivable via validateSources:false (mode rapide / prévisualisation).
+  let candidateSources = plan.candidateSources;
+  if (validateSources !== false && candidateSources.length) {
+    const settled = await runInBatches(candidateSources, AI_CONCURRENCY, (s) => validateCandidateSource(s.url, s.kind));
+    candidateSources = candidateSources.map((s, i) => {
+      const r = settled[i];
+      const v = r && r.status === "fulfilled" ? r.value : { ok: false, itemCount: 0, reason: "validation échouée" };
+      return { ...s, valid: !!v.ok, itemCount: v.itemCount || 0, validationReason: v.reason || "" };
+    });
+  } else {
+    candidateSources = candidateSources.map((s) => ({ ...s, valid: null, itemCount: 0, validationReason: "" }));
+  }
+  const validCount = candidateSources.filter((s) => s.valid === true).length;
+
+  // 6) Écriture du BROUILLON (overwrite complet ; aucun doc de prod modifié).
+  const draft = {
+    status: "draft",
+    sourceUrl: siteUrl,
+    hints: safeHints,
+    profile: profileOut.profile,
+    contextText: profileOut.contextText,
+    ecosystem,
+    plan: { ...plan, candidateSources },
+    stats: {
+      siteTextLength: siteText.length,
+      entities: ecosystem.entities.length,
+      axes: (plan.axes.length || ecosystem.axes.length),
+      candidateSources: candidateSources.length,
+      validSources: validCount,
+    },
+    createdBy: request.auth?.token?.email || request.auth?.uid || null,
+    createdAt: FieldValue.serverTimestamp(),
+  };
+  await firestoreDb().doc("config/onboardingDraft").set(draft, { merge: false });
+  logger.info(`onboardCompany: brouillon écrit pour ${siteUrl} — ${ecosystem.entities.length} entités, ${candidateSources.length} sources (${validCount} valides).`);
+
+  // serverTimestamp() n'est pas encore résolu dans l'objet local → renvoyer sans le sentinel.
+  return { ...draft, createdAt: null };
 });
 
 /* ------------------------------------------------------------------------------------------- *

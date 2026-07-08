@@ -96,3 +96,22 @@ Le profil est assemblé par `loadClientProfile(db)` (cache 10 min) et fusionné 
 Après avoir écrit ces docs, lancer `syncSourcesNow` puis `enrichNow` (ou attendre les schedulers) pour
 peupler la première cartographie. La **Phase 1 (onboarding auto)** générera ces docs automatiquement à
 partir du site web + des documents corporate du client.
+
+## Onboarding auto (Phase 1) — `config/onboardingDraft`
+
+Plutôt que de rédiger les docs `config/*` à la main, le callable **`onboardCompany`** (exec
+uniquement) les pré-génère à partir de l'URL du site du client :
+
+1. **Crawl** de la home + des pages internes prioritaires (à-propos / offres / clients / contact).
+2. **3 appels IA** : (a) profil + contexte, (b) écosystème (entités typées : concurrents, clients,
+   partenaires, régulateurs, éditeurs + axes de veille du secteur), (c) plan de veille (axes
+   prioritaires, guidage du classifieur, règle d'homonymie, mots-clés, **sources candidates**).
+3. **Validation technique** de chaque source candidate (`validateCandidateSource` : la source
+   renvoie-t-elle réellement des items exploitables ?) — désactivable via `validateSources:false`.
+4. Écriture d'un **BROUILLON** `config/onboardingDraft` (`status:"draft"`). **Aucun doc `config/*` de
+   production n'est modifié** : le brouillon est destiné à une revue humaine (écran d'onboarding, P5)
+   puis à un « appliquer » explicite (`applyOnboardingDraft`, P4) qui, seul, écrit les `config/*`.
+
+Entrée : `onboardCompany({ url, docsText?, hints?: {name?, sector?}, maxPages?, validateSources? })`.
+Le contrat garantit l'**objectivité** (aucun fait non présent dans le texte du site) et ne persiste
+jamais une source non fetchable/vide.
