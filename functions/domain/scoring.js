@@ -292,4 +292,7 @@ module.exports = {
   SUBTYPE_BUSINESS,
   AXIS_ALIGN,
   PROX_TABLE,
+  // Exposés pour le futur profil client (Phase 0 produit) — source unique de vérité.
+  ANCHOR_REQUIRED_SUBTYPES,
+  UNANCHORED_DECOTE,
 };
