@@ -41,6 +41,9 @@ jobs:
           distribution: temurin
           java-version: "21"
       - run: npm install
+      # Lint no-undef (durcissement 2026-07) : attrape les variables non déclarées (ex. le
+      # ReferenceError clientProfile qui a cassé le Copilote en prod) que `node --check` ne voit pas.
+      - run: npm run lint
       # Tests unitaires du domaine (240+) — auparavant JAMAIS exécutés en CI (le job ne faisait qu'install).
       - run: npm run test:unit
       # Tests des Security Rules Firestore sous émulateur (couvre les règles : actions, winLoss, copilote…).
