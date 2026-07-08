@@ -3321,29 +3321,29 @@ exports.exportPdf = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
  * BUILD_KIT.md §13 "export Firestore planifié").
  *
  * Uses the Firestore Admin API's managed export (`google.firestore.admin.v1.FirestoreAdminClient
- * #exportDocuments`, from `@google-cloud/firestore`'s `v1` namespace — this is DISTINCT from the
- * regular `firebase-admin`/`@google-cloud/firestore` document-CRUD client used everywhere else in
- * this file; it talks to the separate "Firestore Admin" API surface) to snapshot the entire
- * default database to Cloud Storage. Output path: `gs://{projectId}.appspot.com/scheduled-exports/
- * {YYYY-MM-DD}/` (one dated folder per run — the export API itself writes several files under
- * that prefix, it is NOT a single downloadable file).
+ * #exportDocuments`, from `@google-cloud/firestore`'s `v1` namespace — DISTINCT from the regular
+ * document-CRUD client used everywhere else) to snapshot THIS APP's database to Cloud Storage.
  *
- * UNVERIFIABLE IN THIS SANDBOX: there is no real GCP project/credentials here, no Firestore Admin
- * API enabled, and no emulator support for managed exports — this has NOT been exercised
- * end-to-end. It is implemented per the documented API surface (verified to load/construct
- * correctly — `new firestoreAdminV1.FirestoreAdminClient()` and `.databasePath()` both work in
- * this sandbox, see V8 task notes) and kept maximally defensive: any failure is caught and logged
- * at `error` level rather than thrown, because a scheduled maintenance job crashing must never be
- * mistaken for a user-facing incident (BUILD_KIT.md doesn't put this on any request path).
+ * ISOLATION (audit pré-lancement/intégral 2026-07, M1/M6/m8) — corrigé, ne plus décrire autrement :
+ *   - la base exportée est `FIRESTORE_DATABASE_ID` (celle de CETTE app), JAMAIS "(default)" (qui
+ *     appartiendrait à une autre app du projet PARTAGÉ) ;
+ *   - la cible est le bucket DÉDIÉ `FIRESTORE_EXPORT_BUCKET`, JAMAIS le bucket appspot par défaut
+ *     (partagé) — il n'existe AUCUN fallback ;
+ *   - si `FIRESTORE_EXPORT_BUCKET` n'est pas configuré, l'export est SAUTÉ (log `error`, aucune
+ *     écriture) plutôt que d'écrire dans un bucket commun. Un déploiement de prod DOIT donc poser
+ *     cette variable pour avoir une sauvegarde (voir README « Checklist de déploiement »).
+ * Sortie : `gs://{FIRESTORE_EXPORT_BUCKET}/scheduled-exports/{YYYY-MM-DD}/` (dossier daté par run).
  *
- * Deployment prerequisites (manual, console/gcloud side — see README.md "Deployment Checklist"):
- *   - Firestore Admin API enabled for the project (usually on by default once Firestore is used).
- *   - The Cloud Functions service account needs `roles/datastore.importExportAdmin` (or
- *     equivalent) on the project, and the target bucket needs to exist with write access granted
- *     to that same service account.
- *   - The default `{projectId}.appspot.com` bucket (created automatically with most projects) is
- *     used as the export target here; override via `FIRESTORE_EXPORT_BUCKET` env var if a
- *     dedicated bucket is preferred.
+ * UNVERIFIABLE IN THIS SANDBOX : pas de projet GCP réel ni d'émulateur d'export managé ici — non
+ * exercé de bout en bout ; implémenté selon la surface d'API documentée et défensif (toute erreur
+ * est catchée/loggée en `error`, jamais throw : un job de maintenance planté ne doit pas passer
+ * pour un incident utilisateur).
+ *
+ * Prérequis de déploiement (console/gcloud — voir README « Checklist de déploiement ») :
+ *   - Firestore Admin API activée (généralement par défaut) ;
+ *   - le compte de service des Functions a `roles/datastore.importExportAdmin` sur le projet ;
+ *   - le bucket `FIRESTORE_EXPORT_BUCKET` existe, dédié à cette app, avec accès en écriture pour ce
+ *     même compte de service.
  */
 exports.scheduledFirestoreExport = onSchedule(
   { schedule: "0 2 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1" },
@@ -3380,6 +3380,40 @@ exports.scheduledFirestoreExport = onSchedule(
       // incident to end users — it just means the daily export didn't happen, logged for whoever
       // monitors Cloud Logging/alerts on this function.
       logger.error(`scheduledFirestoreExport: FAILED — ${err.message}`, { err });
+    }
+  }
+);
+
+/**
+ * purgeAuditLog — RÉTENTION des données personnelles (audit intégral 2026-07, m15). `auditLog`
+ * accumule uid/e-mail/action des salariés sans limite ; la Loi ivoirienne 2013-450 (et le RGPD pour
+ * un déploiement UE) imposent une durée de conservation bornée. On purge chaque semaine les entrées
+ * plus vieilles que `AUDITLOG_RETENTION_DAYS` (défaut 730 j = 2 ans). Best-effort, borné par lots.
+ * NB : `copiloteProfiles` (périmètres commerciaux) n'est PAS auto-purgé — ce sont des données de
+ * config ACTIVES ; leur suppression est manuelle au départ d'un collaborateur (documenté README).
+ */
+const AUDITLOG_RETENTION_DAYS = Number(process.env.AUDITLOG_RETENTION_DAYS) || 730;
+exports.purgeAuditLog = onSchedule(
+  { schedule: "0 3 * * 0", timeZone: TENANT_TIMEZONE, region: "europe-west1" },
+  async () => {
+    try {
+      const db = firestoreDb();
+      const cutoff = new Date(Date.now() - AUDITLOG_RETENTION_DAYS * 24 * 3600 * 1000);
+      let deleted = 0;
+      // Boucle bornée : jusqu'à 20 lots de 400 (8000 docs max/run) — suffisant pour une purge
+      // hebdomadaire, sans risquer le timeout.
+      for (let i = 0; i < 20; i++) {
+        const snap = await db.collection("auditLog").where("ts", "<", cutoff).limit(400).get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        snap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        deleted += snap.size;
+        if (snap.size < 400) break;
+      }
+      if (deleted) logger.info(`purgeAuditLog: ${deleted} entrées auditLog > ${AUDITLOG_RETENTION_DAYS} j supprimées.`);
+    } catch (err) {
+      logger.error(`purgeAuditLog: FAILED — ${err.message}`, { err });
     }
   }
 );

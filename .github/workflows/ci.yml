@@ -26,6 +26,9 @@ jobs:
       # npm ci (audit 2026-07) : installe EXACTEMENT le package-lock (reproductible), là où
       # npm install résolvait des versions flottantes différentes de celles testées.
       - run: npm ci
+      # Lint web (audit intégral 2026-07, m9) : le job web ne lançait pas ESLint (asymétrie avec
+      # functions). La config référence maintenant le plugin react-hooks, donc `npm run lint` passe.
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
 

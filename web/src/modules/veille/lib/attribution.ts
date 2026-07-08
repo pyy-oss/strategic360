@@ -27,9 +27,9 @@ export function isVeilleAttributed(o: Pick<BizOpportunity, "triggerEvent" | "sou
 export function amount(estAmount?: string | null): number {
   if (!estAmount) return 0;
   const raw = String(estAmount).trim().toLowerCase();
-  const m = raw.match(/([0-9][0-9.,\s  ]*)\s*(md|mrd|milliards?|m|millions?|k|mille)?/i);
+  const m = raw.match(/([0-9][0-9.,\s\u00a0\u202f]*)\s*(md|mrd|milliards?|m|millions?|k|mille)?/i);
   if (!m) return 0;
-  let numStr = m[1].replace(/[\s  ]/g, ""); // retire espaces (dont insécables)
+  let numStr = m[1].replace(/[\s\u00a0\u202f]/g, ""); // retire espaces (dont insécables)
   if (numStr.includes(",") && numStr.includes(".")) {
     numStr = numStr.replace(/\./g, "").replace(",", "."); // point = milliers, virgule = décimale
   } else if (numStr.includes(",")) {
