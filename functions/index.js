@@ -34,6 +34,7 @@ const {
   parseEcosystemMapResponse,
   buildVeillePlanPrompt,
   parseVeillePlanResponse,
+  buildConfigDocsFromDraft,
 } = require("./domain/onboarding");
 const { buildEvaluatePrompt, parseEvaluateResponse } = require("./domain/evaluate");
 const { pickRelevant } = require("./domain/retrieve");
@@ -2459,6 +2460,82 @@ exports.onboardCompany = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "1GiB" }, asyn
 
   // serverTimestamp() n'est pas encore résolu dans l'objet local → renvoyer sans le sentinel.
   return { ...draft, createdAt: null };
+});
+
+/* ------------------------------------------------------------------------------------------- *
+ * ONBOARDING AUTO (Phase 1, P4) — `applyOnboardingDraft` transforme le BROUILLON (revu/édité par un
+ * humain, P5) en docs `config/*` de PRODUCTION + graines de veille, en une écriture atomique :
+ *  - config/profile          ← brouillon.profile
+ *  - config/veilleTaxonomy   ← axes + sous-types (omis si vides : on ne remplace pas un défaut par du vide)
+ *  - frameworks/companyContext ← contexte + guidage classifieur + homonymie + concurrents cités
+ *  - intelSources (graines)  ← sources candidates VALIDÉES (créées INACTIVES par défaut : revue avant sync)
+ *  - intelWatchlist (graines) ← entités typées de l'écosystème
+ * Exec-gated. Idempotent (ids de source/entité déterministes). Le front (P5) peut passer un brouillon
+ * édité via data.draft ; sinon on applique le doc stocké. RIEN d'autre que ces docs n'est touché
+ * (scoring/offerMapping/sourceAuthority restent aux défauts, non déductibles d'un site).
+ * ------------------------------------------------------------------------------------------- */
+exports.applyOnboardingDraft = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  requireExecCaller(request, "appliquer la configuration d'onboarding");
+  const db = firestoreDb();
+  const data = request.data || {};
+  let draft = data.draft && typeof data.draft === "object" ? data.draft : null;
+  if (!draft) {
+    const snap = await db.doc("config/onboardingDraft").get();
+    if (!snap.exists) throw new HttpsError("failed-precondition", "Aucun brouillon d'onboarding à appliquer. Lancez d'abord onboardCompany.");
+    draft = snap.data();
+  }
+  const built = buildConfigDocsFromDraft(draft);
+  if (!built) throw new HttpsError("failed-precondition", "Brouillon incomplet (profil sans nom d'entreprise) — impossible à appliquer.");
+
+  const seedSources = data.seedSources !== false;
+  const seedWatchlist = data.seedWatchlist !== false;
+  // Sources créées INACTIVES par défaut : une source qui synchronise doit être revue d'abord.
+  const activateSources = data.activateSources === true;
+
+  const batch = db.batch();
+  batch.set(db.doc("config/profile"), built.profileDoc, { merge: true });
+  if (Object.keys(built.taxonomyDoc).length) batch.set(db.doc("config/veilleTaxonomy"), built.taxonomyDoc, { merge: true });
+  if (built.contextText) {
+    batch.set(db.doc("frameworks/companyContext"), { content: { text: built.contextText }, source: "onboarding", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  }
+
+  let sourcesWritten = 0;
+  if (seedSources) {
+    for (const s of built.sources) {
+      batch.set(db.doc(`intelSources/${s.id}`), {
+        name: s.name, url: s.url, kind: s.kind, axis: s.axis || null,
+        active: activateSources, source: "onboarding", createdAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      sourcesWritten += 1;
+    }
+  }
+  let watchlistWritten = 0;
+  if (seedWatchlist) {
+    for (const w of built.watchlist) {
+      batch.set(db.doc(`intelWatchlist/${w.id}`), {
+        name: w.name, type: w.type, geo: w.geo || null, active: true, source: "onboarding",
+      }, { merge: true });
+      watchlistWritten += 1;
+    }
+  }
+  batch.set(db.doc("config/onboardingDraft"), {
+    status: "applied", appliedAt: FieldValue.serverTimestamp(), appliedBy: request.auth?.token?.email || request.auth?.uid || null,
+  }, { merge: true });
+  await batch.commit();
+
+  // Relecture immédiate par les prochaines synchros (profil + contexte).
+  invalidateCompanyContextCache();
+
+  logger.info(`applyOnboardingDraft: config écrite (${built.profileDoc.companyName}) — ${sourcesWritten} sources${activateSources ? " actives" : " inactives"}, ${watchlistWritten} entités.`);
+  return {
+    ok: true,
+    companyName: built.profileDoc.companyName,
+    axes: (built.taxonomyDoc.axes || []).length,
+    subtypes: (built.taxonomyDoc.subtypes || []).length,
+    sourcesWritten,
+    watchlistWritten,
+    sourcesActive: activateSources,
+  };
 });
 
 /* ------------------------------------------------------------------------------------------- *

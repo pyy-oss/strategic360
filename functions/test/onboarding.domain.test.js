@@ -8,6 +8,7 @@ import {
   buildEcosystemMapPrompt, parseEcosystemMapResponse,
   buildVeillePlanPrompt, parseVeillePlanResponse,
   pickOnboardingLinks,
+  buildConfigDocsFromDraft, sourceIdFromUrl,
 } from "../domain/onboarding.js";
 
 describe("onboarding — pickOnboardingLinks (crawler support, pur)", () => {
@@ -118,5 +119,79 @@ describe("onboarding — plan de veille", () => {
 
   it("parseVeillePlanResponse : rien d'exploitable → null", () => {
     expect(parseVeillePlanResponse({ axes: [], candidateSources: [] })).toBeNull();
+  });
+});
+
+describe("onboarding — buildConfigDocsFromDraft (mapping P4, pur)", () => {
+  const draft = {
+    profile: { companyName: "ACME Legal", sector: "Cabinet d'avocats", geographies: ["fr"] },
+    contextText: "Cabinet d'avocats d'affaires basé à Paris.",
+    ecosystem: {
+      entities: [
+        { name: "Concurrent SA", type: "concurrent", geo: "fr" },
+        { name: "Client X", type: "client", geo: null },
+        { name: "", type: "concurrent" }, // sans nom → écartée
+      ],
+      axes: [{ key: "reglementaire", label: "Réglementaire", alignWeight: 0.5, guetGuidance: "…" }],
+      subtypes: ["litige", "ma"],
+    },
+    plan: {
+      axes: [{ key: "clients_prospects", label: "Clients", alignWeight: 0.9, guetGuidance: "…" }],
+      classifierGuidance: "AXES DE GUET : M&A, litiges.",
+      homonymyRule: "Ignorer ACME Inc. (USA).",
+      keywords: ["contentieux"],
+      candidateSources: [
+        { name: "AMF", url: "https://www.amf-france.org/actu", kind: "web", axis: "reglementaire", valid: true },
+        { name: "Mort", url: "https://dead.example/rss", kind: "rss", valid: false }, // invalide → écartée
+      ],
+    },
+  };
+
+  it("mappe profil + taxonomie (axes union plan+éco, sous-types) + contexte", () => {
+    const out = buildConfigDocsFromDraft(draft);
+    expect(out.profileDoc.companyName).toBe("ACME Legal");
+    const keys = out.taxonomyDoc.axes.map((a) => a.key);
+    expect(keys).toContain("clients_prospects");
+    expect(keys).toContain("reglementaire");
+    expect(out.taxonomyDoc.axes[0]).toEqual({ key: "reglementaire", alignWeight: 0.5 }); // {key,alignWeight} seulement
+    expect(out.taxonomyDoc.subtypes).toEqual(["litige", "ma"]);
+    expect(out.contextText).toContain("AXES DE GUET");
+    expect(out.contextText).toContain("Ignorer ACME Inc.");
+    expect(out.contextText).toContain("CONCURRENTS : Concurrent SA.");
+  });
+
+  it("ne retient que les sources VALIDÉES quand une validation a eu lieu, ids déterministes", () => {
+    const out = buildConfigDocsFromDraft(draft);
+    expect(out.sources).toHaveLength(1);
+    expect(out.sources[0].url).toBe("https://www.amf-france.org/actu");
+    expect(out.sources[0].id).toBe(sourceIdFromUrl("https://www.amf-france.org/actu"));
+    expect(out.sources[0].id).toMatch(/^onb-/);
+  });
+
+  it("sans validation (valid absent) → toutes les sources retenues", () => {
+    const d2 = { ...draft, plan: { ...draft.plan, candidateSources: [
+      { name: "A", url: "https://a.fr", kind: "web" },
+      { name: "B", url: "https://b.fr", kind: "rss" },
+    ] } };
+    expect(buildConfigDocsFromDraft(d2).sources).toHaveLength(2);
+  });
+
+  it("watchlist : entités nommées seulement, type borné", () => {
+    const out = buildConfigDocsFromDraft(draft);
+    expect(out.watchlist.map((w) => w.name)).toEqual(["Concurrent SA", "Client X"]);
+    expect(out.watchlist[0].type).toBe("concurrent");
+    expect(out.watchlist[1].type).toBe("client");
+  });
+
+  it("omet axes/subtypes vides (ne remplace pas un défaut par du vide)", () => {
+    const out = buildConfigDocsFromDraft({ profile: { companyName: "X" }, ecosystem: {}, plan: {} });
+    expect(out.taxonomyDoc.axes).toBeUndefined();
+    expect(out.taxonomyDoc.subtypes).toBeUndefined();
+    expect(out.sources).toEqual([]);
+  });
+
+  it("profil sans nom d'entreprise → null (rien à appliquer)", () => {
+    expect(buildConfigDocsFromDraft({ profile: {}, ecosystem: {}, plan: {} })).toBeNull();
+    expect(buildConfigDocsFromDraft(null)).toBeNull();
   });
 });
