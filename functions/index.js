@@ -335,20 +335,50 @@ async function runInBatches(items, size, worker) {
  *    bucket (`getStorage().bucket()` with no args) when unset.
  * See docs/BUILD_KIT.md / README.md "Checklist de déploiement" for the full multi-app rationale.
  *
- * FAIL-FAST (audit pré-lancement 2026-07, M2) : plus AUCUN repli silencieux vers "(default)".
- * Un oubli de la variable au déploiement faisait écrire toute l'app dans la base par défaut du
- * projet partagé — c.-à-d. potentiellement la base d'une AUTRE app. On refuse désormais de
- * démarrer : le déploiement échoue bruyamment au lieu de corrompre un tiers. Un déploiement
- * mono-app qui VEUT la base par défaut doit le dire explicitement (ALLOW_DEFAULT_DATABASE=true).
+ * FAIL-FAST (audit pré-lancement 2026-07, M2 — corrigé post-déploiement) : plus AUCUN repli
+ * silencieux vers "(default)". Un oubli de la variable au déploiement faisait écrire toute l'app
+ * dans la base par défaut du projet partagé — c.-à-d. potentiellement la base d'une AUTRE app.
+ * Le throw au chargement du module n'est armé QUE dans le vrai runtime déployé (K_SERVICE, posé
+ * par Cloud Run) : la phase d'ANALYSE du CLI Firebase (`firebase deploy` → discovery) charge ce
+ * module SANS les .env et échouait systématiquement (run 28955481403). Hors runtime, la garde est
+ * paresseuse : firestoreDb() refuse tout accès si la base n'est pas configurée — dans tous les cas,
+ * pas une seule écriture ne peut partir vers "(default)". Un déploiement mono-app qui VEUT la base
+ * par défaut doit le dire explicitement (ALLOW_DEFAULT_DATABASE=true).
  */
+/**
+ * Rechargement des .env quand ils manquent (bug découvert par le run 28955481403) : la phase de
+ * DÉCOUVERTE du CLI Firebase charge ce module sans les .env. Or certaines options de fonctions
+ * sont évaluées À CE MOMENT-LÀ et figées dans le déploiement : la `database` de onDocumentWritten
+ * (onIntelItemWrite se liait à "(default)" — la base d'une autre app ! — au lieu de la nôtre) et
+ * la timeZone des onSchedule. Parser minimal (KEY=value, commentaires #), aucune dépendance ;
+ * ne remplace JAMAIS une variable déjà présente dans l'environnement.
+ */
+function loadEnvFileFallback() {
+  if (process.env.FIRESTORE_DATABASE_ID) return;
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const project = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "";
+  for (const name of [project && `.env.${project}`, ".env"].filter(Boolean)) {
+    let txt;
+    try { txt = fs.readFileSync(path.join(__dirname, name), "utf8"); } catch { continue; }
+    for (const line of txt.split("\n")) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (m && !m[2].startsWith("#") && !(m[1] in process.env)) {
+        process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+      }
+    }
+  }
+}
+loadEnvFileFallback();
+
 const FIRESTORE_DATABASE_ID =
   process.env.FIRESTORE_DATABASE_ID ||
   (process.env.ALLOW_DEFAULT_DATABASE === "true" ? "(default)" : null);
-if (!FIRESTORE_DATABASE_ID) {
-  throw new Error(
-    "FIRESTORE_DATABASE_ID manquant : ce projet Firebase est PARTAGÉ — configurer la base nommée de l'app " +
-    "(functions/.env.<project-id>) ou poser explicitement ALLOW_DEFAULT_DATABASE=true pour un projet mono-app."
-  );
+const MISSING_DB_MSG =
+  "FIRESTORE_DATABASE_ID manquant : ce projet Firebase est PARTAGÉ — configurer la base nommée de l'app " +
+  "(functions/.env.<project-id>) ou poser explicitement ALLOW_DEFAULT_DATABASE=true pour un projet mono-app.";
+if (!FIRESTORE_DATABASE_ID && process.env.K_SERVICE) {
+  throw new Error(MISSING_DB_MSG);
 }
 const STORAGE_BUCKET_NAME = process.env.STORAGE_BUCKET_NAME || undefined;
 // Fuseau des schedulers (Phase 0 produit) : paramétrable par déploiement client (les onSchedule sont
@@ -359,6 +389,7 @@ const TENANT_TIMEZONE = process.env.TENANT_TIMEZONE || "Africa/Abidjan";
  * `getFirestore()` call, so every read/write in this codebase stays confined to this app's
  * dedicated database and never touches another app's "(default)" (or other named) database. */
 function firestoreDb() {
+  if (!FIRESTORE_DATABASE_ID) throw new Error(MISSING_DB_MSG); // garde paresseuse (hors runtime déployé)
   return FIRESTORE_DATABASE_ID === "(default)" ? getFirestore() : getFirestore(FIRESTORE_DATABASE_ID);
 }
 
