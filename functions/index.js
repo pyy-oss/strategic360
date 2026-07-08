@@ -2025,13 +2025,14 @@ exports.enrichNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
 
 /** Assemble le contexte d'un compte pour les agents, en réutilisant l'existant de la veille. */
 async function assembleCopiloteContext(db, accountId) {
-  const [acctSnap, pestelSnap, bizSnap, metaSnap, battlecardsSnap, winLossSnap] = await Promise.all([
+  const [acctSnap, pestelSnap, bizSnap, metaSnap, battlecardsSnap, winLossSnap, clientProfile] = await Promise.all([
     accountId ? db.doc(`copiloteAccounts/${accountId}`).get() : Promise.resolve(null),
     db.doc("frameworks/pestel").get(),
     db.collection("bizOpportunities").get(),
     db.doc("summaries/copiloteMeta").get(),
     db.collection("battlecards").get(),
     db.collection("winLoss").get(),
+    loadClientProfile(db), // profil client (Phase 0) — fournit systemRole ; best-effort (défaut = NT)
   ]);
   const a = acctSnap && acctSnap.exists ? acctSnap.data() : {};
   // Empreinte dérivée de nt360 (additive, jamais destructive) : on fusionne l'historique/les
