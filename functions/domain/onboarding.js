@@ -209,9 +209,51 @@ function parseVeillePlanResponse(raw) {
   };
 }
 
+/* ------------------------------------------------------------------------------------------- *
+ * Étape 1 (support) — SÉLECTION DES LIENS À CRAWLER (pur, testable). Le crawler (index.js, I/O)
+ * fetch la home puis suit ces liens INTERNES prioritaires pour enrichir le texte d'onboarding.
+ * ------------------------------------------------------------------------------------------- */
+const ONBOARDING_LINK_GROUPS = [
+  { key: "about", kws: ["a-propos", "a_propos", "apropos", "about", "qui-sommes", "qui_sommes", "presentation", "notre-histoire", "entreprise", "company", "societe"] },
+  { key: "offers", kws: ["offre", "offres", "service", "services", "solution", "solutions", "produit", "produits", "expertise", "expertises", "metier", "metiers", "prestation"] },
+  { key: "clients", kws: ["client", "clients", "reference", "references", "realisation", "realisations", "portfolio", "temoignage", "cas-client", "case-stud"] },
+  { key: "contact", kws: ["contact", "contactez", "nous-contacter"] },
+];
+
+/**
+ * pickOnboardingLinks(html, baseUrl) -> [url] — jusqu'à 4 liens INTERNES prioritaires (à-propos,
+ * offres, clients, contact), un par groupe, dédupliqués, même domaine que baseUrl. PUR.
+ */
+function pickOnboardingLinks(html, baseUrl) {
+  let base;
+  try { base = new URL(baseUrl); } catch { return []; }
+  const host = base.hostname.replace(/^www\./, "");
+  const norm = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const aRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  const picked = new Map(); // group -> url
+  const seen = new Set();
+  let m;
+  while ((m = aRe.exec(String(html || ""))) !== null) {
+    let abs;
+    try { abs = new URL(m[1], base); } catch { continue; }
+    if (abs.protocol !== "http:" && abs.protocol !== "https:") continue;
+    if (abs.hostname.replace(/^www\./, "") !== host) continue; // interne uniquement
+    const key = `${abs.origin}${abs.pathname}`.replace(/\/$/, "");
+    if (key === `${base.origin}${base.pathname}`.replace(/\/$/, "") || seen.has(key)) continue;
+    const hay = `${norm(abs.pathname)} ${norm(m[2].replace(/<[^>]+>/g, " "))}`;
+    for (const g of ONBOARDING_LINK_GROUPS) {
+      if (picked.has(g.key)) continue;
+      if (g.kws.some((kw) => hay.includes(kw))) { picked.set(g.key, key); seen.add(key); break; }
+    }
+    if (picked.size >= ONBOARDING_LINK_GROUPS.length) break;
+  }
+  return [...picked.values()];
+}
+
 module.exports = {
   buildOnboardingProfilePrompt,
   parseOnboardingProfileResponse,
+  pickOnboardingLinks,
   buildEcosystemMapPrompt,
   parseEcosystemMapResponse,
   buildVeillePlanPrompt,

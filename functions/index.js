@@ -26,6 +26,7 @@ const { computePorterForces, computeBcg, computeCasSummary, computePipeline, com
 const { intelItemId } = require("./domain/ids");
 const { buildClassificationPrompt, parseClassificationResponse, deriveSourceRatingFromUrl } = require("./domain/classify");
 const { dedupeByTitle, isNearDuplicate, isStrongDuplicate, clusterNearDuplicates } = require("./domain/dedupe");
+const { pickOnboardingLinks } = require("./domain/onboarding");
 const { buildEvaluatePrompt, parseEvaluateResponse } = require("./domain/evaluate");
 const { pickRelevant } = require("./domain/retrieve");
 const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
@@ -581,6 +582,60 @@ function absolutizeUrl(href, base) {
     return new URL(h, base).toString();
   } catch {
     return null;
+  }
+}
+
+/**
+ * crawlSite(url, {maxPages}) — ONBOARDING (Phase 1) : aspire le texte du site d'un client pour en
+ * déduire son profil/écosystème. Fetch la home (fallback rendu headless si dégradé) puis suit jusqu'à
+ * `maxPages-1` liens internes prioritaires (pickOnboardingLinks : à-propos/offres/clients/contact),
+ * concatène le texte nettoyé. FAIL-SOFT : une page en échec est simplement ignorée, jamais d'exception.
+ * Borné en taille. I/O — non testé unitairement (réseau).
+ */
+async function crawlSite(url, { maxPages = 5 } = {}) {
+  const texts = [];
+  let homeHtml = "";
+  try {
+    homeHtml = await fetchSource(url);
+    if (isDegradedWebPage(extractWebText(homeHtml))) homeHtml = await fetchRendered(url);
+  } catch (e) {
+    try { homeHtml = await fetchRendered(url); } catch { homeHtml = ""; }
+  }
+  if (homeHtml) texts.push(extractWebText(homeHtml, 6000));
+  const links = homeHtml ? pickOnboardingLinks(homeHtml, url).slice(0, Math.max(0, maxPages - 1)) : [];
+  for (const link of links) {
+    try {
+      const html = await fetchSource(link);
+      const t = extractWebText(html, 3000);
+      if (t && !isDegradedWebPage(t)) texts.push(t);
+    } catch { /* fail-soft : page ignorée */ }
+  }
+  return texts.join("\n\n").slice(0, 16000);
+}
+
+/**
+ * validateCandidateSource(url, kind) -> { ok, itemCount, reason } — ONBOARDING (Phase 1) : vérifie
+ * qu'une source proposée par l'IA renvoie RÉELLEMENT des items exploitables avant de la retenir (on
+ * ne persiste jamais une URL non fetchable/vide). Ne throw JAMAIS. I/O.
+ */
+async function validateCandidateSource(url, kind) {
+  if (typeof url !== "string" || !/^https?:\/\//i.test(url.trim())) {
+    return { ok: false, itemCount: 0, reason: "URL invalide" };
+  }
+  try {
+    if (kind === "rss" || kind === "newsletter") {
+      const xml = await fetchSource(url);
+      const items = extractRssItems(xml, 10);
+      return { ok: items.length > 0, itemCount: items.length, reason: items.length ? "" : "aucun item RSS" };
+    }
+    const html = kind === "web-js" ? await fetchRendered(url) : await fetchSource(url);
+    const items = extractWebItems(html, url, 8);
+    if (items.length) return { ok: true, itemCount: items.length, reason: "" };
+    const text = extractWebText(html);
+    const usable = !!text && text.length > 200 && !isDegradedWebPage(text);
+    return { ok: usable, itemCount: 0, reason: usable ? "" : "page vide/dégradée" };
+  } catch (e) {
+    return { ok: false, itemCount: 0, reason: (e && e.message) || "échec du fetch" };
   }
 }
 

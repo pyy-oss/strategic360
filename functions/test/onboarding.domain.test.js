@@ -7,7 +7,36 @@ import {
   buildOnboardingProfilePrompt, parseOnboardingProfileResponse,
   buildEcosystemMapPrompt, parseEcosystemMapResponse,
   buildVeillePlanPrompt, parseVeillePlanResponse,
+  pickOnboardingLinks,
 } from "../domain/onboarding.js";
+
+describe("onboarding — pickOnboardingLinks (crawler support, pur)", () => {
+  const html = `
+    <a href="/a-propos">À propos</a>
+    <a href="/nos-services">Nos solutions</a>
+    <a href="https://acme.fr/references">Nos clients</a>
+    <a href="/contact">Contactez-nous</a>
+    <a href="/a-propos">À propos (doublon)</a>
+    <a href="https://twitter.com/acme">Twitter</a>
+    <a href="/blog/article-1">Un article de blog</a>
+  `;
+
+  it("sélectionne un lien interne par groupe (about/offers/clients/contact), dédupliqué", () => {
+    const links = pickOnboardingLinks(html, "https://www.acme.fr/");
+    expect(links).toContain("https://www.acme.fr/a-propos");
+    expect(links).toContain("https://www.acme.fr/nos-services");
+    expect(links).toContain("https://acme.fr/references");
+    expect(links).toContain("https://www.acme.fr/contact");
+    expect(links.length).toBe(4); // un par groupe, pas de doublon
+  });
+
+  it("ignore les liens EXTERNES et les URLs invalides ; tolère un html vide", () => {
+    const links = pickOnboardingLinks(html, "https://www.acme.fr/");
+    expect(links.some((u) => u.includes("twitter.com"))).toBe(false);
+    expect(pickOnboardingLinks("", "https://acme.fr")).toEqual([]);
+    expect(pickOnboardingLinks("<a href='/x'>y</a>", "pas-une-url")).toEqual([]);
+  });
+});
 
 describe("onboarding — profil depuis le site", () => {
   it("buildOnboardingProfilePrompt : injecte indices, texte du site et exige un JSON anti-invention", () => {
