@@ -21,6 +21,18 @@ describe("deriveSourceRatingFromUrl — cotation d'amirauté par domaine (audit 
     expect(deriveSourceRatingFromUrl("")).toBeUndefined();
     expect(deriveSourceRatingFromUrl(null)).toBeUndefined();
   });
+
+  it("profil client (Phase 0) : sans 2e arg == défaut ; un sourceAuthority custom change la note", () => {
+    // Non-régression : passer explicitement le profil par défaut donne le même résultat que sans arg.
+    const def = { officialDomains: ["bceao.int"], reputableDomains: ["reuters"], aggregatorDomains: ["blogspot"], ratings: { official: "A2", reputable: "B2", aggregator: "D3" } };
+    expect(deriveSourceRatingFromUrl("https://bceao.int/x", def)).toBe(deriveSourceRatingFromUrl("https://bceao.int/x"));
+    // Config d'un AUTRE client : d'autres domaines de référence, d'autres notes.
+    const custom = { officialDomains: ["service-public.fr", "legifrance"], reputableDomains: ["lemonde.fr"], aggregatorDomains: [], ratings: { official: "A1", reputable: "B1", aggregator: "E4" } };
+    expect(deriveSourceRatingFromUrl("https://www.legifrance.gouv.fr/loi", custom)).toBe("A1");
+    expect(deriveSourceRatingFromUrl("https://www.lemonde.fr/article", custom)).toBe("B1");
+    // bceao.int n'est PAS un domaine officiel pour ce client → non reconnu (retombe C3 côté appelant).
+    expect(deriveSourceRatingFromUrl("https://bceao.int/x", custom)).toBeUndefined();
+  });
 });
 import { intelItemId } from "../domain/ids.js";
 

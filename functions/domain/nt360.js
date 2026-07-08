@@ -649,11 +649,14 @@ const SUBTYPE_OFFER_MARKERS = {
  * que la VEILLE déclenche le cross-sell (au lieu d'un simple market-basket interne). Rapprochement par
  * MOT (labelMatchesAnyMarker) et non sous-chaîne — évite les faux positifs (« soc » ⊄ « société »). PUR.
  */
-function matchOffersToEvents(veilleTop, offers) {
+function matchOffersToEvents(veilleTop, offers, offerMarkers) {
   const out = [];
   const seen = new Set();
+  // `offerMarkers` (profil client, Phase 0 produit) surcharge le mapping subtype→familles d'offre ;
+  // ABSENT → SUBTYPE_OFFER_MARKERS par défaut (aucun changement de comportement).
+  const markersMap = offerMarkers && typeof offerMarkers === "object" ? offerMarkers : SUBTYPE_OFFER_MARKERS;
   for (const ev of Array.isArray(veilleTop) ? veilleTop : []) {
-    const markers = SUBTYPE_OFFER_MARKERS[ev && ev.subtype];
+    const markers = markersMap[ev && ev.subtype];
     if (!markers) continue;
     for (const o of Array.isArray(offers) ? offers : []) {
       if (!o || !o.offre || seen.has(o.offre)) continue;
