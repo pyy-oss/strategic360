@@ -2619,7 +2619,9 @@ exports.copiloteGenerate = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   const { agent, accountId, extra } = request.data || {};
   const spec = COPILOTE_AGENTS[agent];
   if (!spec) throw new HttpsError("invalid-argument", `agent inconnu : ${agent}`);
-  assertAccountId(accountId);
+  // Agents « niveau marché » (ex. contenu marketing 1:N) : pas d'accountId requis (levier waouh n°2).
+  if (!spec.accountOptional) assertAccountId(accountId);
+  else if (accountId) assertAccountId(accountId); // si un compte est fourni, il doit rester valide
   const db = firestoreDb();
   const base = await assembleCopiloteContext(db, accountId);
   // Agents mono-deal : refuser proprement si le compte n'a aucune opportunité ouverte, plutôt que de
