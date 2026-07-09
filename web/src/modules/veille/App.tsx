@@ -68,6 +68,7 @@ import { Execution } from "./views/Execution";
 import { PlanAction } from "./views/PlanAction";
 import { Briefing } from "./views/Briefing";
 import { Copilote } from "./views/Copilote";
+import { Equipe } from "./views/Equipe";
 import { Onboarding } from "./views/Onboarding";
 import { useIsExec } from "../../lib/rbac";
 
@@ -170,6 +171,7 @@ export default function VeilleApp() {
       {view === "plan" && <PlanAction />}
       {view === "briefing" && <Briefing />}
       {view === "copilote" && <Copilote />}
+      {view === "equipe" && <Equipe />}
       {view === "onboarding" && <Onboarding />}
 
       <footer style={{ marginTop: 22, paddingTop: 14, borderTop: `1px solid ${T.line}`, fontSize: 11.5, color: T.faint, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>

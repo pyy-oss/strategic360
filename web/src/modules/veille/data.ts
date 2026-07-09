@@ -194,6 +194,7 @@ export const NAV: [string, string][] = [
   ["plan", "Plan d'action"],
   ["briefing", "Briefing exécutif"],
   ["copilote", "Copilote Commercial"],
+  ["equipe", "Pilotage équipe"],
   ["onboarding", "Onboarding client"],
 ];
 
@@ -206,7 +207,7 @@ export const NAV_GROUPS: { label: string; home: string; items: string[] }[] = [
   { label: "Veille", home: "radar", items: ["radar", "fil", "detection", "briefing"] },
   { label: "Analyse", home: "indicateurs", items: ["indicateurs", "cadres", "diagnostic", "concurrence"] },
   { label: "Croissance", home: "portefeuille", items: ["portefeuille", "valeur", "simulateur", "scenarios", "innovation"] },
-  { label: "Action", home: "copilote", items: ["copilote", "plan", "execution"] },
+  { label: "Action", home: "copilote", items: ["copilote", "equipe", "plan", "execution"] },
   // Groupe EXEC uniquement (paramétrage produit) — App.tsx le masque aux non-exec.
   { label: "Config", home: "onboarding", items: ["onboarding"] },
 ];
