@@ -66,4 +66,12 @@ describe("evaluate — porte de pertinence des signaux de veille", () => {
     expect(parseEvaluateResponse(null)).toBeNull();
     expect(parseEvaluateResponse("nope")).toBeNull();
   });
+
+  it("m10 : booléen stringifié « false »/0/« non » est un rejet (Gemini JSON stringifie souvent)", () => {
+    expect(parseEvaluateResponse({ pertinence: 95, publier: "false", raison: "doublon" }).publier).toBe(false);
+    expect(parseEvaluateResponse({ pertinence: 95, publier: "non", raison: "hs" }).publier).toBe(false);
+    expect(parseEvaluateResponse({ pertinence: 95, publier: 0, raison: "hs" }).publier).toBe(false);
+    // « true » stringifié ou toute autre valeur non-falsey → couplé au seuil (ici publié).
+    expect(parseEvaluateResponse({ pertinence: 95, publier: "true", raison: "ok" }).publier).toBe(true);
+  });
 });

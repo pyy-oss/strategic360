@@ -27,7 +27,7 @@ const dns = require("node:dns/promises");
 const { intelItemId } = require("./domain/ids");
 const { isForbiddenIp, checkPublicHttpUrl } = require("./domain/netguard");
 const { buildClassificationPrompt, parseClassificationResponse, deriveSourceRatingFromUrl } = require("./domain/classify");
-const { dedupeByTitle, isNearDuplicate, isStrongDuplicate, clusterNearDuplicates } = require("./domain/dedupe");
+const { dedupeByTitle, isNearDuplicate, isStrongDuplicate, blocksMerge, clusterNearDuplicates } = require("./domain/dedupe");
 const {
   pickOnboardingLinks,
   buildOnboardingProfilePrompt,
@@ -123,14 +123,43 @@ async function closeRenderBrowser() {
  * permanence et n'atteignent jamais l'inactivité réseau → on attend le DOM puis un court délai
  * pour laisser le JS peupler la page. */
 async function fetchRendered(url) {
-  // Garde anti-SSRF sur l'URL initiale (les sous-requêtes de la page rendue restent sous la
-  // responsabilité du navigateur headless sandboxé — risque résiduel documenté dans netguard.js).
   await assertSafePublicUrl(url);
   const browser = await getRenderBrowser();
   const page = await browser.newPage();
+  // Garde anti-SSRF COMPLÈTE (audit 2026-07, M1) : sans interception, le navigateur suivait
+  // lui-même les redirections 3xx du frame principal et chargeait les sous-ressources sans
+  // repasser par assertSafePublicUrl → une page publique redirigeant vers une IP interne
+  // exfiltrait son contenu. On intercepte CHAQUE requête réseau et on refuse tout hôte qui
+  // résout vers une adresse interne (redirections + sous-requêtes comprises). Cache DNS par page
+  // pour ne pas multiplier les lookups.
+  const dnsCache = new Map();
   try {
+    await page.setRequestInterception(true);
+    page.on("request", async (req) => {
+      try {
+        let u;
+        try { u = new URL(req.url()); } catch { await req.abort(); return; }
+        // Schémas locaux (data:/blob:/about:) : pas de réseau, on laisse passer.
+        if (u.protocol !== "http:" && u.protocol !== "https:") { await req.continue(); return; }
+        const checked = checkPublicHttpUrl(req.url());
+        if (!checked.ok) { await req.abort(); return; }
+        const host = checked.url.hostname.replace(/^\[|\]$/g, "");
+        if (/^[\d.]+$/.test(host) || host.includes(":")) { await req.continue(); return; } // IP littérale déjà validée
+        let internal = dnsCache.get(host);
+        if (internal === undefined) {
+          try {
+            const addrs = await dns.lookup(host, { all: true, verbatim: true });
+            internal = addrs.some((a) => isForbiddenIp(a.address));
+          } catch { internal = true; } // DNS en échec → on refuse par défaut
+          dnsCache.set(host, internal);
+        }
+        if (internal) await req.abort(); else await req.continue();
+      } catch { try { await req.abort(); } catch { /* déjà géré */ } }
+    });
     await page.setUserAgent(SOURCE_FETCH_HEADERS["User-Agent"]);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    // Re-validation de l'URL FINALE après la chaîne de redirections du frame principal.
+    await assertSafePublicUrl(page.url());
     // Laisse le JS rendre le contenu (listes d'AO, actualités) après le DOMContentLoaded.
     await new Promise((r) => setTimeout(r, 3500));
     return await page.content();
@@ -304,9 +333,40 @@ const vertexLimit = makeLimiter(AI_CONCURRENCY);
  * nombre de sources actives configurées. Au-delà, rotation quotidienne pour ne pas affamer la
  * queue de liste (les sources excédentaires passent aux runs suivants). */
 const MAX_SOURCES_PER_RUN = 80;
-/** Verrou de sync (audit M9) : un run est considéré mort (verrou périmé) au-delà de ce délai —
+/** Verrou de run (audit M9/M2) : un run est considéré mort (verrou périmé) au-delà de ce délai —
  * légèrement supérieur au timeout dur des fonctions (540 s). */
 const SYNC_LOCK_TTL_MS = 12 * 60 * 1000;
+
+/**
+ * acquireRunLock(db, path, ttlMs) -> bool — verrou transactionnel générique (audit intégral 2026-07,
+ * M2/m6) pour empêcher deux runs coûteux (enrichissement, évaluation) de tourner en parallèle
+ * (manuel + planifié) : double facturation Vertex sur un projet PARTAGÉ et écritures concurrentes
+ * last-writer-wins. Écrit `{ running:true, startedAt }` si aucun run vivant. Un verrou plus vieux
+ * que ttlMs est réputé périmé (run tué au timeout) et repris. Best-effort : si la transaction
+ * échoue (émulateur, indisponibilité), on autorise le run (mieux vaut un run que pas de run).
+ */
+async function acquireRunLock(db, path, ttlMs = SYNC_LOCK_TTL_MS) {
+  const ref = db.doc(path);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const cur = snap.exists ? snap.data() : {};
+      const startedMs = cur.startedAt && typeof cur.startedAt.toMillis === "function" ? cur.startedAt.toMillis() : 0;
+      if (cur.running === true && startedMs && Date.now() - startedMs < ttlMs) return false;
+      tx.set(ref, { running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null }, { merge: true });
+      return true;
+    });
+  } catch (e) {
+    logger.warn(`acquireRunLock(${path}): transaction indisponible (${e.message}) — run sans verrou`);
+    return true;
+  }
+}
+/** Libère un verrou de run (best-effort). */
+async function releaseRunLock(db, path, patch = {}) {
+  try {
+    await db.doc(path).set({ running: false, finishedAt: FieldValue.serverTimestamp(), ...patch }, { merge: true });
+  } catch { /* best-effort */ }
+}
 
 /** Statuts « PUBLIÉS » (visibles du fil/radar et comptés dans les agrégats). `pending` (en attente
  * d'évaluation) et `rejected` (écarté par l'évaluateur) et `archived` (doublon/clos) en sont exclus. */
@@ -608,7 +668,7 @@ exports.ingestInternal = onObjectFinalized(
     const bucket = getStorage().bucket(event.data.bucket);
     const [buffer] = await bucket.file(filePath).download();
 
-    const parsed = config.parse(buffer);
+    const parsed = await config.parse(buffer); // parseurs xlsx→exceljs désormais asynchrones (M4)
     const rows = parsed[config.resultKey] || [];
     const { rowsIn, rowsOk, warnings } = parsed;
 
@@ -862,13 +922,17 @@ async function upsertClassifiedItem(db, classified, dedupeIndex) {
     const axis = classified.axis || "";
     const title = classified.title || "";
     // Même axe + quasi-doublon standard, OU fort recouvrement quel que soit l'axe (même événement vu
-    // par deux sources et classé sur des axes différents) — audit pertinence 2026-07.
-    const dup = dedupeIndex.find((e) => ((e.axis || "") === axis && isNearDuplicate(e.title, title)) || isStrongDuplicate(e.title, title));
+    // par deux sources et classé sur des axes différents) — audit pertinence 2026-07. Garde M3 : un
+    // discriminant fort divergent (référence d'AO/acheteur/entité) empêche la fusion d'AO distincts.
+    const dup = dedupeIndex.find((e) =>
+      !blocksMerge(e.item, classified) &&
+      (((e.axis || "") === axis && isNearDuplicate(e.title, title)) || isStrongDuplicate(e.title, title))
+    );
     if (dup) {
       logger.info(`syncSources: skip near-duplicate « ${String(classified.title).slice(0, 60)} » ~ « ${String(dup.title).slice(0, 60)} »`);
       return { id, written: false, duplicate: true };
     }
-    dedupeIndex.push({ title: classified.title || "", axis });
+    dedupeIndex.push({ title: classified.title || "", axis, item: classified });
   }
   const { status: _classifiedStatus, ...rest } = classified;
   await ref.set(
@@ -930,7 +994,7 @@ async function runSyncSources(db) {
     dedupeIndex = existingSnap.docs
       .map((d) => d.data())
       .filter((x) => x && (x.status || "new") !== "archived" && x.title)
-      .map((x) => ({ title: x.title, axis: x.axis || "" }));
+      .map((x) => ({ title: x.title, axis: x.axis || "", item: x }));
   } catch (e) {
     logger.warn(`syncSources: index anti-doublon indisponible (${e.message}) — dédup par id seulement`);
   }
@@ -1226,8 +1290,17 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
   const snap = await db.collection("intelItems").where("status", "==", "pending").limit(limit).get();
   const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   if (!items.length) return { evaluated: 0, published: 0, rejected: 0 };
+  // Verrou anti-double-évaluation (audit intégral 2026-07, m6) : l'évaluation en fin de synchro et
+  // le cron horaire pouvaient noter les MÊMES items `pending` simultanément (jusqu'à 150×2 appels
+  // Vertex). Un seul évaluateur à la fois ; l'autre reprendra les restants au prochain tick.
+  const EVAL_LOCK = "summaries/evalStatus";
+  if (!(await acquireRunLock(db, EVAL_LOCK))) {
+    logger.info("runEvaluateIntelItems: une évaluation est déjà en cours (verrou actif) — passe ignorée");
+    return { evaluated: 0, published: 0, rejected: 0, locked: true };
+  }
   let published = 0, rejected = 0;
   const stamp = () => FieldValue.serverTimestamp();
+  try {
   await runInBatches(items, AI_CONCURRENCY, async (it) => {
     try {
       const parsed = parseEvaluateResponse(await generateJson(buildEvaluatePrompt(it, companyContext)));
@@ -1253,6 +1326,9 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
   });
   logger.info(`runEvaluateIntelItems: ${items.length} évalués — ${published} publiés, ${rejected} écartés`);
   return { evaluated: items.length, published, rejected };
+  } finally {
+    await releaseRunLock(db, EVAL_LOCK);
+  }
 }
 
 /** evaluateIntelItemsNow — callable exec-gated : évalue à la demande les signaux en attente. */
@@ -1844,6 +1920,16 @@ async function runEnrichment(db) {
     return { skipped: true };
   }
 
+  // Verrou anti-runs-concurrents (audit intégral 2026-07, M2) : enrichNow (manuel) et
+  // enrichStrategicArtifacts (cron hebdo) ne doivent pas tourner ensemble — ~18 générations Vertex
+  // ×2 sur le projet PARTAGÉ + courses last-writer-wins sur frameworks/*.
+  const ENRICH_LOCK = "summaries/enrichStatus";
+  if (!(await acquireRunLock(db, ENRICH_LOCK))) {
+    logger.warn("runEnrichment: un enrichissement est déjà en cours (verrou actif) — démarrage refusé");
+    return { skipped: true, locked: true };
+  }
+  try {
+
   // 0. Rafraîchissement du contexte entreprise (dynamique) — AVANT les autres générations pour
   // qu'elles utilisent la version à jour. writeFrameworkDoc applique la garde humaine : un
   // contexte édité par la Direction n'est jamais réécrit par l'IA.
@@ -2195,6 +2281,9 @@ async function runEnrichment(db) {
 
   logger.info(`runEnrichment: done — ${JSON.stringify(summary)} (signals=${signals.length})`);
   return summary;
+  } finally {
+    await releaseRunLock(db, ENRICH_LOCK);
+  }
 }
 
 /**
@@ -3232,29 +3321,29 @@ exports.exportPdf = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
  * BUILD_KIT.md §13 "export Firestore planifié").
  *
  * Uses the Firestore Admin API's managed export (`google.firestore.admin.v1.FirestoreAdminClient
- * #exportDocuments`, from `@google-cloud/firestore`'s `v1` namespace — this is DISTINCT from the
- * regular `firebase-admin`/`@google-cloud/firestore` document-CRUD client used everywhere else in
- * this file; it talks to the separate "Firestore Admin" API surface) to snapshot the entire
- * default database to Cloud Storage. Output path: `gs://{projectId}.appspot.com/scheduled-exports/
- * {YYYY-MM-DD}/` (one dated folder per run — the export API itself writes several files under
- * that prefix, it is NOT a single downloadable file).
+ * #exportDocuments`, from `@google-cloud/firestore`'s `v1` namespace — DISTINCT from the regular
+ * document-CRUD client used everywhere else) to snapshot THIS APP's database to Cloud Storage.
  *
- * UNVERIFIABLE IN THIS SANDBOX: there is no real GCP project/credentials here, no Firestore Admin
- * API enabled, and no emulator support for managed exports — this has NOT been exercised
- * end-to-end. It is implemented per the documented API surface (verified to load/construct
- * correctly — `new firestoreAdminV1.FirestoreAdminClient()` and `.databasePath()` both work in
- * this sandbox, see V8 task notes) and kept maximally defensive: any failure is caught and logged
- * at `error` level rather than thrown, because a scheduled maintenance job crashing must never be
- * mistaken for a user-facing incident (BUILD_KIT.md doesn't put this on any request path).
+ * ISOLATION (audit pré-lancement/intégral 2026-07, M1/M6/m8) — corrigé, ne plus décrire autrement :
+ *   - la base exportée est `FIRESTORE_DATABASE_ID` (celle de CETTE app), JAMAIS "(default)" (qui
+ *     appartiendrait à une autre app du projet PARTAGÉ) ;
+ *   - la cible est le bucket DÉDIÉ `FIRESTORE_EXPORT_BUCKET`, JAMAIS le bucket appspot par défaut
+ *     (partagé) — il n'existe AUCUN fallback ;
+ *   - si `FIRESTORE_EXPORT_BUCKET` n'est pas configuré, l'export est SAUTÉ (log `error`, aucune
+ *     écriture) plutôt que d'écrire dans un bucket commun. Un déploiement de prod DOIT donc poser
+ *     cette variable pour avoir une sauvegarde (voir README « Checklist de déploiement »).
+ * Sortie : `gs://{FIRESTORE_EXPORT_BUCKET}/scheduled-exports/{YYYY-MM-DD}/` (dossier daté par run).
  *
- * Deployment prerequisites (manual, console/gcloud side — see README.md "Deployment Checklist"):
- *   - Firestore Admin API enabled for the project (usually on by default once Firestore is used).
- *   - The Cloud Functions service account needs `roles/datastore.importExportAdmin` (or
- *     equivalent) on the project, and the target bucket needs to exist with write access granted
- *     to that same service account.
- *   - The default `{projectId}.appspot.com` bucket (created automatically with most projects) is
- *     used as the export target here; override via `FIRESTORE_EXPORT_BUCKET` env var if a
- *     dedicated bucket is preferred.
+ * UNVERIFIABLE IN THIS SANDBOX : pas de projet GCP réel ni d'émulateur d'export managé ici — non
+ * exercé de bout en bout ; implémenté selon la surface d'API documentée et défensif (toute erreur
+ * est catchée/loggée en `error`, jamais throw : un job de maintenance planté ne doit pas passer
+ * pour un incident utilisateur).
+ *
+ * Prérequis de déploiement (console/gcloud — voir README « Checklist de déploiement ») :
+ *   - Firestore Admin API activée (généralement par défaut) ;
+ *   - le compte de service des Functions a `roles/datastore.importExportAdmin` sur le projet ;
+ *   - le bucket `FIRESTORE_EXPORT_BUCKET` existe, dédié à cette app, avec accès en écriture pour ce
+ *     même compte de service.
  */
 exports.scheduledFirestoreExport = onSchedule(
   { schedule: "0 2 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1" },
@@ -3291,6 +3380,40 @@ exports.scheduledFirestoreExport = onSchedule(
       // incident to end users — it just means the daily export didn't happen, logged for whoever
       // monitors Cloud Logging/alerts on this function.
       logger.error(`scheduledFirestoreExport: FAILED — ${err.message}`, { err });
+    }
+  }
+);
+
+/**
+ * purgeAuditLog — RÉTENTION des données personnelles (audit intégral 2026-07, m15). `auditLog`
+ * accumule uid/e-mail/action des salariés sans limite ; la Loi ivoirienne 2013-450 (et le RGPD pour
+ * un déploiement UE) imposent une durée de conservation bornée. On purge chaque semaine les entrées
+ * plus vieilles que `AUDITLOG_RETENTION_DAYS` (défaut 730 j = 2 ans). Best-effort, borné par lots.
+ * NB : `copiloteProfiles` (périmètres commerciaux) n'est PAS auto-purgé — ce sont des données de
+ * config ACTIVES ; leur suppression est manuelle au départ d'un collaborateur (documenté README).
+ */
+const AUDITLOG_RETENTION_DAYS = Number(process.env.AUDITLOG_RETENTION_DAYS) || 730;
+exports.purgeAuditLog = onSchedule(
+  { schedule: "0 3 * * 0", timeZone: TENANT_TIMEZONE, region: "europe-west1" },
+  async () => {
+    try {
+      const db = firestoreDb();
+      const cutoff = new Date(Date.now() - AUDITLOG_RETENTION_DAYS * 24 * 3600 * 1000);
+      let deleted = 0;
+      // Boucle bornée : jusqu'à 20 lots de 400 (8000 docs max/run) — suffisant pour une purge
+      // hebdomadaire, sans risquer le timeout.
+      for (let i = 0; i < 20; i++) {
+        const snap = await db.collection("auditLog").where("ts", "<", cutoff).limit(400).get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        snap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        deleted += snap.size;
+        if (snap.size < 400) break;
+      }
+      if (deleted) logger.info(`purgeAuditLog: ${deleted} entrées auditLog > ${AUDITLOG_RETENTION_DAYS} j supprimées.`);
+    } catch (err) {
+      logger.error(`purgeAuditLog: FAILED — ${err.message}`, { err });
     }
   }
 );

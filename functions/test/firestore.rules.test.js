@@ -158,6 +158,28 @@ describe("summaries/veille", () => {
   });
 });
 
+// Audit intégral 2026-07 (m3) : agrégats exécutifs/financiers réservés aux exécutifs.
+describe("summaries/veille_exec & quanti — exec-only", () => {
+  it.each(EXEC_ROLES)("read veille_exec allowed for exec role=%s", async (role) => {
+    await assertSucceeds(ctxFor(role).firestore().doc("summaries/veille_exec").get());
+  });
+  it.each(ALL_ROLES.filter((r) => !EXEC_ROLES.includes(r)))(
+    "read veille_exec rejected for role=%s",
+    async (role) => {
+      await assertFails(ctxFor(role).firestore().doc("summaries/veille_exec").get());
+    }
+  );
+  it.each(EXEC_ROLES)("read quanti allowed for exec role=%s", async (role) => {
+    await assertSucceeds(ctxFor(role).firestore().doc("summaries/quanti").get());
+  });
+  it.each(ALL_ROLES.filter((r) => !EXEC_ROLES.includes(r)))(
+    "read quanti rejected for role=%s",
+    async (role) => {
+      await assertFails(ctxFor(role).firestore().doc("summaries/quanti").get());
+    }
+  );
+});
+
 describe("config/permissions", () => {
   it("write is allowed for direction", async () => {
     const db = ctxFor("direction").firestore();

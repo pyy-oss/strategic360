@@ -227,6 +227,19 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * remplace le label IA quand une vraie date existe : une échéance dépassée devient "horizon" + past.
  * PUR. Renvoie null si la date est inexploitable.
  */
+/**
+ * isValidCalendarDate(s) — true si `s` est une date ISO `YYYY-MM-DD` RÉELLE du calendrier (audit
+ * intégral 2026-07, m11). La regex seule acceptait `2024-13-45` ou `2024-02-30`, persistés comme
+ * échéance et pilotant la proximité/fraîcheur. On valide les composants via Date UTC. PUR.
+ */
+function isValidCalendarDate(s) {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s.trim())) return false;
+  const [y, m, d] = s.trim().split("-").map(Number);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
 function deriveProxFromDueDate(dueDate, now = Date.now()) {
   const t = Date.parse(dueDate);
   if (Number.isNaN(t)) return null;
@@ -355,10 +368,7 @@ function parseClassificationResponse(rawJsonResponse, context) {
     // inventée ne doit jamais piloter le scoring de proximité) ; budgetIdentified strictement
     // booléen ; businessAngle coercé champ par champ (voir coerceBusinessAngle).
     businessAngle: coerceBusinessAngle(r.businessAngle),
-    dueDate:
-      typeof r.dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.dueDate.trim())
-        ? r.dueDate.trim()
-        : undefined,
+    dueDate: isValidCalendarDate(r.dueDate) ? r.dueDate.trim() : undefined,
     budgetIdentified: r.budgetIdentified === true,
     date: coerceString(r.date, ctx.defaultDate || today),
     // Grounding temporel (anti-obsolescence) : quand une échéance RÉELLE existe, `prox` est dérivé
@@ -379,7 +389,7 @@ function parseClassificationResponse(rawJsonResponse, context) {
   // figure, on la promeut en dueDate pour que la proximité/fraîcheur (et le scoring) en profitent.
   if (!item.dueDate && item.businessAngle && typeof item.businessAngle.deadline === "string") {
     const m = item.businessAngle.deadline.trim().match(/\d{4}-\d{2}-\d{2}/);
-    if (m) item.dueDate = m[0];
+    if (m && isValidCalendarDate(m[0])) item.dueDate = m[0]; // m11 : rejette 2024-13-45 & co.
   }
 
   // Dérivation de l'imminence depuis l'échéance réelle (prime sur le label IA) + drapeau `stale`.

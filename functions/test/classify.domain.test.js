@@ -182,6 +182,18 @@ describe("parseClassificationResponse — businessAngle / dueDate / budgetIdenti
     expect(parseClassificationResponse({ title: "x", dueDate: " 2026-09-15 " }, {}).dueDate).toBe("2026-09-15");
   });
 
+  it("m11 : rejette une pseudo-date hors calendrier (mois/jour invalides) bien que la regex passe", () => {
+    for (const bad of ["2024-13-45", "2026-02-30", "2026-00-10", "2026-06-31"]) {
+      const item = parseClassificationResponse({ title: "x", dueDate: bad }, {});
+      expect(Object.keys(item)).not.toContain("dueDate");
+    }
+    // une date calendaire réelle (année bissextile) passe
+    expect(parseClassificationResponse({ title: "x", dueDate: "2028-02-29" }, {}).dueDate).toBe("2028-02-29");
+    // promotion depuis deadline : une pseudo-date n'est pas promue
+    const it = parseClassificationResponse({ title: "AO", businessAngle: { deadline: "2026-02-30" } }, {});
+    expect(Object.keys(it)).not.toContain("dueDate");
+  });
+
   it("dérive dueDate depuis businessAngle.deadline (ISO) quand dueDate est absente (audit pertinence)", () => {
     // deadline ISO stricte présente, dueDate absente → promue en dueDate.
     const it1 = parseClassificationResponse({ title: "AO", businessAngle: { buyer: "BCEAO", deadline: "2026-08-15" } }, {});

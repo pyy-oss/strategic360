@@ -95,13 +95,20 @@ vers des ressources **dédiées** à cette app, pas les ressources par défaut d
    `VITE_FIREBASE_APPCHECK_SITE_KEY`. Démarrer en mode « surveillance » avant d'activer
    l'application stricte. Ne définir `APPCHECK_ENFORCE=true` dans
    `functions/.env.propulse-business-87f7a` **qu'une fois** le client réellement déployé avec la
-   clé configurée — sinon tous les appels échouent.
+   clé configurée — sinon tous les appels échouent. **Ne pas rester indéfiniment en mode non
+   appliqué** (audit 2026-07, m1) : dès que la console App Check montre que le trafic réel porte des
+   jetons valides (quelques jours de « surveillance »), basculer à `true` et redéployer — sinon les
+   callables ne sont protégés que par le claim `role`, sans attestation du client officiel.
 4. **Vertex AI** : activer l'API Vertex AI sur le projet GCP `propulse-business-87f7a` si ce n'est
    pas déjà fait (potentiellement déjà activée pour une autre app — vérifier avant, ne rien
    désactiver). Ajuster `VERTEX_LOCATION` dans `functions/.env.propulse-business-87f7a` si besoin.
-5. **Export Firestore planifié** : accorder au compte de service des Functions le rôle
-   `roles/datastore.importExportAdmin` et les droits d'écriture sur le bucket cible de
-   `scheduledFirestoreExport` (`functions/index.js`).
+5. **Sauvegarde Firestore quotidienne** (audit 2026-07, M6 — **requis pour avoir un backup**) :
+   créer un **bucket GCS dédié** à cette app (ex. `strategic360-backups`, jamais le bucket appspot
+   partagé), le renseigner dans `functions/.env.propulse-business-87f7a` →
+   `FIRESTORE_EXPORT_BUCKET`, et accorder au compte de service des Functions le rôle
+   `roles/datastore.importExportAdmin` + l'écriture sur ce bucket. **Tant que la variable n'est pas
+   posée, `scheduledFirestoreExport` saute l'export (log `error`) — aucune sauvegarde n'est
+   produite.** L'export vise la base nommée `strategic360` (jamais `(default)`).
 6. **Seed initial** : `cd functions && npm install`, puis (avec des identifiants ayant accès au
    projet, ex. `GOOGLE_APPLICATION_CREDENTIALS` vers une clé de compte de service) :
    ```bash
@@ -125,6 +132,17 @@ vers des ressources **dédiées** à cette app, pas les ressources par défaut d
    mot de passe (aucun mot de passe ne transite jamais par les logs CI). Réutilisable ensuite pour
    assigner n'importe lequel des 8 rôles à n'importe quel email — voir `docs/USER_GUIDE.md` pour la
    suite côté utilisateur final.
+   > Le tout premier compte `direction` d'un projet neuf passe par le *bootstrap* de `setUserRole`,
+   > désactivé par défaut (audit 2026-07, M3) : déployer temporairement avec `ALLOW_ROLE_BOOTSTRAP=true`
+   > dans `functions/.env.<project>`, s'auto-attribuer `direction` (appelant authentifié), puis retirer
+   > la variable. Le workflow `set-user-role.yml` (compte de service) reste la voie normale ensuite.
+9. **Protection de branche `main`** (audit 2026-07) : dans GitHub > Settings > Branches, exiger les
+   deux status checks CI (« Web — build & typecheck » et « Functions — tests + règles ») avant merge,
+   sinon la CI reste purement informative.
+10. **Rétention des données personnelles** (audit 2026-07, m15) : `auditLog` est purgé automatiquement
+    au-delà de `AUDITLOG_RETENTION_DAYS` (défaut 2 ans, `purgeAuditLog`). Les `copiloteProfiles`
+    (périmètres commerciaux) ne sont **pas** auto-purgés — supprimer manuellement le doc d'un
+    collaborateur à son départ (panneau Périmètres, ou console).
 
 ### Créer le secret GitHub Actions (déploiement CI/CD)
 

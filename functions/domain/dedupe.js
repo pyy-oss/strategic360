@@ -70,6 +70,33 @@ function isStrongDuplicate(a, b) {
 }
 
 /**
+ * discriminantKey(item) — extrait un IDENTIFIANT FORT d'événement (audit intégral 2026-07, M3) :
+ * référence d'AO, acheteur/entité adjudicatrice, ou entité principale. Deux signaux à titre proche
+ * mais à discriminant DIFFÉRENT sont des événements DISTINCTS (deux appels d'offres « fourniture de
+ * matériel informatique » de deux ministères ≠ un doublon) et ne doivent jamais être fusionnés.
+ * Renvoie "" si l'item ne porte aucun discriminant exploitable (→ on retombe sur le titre seul). PUR.
+ */
+function discriminantKey(item) {
+  if (!item || typeof item !== "object") return "";
+  const ba = item.businessAngle && typeof item.businessAngle === "object" ? item.businessAngle : {};
+  const cand =
+    item.tenderRef || item.ref || ba.tenderRef || ba.ref ||
+    ba.buyer || ba.acheteur || ba.autorite || item.ent || "";
+  return normalizeTitle(cand);
+}
+
+/**
+ * blocksMerge(a, b) — true si deux items portent CHACUN un discriminant fort et qu'ils DIFFÈRENT
+ * (donc événements distincts, fusion interdite malgré des titres proches). Si l'un au moins n'a pas
+ * de discriminant, on ne bloque pas (retour au titre seul). PUR.
+ */
+function blocksMerge(a, b) {
+  const da = discriminantKey(a);
+  const db = discriminantKey(b);
+  return !!da && !!db && da !== db;
+}
+
+/**
  * dedupeByTitle(items, threshold) — écarte les quasi-doublons d'une liste (garde le PREMIER de
  * chaque grappe). `items` = tableau de chaînes OU d'objets `{title}`. Renvoie la liste filtrée dans
  * l'ordre d'origine. PUR.
@@ -97,13 +124,16 @@ function dedupeByTitle(items, threshold = 0.6) {
  */
 function clusterNearDuplicates(items, threshold = 0.6) {
   const list = Array.isArray(items) ? items : [];
-  const clusters = []; // { rep:{title,axis}, members: [] }
+  const clusters = []; // { rep:{title,axis, item}, members: [] }
   for (const it of list) {
     if (!it || typeof it !== "object") continue;
     const title = typeof it.title === "string" ? it.title : "";
     const axis = it.axis || "";
     let placed = false;
     for (const c of clusters) {
+      // Discriminant fort divergent (M3) : deux AO/événements distincts ne fusionnent jamais, même
+      // à titre quasi identique.
+      if (blocksMerge(c.rep.item, it)) continue;
       // Même axe + quasi-doublon standard, OU fort recouvrement quel que soit l'axe (même événement
       // classé différemment selon la source) — audit pertinence 2026-07.
       const sameAxis = (c.rep.axis || "") === axis && isNearDuplicate(c.rep.title, title, threshold);
@@ -113,9 +143,9 @@ function clusterNearDuplicates(items, threshold = 0.6) {
         break;
       }
     }
-    if (!placed) clusters.push({ rep: { title, axis }, members: [it] });
+    if (!placed) clusters.push({ rep: { title, axis, item: it }, members: [it] });
   }
   return clusters.filter((c) => c.members.length >= 2).map((c) => c.members);
 }
 
-module.exports = { normalizeTitle, titleSimilarity, isNearDuplicate, isStrongDuplicate, dedupeByTitle, clusterNearDuplicates };
+module.exports = { normalizeTitle, titleSimilarity, isNearDuplicate, isStrongDuplicate, discriminantKey, blocksMerge, dedupeByTitle, clusterNearDuplicates };
