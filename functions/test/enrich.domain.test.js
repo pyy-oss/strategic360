@@ -799,3 +799,22 @@ describe("anti-obsession cyber — directive d'équilibre sectoriel (2026-07)", 
     }
   });
 });
+
+describe("Levier waouh n°3 — sourcesFromSignals (citations [n] cliquables)", () => {
+  it("mappe chaque signal à son numéro [n] dans l'ordre, avec id/ent quand présents", async () => {
+    const { sourcesFromSignals } = await import("../domain/enrich.js");
+    const out = sourcesFromSignals([
+      { id: "item_a", title: "BCEAO durcit la cyber", ent: "BCEAO", axis: "reglementaire" },
+      { title: "Ransomware UEMOA" },
+    ]);
+    expect(out).toEqual([
+      { n: 1, title: "BCEAO durcit la cyber", id: "item_a", ent: "BCEAO" },
+      { n: 2, title: "Ransomware UEMOA" },
+    ]);
+  });
+  it("liste vide/non-tableau → []", async () => {
+    const { sourcesFromSignals } = await import("../domain/enrich.js");
+    expect(sourcesFromSignals([])).toEqual([]);
+    expect(sourcesFromSignals(undefined)).toEqual([]);
+  });
+});

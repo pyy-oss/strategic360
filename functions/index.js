@@ -1877,6 +1877,7 @@ const {
   buildScenariosPrompt,
   parseScenariosResponse,
   pickSignalsForEnrichment,
+  sourcesFromSignals,
   diversifySignals,
   slugId: enrichSlugId,
 } = require("./domain/enrich");
@@ -1890,7 +1891,7 @@ const {
  * re-enable AI regeneration per framework is planned; until then the human can clear/delete the
  * doc to let the AI take over again).
  */
-async function writeFrameworkDoc(db, key, content) {
+async function writeFrameworkDoc(db, key, content, sources) {
   const ref = db.doc(`frameworks/${key}`);
   const existing = await ref.get();
   const existingUpdatedBy = existing.exists ? existing.data()?.updatedBy : null;
@@ -1901,6 +1902,9 @@ async function writeFrameworkDoc(db, key, content) {
   await ref.set({
     key,
     content,
+    // sources : table de correspondance des citations [n] → signal (levier « waouh » n°3). Persistée
+    // seulement si fournie (les cadres non encore câblés gardent le comportement actuel).
+    ...(Array.isArray(sources) && sources.length ? { sources } : {}),
     version: existing.exists ? (existing.data()?.version ?? 0) + 1 : 1,
     updatedBy: "ai:enrichStrategicArtifacts",
     updatedAt: FieldValue.serverTimestamp(),
@@ -1952,7 +1956,7 @@ function anchorGe9PositionsOnInternalCas(items, granularite) {
 
 async function runEnrichment(db) {
   const itemsSnap = await db.collection("intelItems").get();
-  const signals = pickSignalsForEnrichment(itemsSnap.docs.map((d) => d.data()));
+  const signals = pickSignalsForEnrichment(itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
   // Échantillon ENTRELACÉ PAR AXE (audit pertinence 2026-07) : les cadres qui visent la BREADTH
   // (SWOT/PESTEL, Diagnostic, GE9, Ansoff, Horizons, paris d'innovation, scénarios) doivent voir un
   // input équilibré, pas la seule tête priorité-clusterisée. La diversité est déjà garantie dans la
@@ -2008,8 +2012,11 @@ async function runEnrichment(db) {
       summary.swotPestel = "parse-failed";
       logger.error("runEnrichment: SWOT/PESTEL response unusable (parse returned null)");
     } else {
-      const swotStatus = await writeFrameworkDoc(db, "swot", parsed.swot);
-      const pestelStatus = await writeFrameworkDoc(db, "pestel", parsed.pestel);
+      // SWOT/PESTEL sont générés à partir de `diverseSignals` : on persiste la table de sources
+      // correspondante pour rendre les citations [n] cliquables côté front (levier « waouh » n°3).
+      const swotPestelSources = sourcesFromSignals(diverseSignals);
+      const swotStatus = await writeFrameworkDoc(db, "swot", parsed.swot, swotPestelSources);
+      const pestelStatus = await writeFrameworkDoc(db, "pestel", parsed.pestel, swotPestelSources);
       summary.swotPestel = swotStatus === pestelStatus ? swotStatus : `swot=${swotStatus},pestel=${pestelStatus}`;
     }
   } catch (err) {
