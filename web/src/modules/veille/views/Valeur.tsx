@@ -27,6 +27,21 @@ export function Valeur() {
   // « menaces » et « net » sont structurellement à 0 (audit 2026-07). On ne les affiche que si des
   // menaces valorisées existent réellement — sinon une seule tuile honnête, pas deux tuiles mortes.
   const hasThreat = vas.some((v) => (v.type as string) === "threat");
+  // Pont de valeur RÉEL (levier « waouh » n°5) — construit depuis les vrais champs quanti nt360 au
+  // lieu du placeholder mort « en attente ». Départ CA N-1 → CA réalisé → + pipeline pondéré →
+  // projeté. On n'affiche que les étapes dont la donnée existe (honnêteté : aucun chiffre inventé).
+  const base = quanti?.casN1Total ?? null;
+  const current = quanti?.casTotal ?? null;
+  const pipe = quanti?.pipelinePondere ?? null;
+  const wr = quanti?.winRate ?? null;
+  const projete = current != null ? current + (pipe != null ? pipe * (wr != null ? wr : 1) : 0) : null;
+  const hasBridge = current != null;
+  const bridgeSteps: { label: string; value: number; accent: string; sub?: string }[] = [
+    ...(base != null ? [{ label: "CA N-1", value: base, accent: T.faint }] : []),
+    ...(current != null ? [{ label: "CA réalisé", value: current, accent: T.emerald, sub: base != null ? `${current - base >= 0 ? "▲ +" : "▼ "}${fmt(current - base)} vs N-1` : undefined }] : []),
+    ...(pipe != null ? [{ label: "Pipeline pondéré", value: pipe, accent: T.gold, sub: wr != null ? `× ${pct(wr)} win-rate` : "potentiel projet" }] : []),
+    ...(projete != null ? [{ label: "Projeté", value: projete, accent: T.steel, sub: "CA réalisé + pipeline attendu" }] : []),
+  ];
   // Longue liste (audit design) : filtre opp/menace (si pertinent) + pagination. L'échelle des
   // barres reste calée sur le max GLOBAL pour rester comparable d'une page à l'autre.
   const [vasFilter, setVasFilter] = useState<"all" | "opp" | "threat">("all");
@@ -52,7 +67,24 @@ export function Valeur() {
       </div>
       <Card style={{ marginBottom: 14 }}>
         <Eyebrow color={T.gold}>Pont de création de valeur — {AMBITION_LABEL}</Eyebrow>
-        <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>Pont de valeur — en attente des imports internes.</div>
+        {hasBridge ? (
+          <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "stretch", flexWrap: "wrap" }}>
+            {bridgeSteps.map((s, i) => (
+              <React.Fragment key={s.label}>
+                {i > 0 && <div style={{ alignSelf: "center", color: T.faint, fontSize: 16 }}>→</div>}
+                <div style={{ flex: 1, minWidth: 130, background: T.panel2, borderRadius: 9, padding: "10px 12px", borderTop: `2px solid ${s.accent}` }}>
+                  <div style={{ fontSize: 10.5, color: T.faint }}>{s.label}</div>
+                  <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 18, fontWeight: 700, color: s.accent, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{fmt(s.value)}</div>
+                  {s.sub && <div style={{ fontSize: 10.5, color: T.dim, marginTop: 2 }}>{s.sub}</div>}
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+        ) : (
+          <div style={{ marginTop: 12, padding: "14px 16px", background: T.panel2, borderRadius: 9, fontSize: 12.5, color: T.dim, lineHeight: 1.5 }}>
+            📊 Le pont de valeur (CA N-1 → réalisé → pipeline → projeté) s'affichera dès la <b style={{ color: T.ink }}>première synchronisation des données internes</b> (P&L / pipeline nt360). Lancez-la depuis <b style={{ color: T.ink }}>Indicateurs</b> ou attendez la synchro quotidienne.
+          </div>
+        )}
       </Card>
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <Card>
@@ -61,7 +93,9 @@ export function Valeur() {
             {liveVas && <Badge c={T.emerald}>Temps réel (pipeline interne nt360)</Badge>}
           </div>
           {!liveVas && (
-            <div style={{ marginTop: 10, fontSize: 12.5, color: T.faint }}>En attente de la première synchronisation interne (nt360).</div>
+            <div style={{ marginTop: 10, padding: "12px 14px", background: T.panel2, borderRadius: 9, fontSize: 12.5, color: T.dim, lineHeight: 1.5 }}>
+              💼 La valeur en jeu (opportunités × probabilité) apparaîtra dès que le <b style={{ color: T.ink }}>pipeline interne</b> sera synchronisé (nt360). En attendant, le Copilote et le Radar exécutif chiffrent déjà la réserve de valeur au niveau des comptes.
+            </div>
           )}
           {hasThreat && (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
