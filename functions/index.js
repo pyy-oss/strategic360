@@ -1697,6 +1697,50 @@ async function computeVeilleExecSummary(db) {
 }
 
 /**
+ * snapshotVeilleKpis — HISTORIQUE des KPIs (levier « waouh » n°1 : tendances). L'app n'avait aucun
+ * store d'historique → tout était un instantané, sans « dans quel sens ça bouge ». Ce cron quotidien
+ * fige les KPIs exécutifs du jour dans `summaries/kpiHistory.points[]` (tableau plafonné à 90 j) ;
+ * le front en dérive les deltas semaine-sur-semaine (flèches ↑/↓). Idempotent : un point du même
+ * jour est remplacé (pas de doublon si le cron rejoue). Best-effort : n'échoue jamais bruyamment.
+ */
+const KPI_HISTORY_CAP = 90;
+exports.snapshotVeilleKpis = onSchedule(
+  { schedule: "7 1 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1" },
+  async () => {
+    try {
+      const db = firestoreDb();
+      const execSnap = await db.doc("summaries/veille_exec").get();
+      if (!execSnap.exists) { logger.info("snapshotVeilleKpis: summaries/veille_exec absent — rien à figer"); return; }
+      const s = execSnap.data() || {};
+      const bk = s.boardKpis || {};
+      const day = new Date().toISOString().slice(0, 10);
+      const point = {
+        date: day,
+        pipelineInfluenced: typeof s.pipelineInfluenced === "number" ? s.pipelineInfluenced : null,
+        menacesTotal: bk.menacesTotal ?? null,
+        menacesTraitees: bk.menacesTraitees ?? null,
+        opportunites: bk.opportunites ?? null,
+        winRateGlobal: bk.winRateGlobal ?? null,
+        okrProgress: typeof s.okrProgress === "number" ? s.okrProgress : null,
+        threatsHighUnactioned: s.threatsHighUnactionedCount ?? null,
+      };
+      const ref = db.doc("summaries/kpiHistory");
+      await db.runTransaction(async (tx) => {
+        const cur = await tx.get(ref);
+        const points = (cur.exists && Array.isArray(cur.data().points) ? cur.data().points : []).filter((p) => p && p.date !== day);
+        points.push(point);
+        points.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        const trimmed = points.slice(-KPI_HISTORY_CAP);
+        tx.set(ref, { points: trimmed, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      });
+      logger.info(`snapshotVeilleKpis: point ${day} figé (pipeline=${point.pipelineInfluenced}).`);
+    } catch (err) {
+      logger.error(`snapshotVeilleKpis: FAILED — ${err.message}`, { err });
+    }
+  }
+);
+
+/**
  * aggregateVeilleExec — planifié (toutes les 60 min)
  * Construit summaries/veille_exec (boardKpis, decisionsPending, porter, winRateByCompetitor, ...).
  * Roadmap: V3 Scoring & agrégats veille.

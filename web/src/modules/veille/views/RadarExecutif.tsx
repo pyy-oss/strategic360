@@ -7,8 +7,27 @@ import { Toggle } from "../../../design/fields";
 import { useActions, useDecisions } from "../lib/execution";
 import { BUSINESS_SUBTYPES, PUBLISHED_STATUSES, useBizOpportunities, useIntelItems, useWatchlist } from "../lib/intel";
 import { isPastDue } from "../lib/freshness";
-import { useVeilleExecSummary, useAiHealth } from "../lib/summaries";
+import { useVeilleExecSummary, useAiHealth, useKpiHistory, kpiDelta, type KpiDelta } from "../lib/summaries";
 import { computeVeilleAttribution } from "../lib/attribution";
+import { useLatestBriefing } from "../lib/briefings";
+
+/** Flèche de tendance semaine-sur-semaine (levier « waouh » n°1). `invert` : métrique où « baisse =
+ * bon » (menaces, non-traité). Rien tant qu'il n'y a pas d'historique comparable — pas de fausse tendance. */
+function TrendArrow({ delta, invert = false }: { delta: KpiDelta | null; invert?: boolean }) {
+  if (!delta || delta.dir === "flat") return null;
+  const good = invert ? delta.dir === "down" : delta.dir === "up";
+  const color = good ? T.emerald : T.clay;
+  const arrow = delta.dir === "up" ? "▲" : "▼";
+  const label = delta.pct != null
+    ? `${delta.pct > 0 ? "+" : ""}${Math.round(delta.pct * 100)}%`
+    : `${delta.abs > 0 ? "+" : ""}${delta.abs}`;
+  const d = new Date(delta.sinceDate + "T00:00:00Z");
+  return (
+    <span title={`depuis le ${d.toLocaleDateString("fr-FR")}`} style={{ fontSize: 11, color, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 6 }}>
+      {arrow} {label}
+    </span>
+  );
+}
 
 /** Carte KPI cliquable (drill-down vers l'onglet/vue source). */
 function KpiCard({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
@@ -81,6 +100,47 @@ function VeilleAttributionPanel() {
   );
 }
 
+/**
+ * « Décision du jour » (levier « waouh » n°1) — le cockpit qui ANTICIPE ET TRANCHE. Fusionne en UNE
+ * phrase les trois ingrédients déjà produits séparément par l'app : ARGENT-EN-JEU (pipeline
+ * attribuable à la veille, chiffré en XOF), URGENCE (signaux business imminents datés), et
+ * RECOMMANDATION (idée directrice / reco n°1 du dernier briefing, sinon l'action recommandée du
+ * signal le plus chaud). Un CTA mène droit à l'action. N'apparaît que s'il y a quelque chose à dire
+ * (jamais de bandeau vide). Les montants viennent de l'attribution réelle, pas d'une invention.
+ */
+function DecisionDuJour({
+  moneyXof, declencheeXof, urgent, reco, ctaLabel, onCta,
+}: {
+  moneyXof: number; declencheeXof: number; urgent: { title: string; count: number } | null;
+  reco: string | null; ctaLabel: string; onCta: () => void;
+}) {
+  if (moneyXof <= 0 && !urgent && !reco) return null;
+  return (
+    <Card style={{ borderLeft: `3px solid ${T.gold}`, background: `linear-gradient(90deg, ${T.gold}14, ${T.panel})` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <Eyebrow color={T.gold}>Décision du jour</Eyebrow>
+          <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 18, fontWeight: 700, color: T.ink, marginTop: 6, lineHeight: 1.35, overflowWrap: "anywhere" }}>
+            {moneyXof > 0 && (
+              <>💰 <span style={{ color: T.emerald }}>{fmt(moneyXof)} XOF</span> en jeu{declencheeXof > 0 ? <> (dont <span style={{ color: T.gold }}>{fmt(declencheeXof)}</span> déclenchés par la veille)</> : null}</>
+            )}
+            {urgent && (
+              <>{moneyXof > 0 ? " · " : "⏱️ "}<span style={{ color: T.clay }}>{urgent.count} signal{urgent.count > 1 ? "aux" : ""} business imminent{urgent.count > 1 ? "s" : ""}</span></>
+            )}
+          </div>
+          {reco && (
+            <div style={{ fontSize: 13, color: T.dim, marginTop: 8, lineHeight: 1.5, overflowWrap: "anywhere" }}>
+              <span style={{ color: T.plum, fontWeight: 700 }}>→ </span>{reco}
+            </div>
+          )}
+          {urgent && <div style={{ fontSize: 11.5, color: T.faint, marginTop: 6 }}>Le plus chaud : {urgent.title}</div>}
+        </div>
+        <button className="pill on" onClick={onCta} style={{ flexShrink: 0 }}>{ctaLabel}</button>
+      </div>
+    </Card>
+  );
+}
+
 export interface RadarExecutifProps {
   lens: string;
   setView: (v: string) => void;
@@ -99,6 +159,16 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   const items = React.useMemo(() => rawItems.filter((s) => PUBLISHED_STATUSES.has(s.status ?? "new")), [rawItems]);
   const { data: exec } = useVeilleExecSummary();
   const { data: aiHealth } = useAiHealth();
+  const { points: kpiHistory } = useKpiHistory();
+  // Bandeau « Décision du jour » : ingrédients déjà produits ailleurs, fusionnés ici.
+  const { opportunities } = useBizOpportunities();
+  const { actions } = useActions();
+  const attribution = React.useMemo(() => computeVeilleAttribution(opportunities, actions), [opportunities, actions]);
+  const { briefing: latestBriefing } = useLatestBriefing();
+  const dPipeline = React.useMemo<KpiDelta | null>(() => kpiDelta(kpiHistory, "pipelineInfluenced"), [kpiHistory]);
+  const dMenaces = React.useMemo<KpiDelta | null>(() => kpiDelta(kpiHistory, "menacesTotal"), [kpiHistory]);
+  const dWinRate = React.useMemo<KpiDelta | null>(() => kpiDelta(kpiHistory, "winRateGlobal"), [kpiHistory]);
+  const dOkr = React.useMemo<KpiDelta | null>(() => kpiDelta(kpiHistory, "okrProgress"), [kpiHistory]);
   const sorted = [...items].sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
   const menaces = sorted.filter((s) => s.stance === "threat");
   const opps = sorted.filter((s) => s.stance === "opportunity");
@@ -111,6 +181,14 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
     .filter((s) => !isPastDue(s, nowMs))
     .filter((s) => s.prox === "imminent" || s.prox === "court" || BUSINESS_SUBTYPES.has(s.subtype ?? ""))
     .slice(0, 6);
+  // « Décision du jour » : recommandation = idée directrice / reco n°1 du dernier briefing, sinon
+  // l'action recommandée (ou le so-what) du signal le plus chaud. CTA vers la source de l'action.
+  const topUrgent = bizImminent[0] ?? null;
+  const briefReco = latestBriefing?.content?.recommendations?.[0]?.action || latestBriefing?.governingThought || "";
+  const decisionReco = briefReco || topUrgent?.recommendedAction || topUrgent?.soWhat || null;
+  const decisionCta = briefReco ? { label: "Ouvrir le briefing →", go: () => setView("briefing") }
+    : topUrgent ? { label: "Voir le signal →", go: () => navigate("/veille/fil?st=" + (topUrgent.stance || "")) }
+    : { label: "Voir le fil →", go: () => setView("fil") };
   // Top signaux : mêmes items, mais les périmés (échéance dépassée) sont repoussés en bas de liste
   // (audit pertinence 2026-07 — un AO déjà clos à score élevé ne doit pas trôner en tête de ce que
   // le dirigeant lit en premier). Ils restent visibles mais marqués « Échéance passée ».
@@ -149,6 +227,16 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
           )}
         </div>
       )}
+      <div style={{ marginBottom: 14 }}>
+        <DecisionDuJour
+          moneyXof={attribution.pipelineXof}
+          declencheeXof={attribution.declencheesXof}
+          urgent={topUrgent ? { title: topUrgent.title, count: bizImminent.length } : null}
+          reco={decisionReco}
+          ctaLabel={decisionCta.label}
+          onCta={decisionCta.go}
+        />
+      </div>
       <div style={{ fontSize: 12, color: T.plum, marginBottom: 14, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 12px" }}>
         🎯 {intro}
       </div>
@@ -159,7 +247,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
         <KpiCard title="Ouvrir le Copilote (comptes suivis)" onClick={() => setView("copilote")}>
           <Kpi
             label="Exposition comptes suivis"
-            value={exec && exec.pipelineInfluenced != null ? fmt(exec.pipelineInfluenced) : "—"}
+            value={<>{exec && exec.pipelineInfluenced != null ? fmt(exec.pipelineInfluenced) : "—"}<TrendArrow delta={dPipeline} /></>}
             accent={T.emerald}
             sub="value-at-stake · comptes en veille / watchlist (≠ pipeline actif) ▸"
           />
@@ -167,7 +255,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
         <KpiCard title="Voir les menaces dans le Fil" onClick={() => navigate("/veille/fil?st=threat")}>
           <Kpi
             label="Menaces (traitées / total)"
-            value={exec ? `${exec.boardKpis.menacesTraitees} / ${exec.boardKpis.menacesTotal}` : "—"}
+            value={<>{exec ? `${exec.boardKpis.menacesTraitees} / ${exec.boardKpis.menacesTotal}` : "—"}<TrendArrow delta={dMenaces} invert /></>}
             accent={T.clay}
             sub="couverture décisionnelle ▸"
           />
@@ -175,7 +263,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
         <KpiCard title="Ouvrir la vue Concurrence (win/loss)" onClick={() => setView("concurrence")}>
           <Kpi
             label="Taux de victoire"
-            value={exec && exec.boardKpis?.winRateGlobal != null ? pct(exec.boardKpis.winRateGlobal) : "—"}
+            value={<>{exec && exec.boardKpis?.winRateGlobal != null ? pct(exec.boardKpis.winRateGlobal) : "—"}<TrendArrow delta={dWinRate} /></>}
             accent={T.gold}
             sub="vs concurrents (win/loss) ▸"
           />
@@ -183,7 +271,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
         <KpiCard title="Ouvrir Exécution & OKR" onClick={() => setView("execution")}>
           <Kpi
             label="Avancement OKR"
-            value={exec && exec.okrProgress != null ? pct(exec.okrProgress) : "—"}
+            value={<>{exec && exec.okrProgress != null ? pct(exec.okrProgress) : "—"}<TrendArrow delta={dOkr} /></>}
             accent={T.steel}
             sub="initiatives stratégiques ▸"
           />
