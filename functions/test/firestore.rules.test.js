@@ -232,6 +232,18 @@ describe("config/* (hors permissions) — lecture exec-only", () => {
     const db = ctxFor(role).firestore();
     await assertFails(db.doc("config/onboardingDraft").set({ status: "draft" }));
   });
+
+  // Cadence des pipelines (maîtrise coûts) : config/runtime — lecture exec-only, écriture client
+  // TOUJOURS interdite (seul le callable exec setPipelineConfig écrit, via Admin SDK).
+  it.each(EXEC_ROLES)("read config/runtime allowed for exec role=%s", async (role) => {
+    await assertSucceeds(ctxFor(role).firestore().doc("config/runtime").get());
+  });
+  it.each(ALL_ROLES.filter((r) => !EXEC_ROLES.includes(r)))("read config/runtime rejected for role=%s", async (role) => {
+    await assertFails(ctxFor(role).firestore().doc("config/runtime").get());
+  });
+  it.each(ALL_ROLES)("write config/runtime rejected for role=%s (callable-only)", async (role) => {
+    await assertFails(ctxFor(role).firestore().doc("config/runtime").set({ paused: true }));
+  });
 });
 
 // Waouh v2 — cibles commerciales : lecture/écriture réservées aux managers (exec + commercial_dir).
