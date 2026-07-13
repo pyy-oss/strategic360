@@ -10,6 +10,7 @@ import { useSyncStatus } from "../lib/summaries";
 import { usePaged, Pager } from "../components/Pager";
 import { Select, Input } from "../../../design/fields";
 import { Modal, useToast } from "../../../design/overlay";
+import { usePipelineConfig, setPipelineConfig, PIPELINE_KEYS, PIPELINE_LABEL, type PipelineKey } from "../lib/pipelineConfig";
 
 /** "Radar de détection" — ported from `Detection` in the maquette; data source swapped to
  * Firestore `intelItems` (V2). Rendering (sonar SVG, quadrants, badges) is unchanged.
@@ -168,6 +169,7 @@ export function Detection() {
         </Card>
       </div>
       <SourceHealthPanel />
+      <PipelineCadencePanel />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
         <span style={{ fontSize: 11.5, color: T.faint }}>Catégorie :</span>
         <button className={`pill ${cat === "all" ? "on" : ""}`} onClick={() => setCat("all")}>
@@ -382,6 +384,97 @@ function AddSourceModal({ open, onClose }: { open: boolean; onClose: () => void 
  * la veille, ET permet de les CORRIGER (audit 2026-07) — réactiver, éditer l'URL, désactiver,
  * supprimer, ajouter, relancer la synchro. Actions réservées aux rôles exec (firestore.rules).
  */
+/**
+ * PipelineCadencePanel (exec) — CADENCE & COÛTS : règle en direct l'espacement minimum des pipelines
+ * IA planifiés (config/runtime via setPipelineConfig), sans redéploiement. Espacer l'évaluation ou
+ * suspendre le tout coupe les appels Vertex à la source. 0 = cadence native.
+ */
+function PipelineCadencePanel() {
+  const isExec = useIsExec();
+  const toast = useToast();
+  const { config, loading } = usePipelineConfig();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<Record<PipelineKey, string>>({ sync: "", evaluate: "", aggregate: "", enrich: "", briefing: "" });
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  // Synchronise le brouillon avec la config chargée (tant que l'utilisateur n'a pas commencé à éditer).
+  React.useEffect(() => {
+    if (dirty || !config) return;
+    const iv = config.intervals || {};
+    setDraft({
+      sync: iv.sync != null ? String(iv.sync) : "",
+      evaluate: iv.evaluate != null ? String(iv.evaluate) : "",
+      aggregate: iv.aggregate != null ? String(iv.aggregate) : "",
+      enrich: iv.enrich != null ? String(iv.enrich) : "",
+      briefing: iv.briefing != null ? String(iv.briefing) : "",
+    });
+  }, [config, dirty]);
+
+  if (!isExec || loading) return null;
+  const paused = config?.paused === true;
+
+  const togglePause = async () => {
+    setSaving(true);
+    try { await setPipelineConfig({ paused: !paused }); toast.success(!paused ? "Pipelines suspendus — aucun appel IA jusqu'à réactivation." : "Pipelines réactivés."); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); } finally { setSaving(false); }
+  };
+  const save = async () => {
+    const intervals: Partial<Record<PipelineKey, number>> = {};
+    for (const k of PIPELINE_KEYS) {
+      const raw = draft[k].trim();
+      const n = raw === "" ? 0 : Number(raw);
+      if (!Number.isFinite(n) || n < 0) { toast.error(`Valeur invalide pour « ${PIPELINE_LABEL[k].titre} ».`); return; }
+      intervals[k] = Math.round(n);
+    }
+    setSaving(true);
+    try { await setPipelineConfig({ intervals }); setDirty(false); toast.success("Cadence enregistrée — appliquée au prochain passage des crons."); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Échec de l'enregistrement."); } finally { setSaving(false); }
+  };
+
+  return (
+    <Card style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <Eyebrow color={T.gold}>Cadence & coûts IA{paused ? " — ⏸ EN PAUSE" : ""}</Eyebrow>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button className={paused ? "pill on" : "pill"} disabled={saving} onClick={() => void togglePause()}>
+            {paused ? "▶ Réactiver les pipelines" : "⏸ Tout suspendre"}
+          </button>
+          <button className="pill" onClick={() => setOpen((v) => !v)}>{open ? "Masquer" : "Régler les fréquences"}</button>
+        </div>
+      </div>
+      <div style={{ fontSize: 11.5, color: T.dim, marginTop: 8 }}>
+        Espacez les pipelines IA pour réduire le coût Vertex (l'appel n'a lieu que si l'intervalle est écoulé). Réglage en direct, sans redéploiement — appliqué au prochain passage. <b>0 = cadence native</b>.
+      </div>
+      {open && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          {PIPELINE_KEYS.map((k) => (
+            <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: T.panel2, borderRadius: 8, padding: "8px 10px" }}>
+              <div style={{ flex: "1 1 240px", minWidth: 220 }}>
+                <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{PIPELINE_LABEL[k].titre}</div>
+                <div style={{ fontSize: 10.5, color: T.faint }}>{PIPELINE_LABEL[k].desc} · natif : {PIPELINE_LABEL[k].natif}</div>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.dim }}>
+                intervalle min
+                <input type="number" min={0} step={30} value={draft[k]} placeholder="0"
+                  onChange={(e) => { setDirty(true); setDraft((d) => ({ ...d, [k]: e.target.value })); }}
+                  style={{ width: 90, fontSize: 12, padding: "4px 8px", background: T.panel, border: `1px solid ${T.line}`, borderRadius: 6, color: T.ink }} />
+                min
+              </label>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button className="pill on" disabled={saving || !dirty} onClick={() => void save()}>{saving ? "Enregistrement…" : "Enregistrer la cadence"}</button>
+            <span style={{ fontSize: 10.5, color: T.faint }}>
+              Ex. évaluation à 180 min ≈ 8 passages/j au lieu de 24 ({config?.updatedAt ? "config personnalisée active" : "cadence native partout"}).
+            </span>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function SourceHealthPanel() {
   const { sources, loading } = useSources();
   const isExec = useIsExec();

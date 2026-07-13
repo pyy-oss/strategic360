@@ -12,6 +12,7 @@ const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { setGlobalOptions } = require("firebase-functions/v2");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
@@ -445,6 +446,50 @@ const STORAGE_BUCKET_NAME = process.env.STORAGE_BUCKET_NAME || undefined;
 // Fuseau des schedulers (Phase 0 produit) : paramétrable par déploiement client (les onSchedule sont
 // statiques au déploiement — c'est le bon niveau). Défaut = Neurones (Côte d'Ivoire).
 const TENANT_TIMEZONE = process.env.TENANT_TIMEZONE || "Africa/Abidjan";
+
+// Plafond d'instances Cloud Run (maîtrise des coûts) : sans plafond, chaque fonction peut monter à
+// 100 instances par défaut — une facture qui s'emballe sur un pic. On borne globalement (défaut 10,
+// paramétrable MAX_INSTANCES). Aucun minInstances : les fonctions restent à scale-to-zéro (pas
+// d'instance chaude facturée 24/7). Chaque fonction peut toujours surcharger ce défaut.
+const MAX_INSTANCES = Math.max(1, Number(process.env.MAX_INSTANCES) || 10);
+setGlobalOptions({ maxInstances: MAX_INSTANCES });
+
+// Cadence des pipelines planifiés (maîtrise des coûts Vertex/Cloud Run — réglable EN DIRECT depuis
+// l'app, sans redéploiement). La config vit dans `config/runtime` ({ paused, intervals{key:minutes},
+// lastRun{key} }), éditée par les exécutifs via le callable setPipelineConfig. Chaque cron coûteux
+// consulte gateScheduledPipeline() AVANT tout appel Vertex et se court-circuite s'il a tourné il y a
+// moins de `intervals[key]` minutes — l'appel coûteux n'a alors jamais lieu. Défaut : aucun
+// intervalle (cadence native inchangée), donc zéro changement de comportement tant que rien n'est réglé.
+const { PIPELINE_KEYS, pipelineThrottleDecision, sanitizePipelineIntervals } = require("./domain/pipeline");
+
+/**
+ * gateScheduledPipeline(db, key) → true si le cron doit s'exécuter, false s'il est en pause ou
+ * throttlé. Estampille `config/runtime.lastRun[key]` (transaction) quand il autorise le run.
+ * Fail-open : toute erreur de lecture de la config laisse le pipeline s'exécuter (on ne fige jamais
+ * un pipeline sur un hoquet Firestore). À appeler tout en HAUT d'un cron, avant le moindre appel IA.
+ */
+async function gateScheduledPipeline(db, key) {
+  try {
+    const ref = db.doc("config/runtime");
+    const nowMs = Date.now();
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const data = snap.exists ? (snap.data() || {}) : {};
+      const lastRunMs = {};
+      for (const k of PIPELINE_KEYS) lastRunMs[k] = toMillis((data.lastRun || {})[k]);
+      const decision = pipelineThrottleDecision({ cfg: { ...data, lastRunMs }, key, nowMs });
+      if (!decision.run) {
+        logger.info(`pipeline ${key}: saut (${decision.reason}${decision.reason === "throttled" ? ` — ${decision.elapsedMin}min < ${decision.minMin}min` : ""}).`);
+        return false;
+      }
+      tx.set(ref, { lastRun: { [key]: FieldValue.serverTimestamp() } }, { merge: true });
+      return true;
+    });
+  } catch (err) {
+    logger.warn(`gateScheduledPipeline(${key}): config illisible, exécution par défaut — ${err.message}`);
+    return true;
+  }
+}
 
 /** Firestore handle scoped to FIRESTORE_DATABASE_ID — use this everywhere instead of a bare
  * `getFirestore()` call, so every read/write in this codebase stays confined to this app's
@@ -1211,7 +1256,9 @@ async function runSyncSources(db) {
 // 2 GiB : le rendu headless (kind "web-js") lance Chromium, gourmand en mémoire. Les sources
 // web-js sont peu nombreuses (portails anti-bot) mais le navigateur doit tenir dans l'instance.
 exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "2GiB" }, async () => {
-  await runSyncSources(firestoreDb());
+  const db = firestoreDb();
+  if (!(await gateScheduledPipeline(db, "sync"))) return; // pause/throttle (config/runtime) — avant tout appel Vertex
+  await runSyncSources(db);
 });
 
 /**
@@ -1348,7 +1395,9 @@ exports.evaluateIntelItemsNow = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "1GiB" 
 exports.evaluateIntelItemsScheduled = onSchedule(
   { schedule: "every 60 minutes", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "1GiB" },
   async () => {
-    const result = await runEvaluateIntelItems(firestoreDb());
+    const db = firestoreDb();
+    if (!(await gateScheduledPipeline(db, "evaluate"))) return; // pause/throttle — avant tout appel Vertex
+    const result = await runEvaluateIntelItems(db);
     logger.info(`evaluateIntelItemsScheduled: ${JSON.stringify(result)}`);
   }
 );
@@ -1820,6 +1869,9 @@ exports.backfillKpiHistory = onCall(async (request) => {
  */
 exports.aggregateVeilleExec = onSchedule({ schedule: "every 60 minutes", timeZone: TENANT_TIMEZONE, region: "europe-west1" }, async () => {
   const db = firestoreDb();
+  // Court-circuit pause/throttle : l'agrégat exec est aussi recalculé par onIntelItemWrite à chaque
+  // écriture, donc l'espacer (voire le suspendre) ne dégrade pas la fraîcheur du cockpit.
+  if (!(await gateScheduledPipeline(db, "aggregate"))) return;
   try {
     const summary = await computeVeilleExecSummary(db);
     await db.doc("summaries/veille_exec").set(summary);
@@ -1901,7 +1953,9 @@ exports.generateBriefing = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
 exports.generateBriefingWeekly = onSchedule(
   { schedule: "0 7 * * 5", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
-    const result = await runGenerateBriefing(firestoreDb(), "vertex-ai:scheduled");
+    const db = firestoreDb();
+    if (!(await gateScheduledPipeline(db, "briefing"))) return; // pause/throttle — avant tout appel Vertex
+    const result = await runGenerateBriefing(db, "vertex-ai:scheduled");
     if (!result) {
       logger.error("generateBriefingWeekly: réponse IA inexploitable — aucun briefing créé cette semaine");
     }
@@ -2417,7 +2471,9 @@ async function runEnrichment(db) {
 exports.enrichStrategicArtifacts = onSchedule(
   { schedule: "0 5 * * 1", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
-    await runEnrichment(firestoreDb());
+    const db = firestoreDb();
+    if (!(await gateScheduledPipeline(db, "enrich"))) return; // pause/throttle — avant la ~15aine d'appels Vertex
+    await runEnrichment(db);
   }
 );
 
@@ -2430,6 +2486,30 @@ exports.enrichNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   const result = await runEnrichment(firestoreDb());
   logger.info(`enrichNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
   return result;
+});
+
+/**
+ * setPipelineConfig — callable exec : règle la CADENCE des pipelines planifiés (maîtrise des coûts
+ * Vertex/Cloud Run) SANS redéploiement. Écrit `config/runtime` (base strategic360), lu par les crons
+ * via gateScheduledPipeline(). data: { paused?: boolean, intervals?: { sync|evaluate|aggregate|
+ * enrich|briefing: minutes } } — intervalle 0 = cadence native, > 0 = espacement minimum entre deux
+ * runs automatiques. `lastRun` n'est jamais touché ici (réservé aux crons). config/runtime reste en
+ * lecture exec-only via les règles (match /config/{d}) ; l'écriture ne passe QUE par ce callable.
+ */
+exports.setPipelineConfig = onCall(CALLABLE_OPTS, async (request) => {
+  requireExecCaller(request, "régler la cadence des pipelines");
+  const { paused, intervals } = request.data || {};
+  const patch = {};
+  if (typeof paused === "boolean") patch.paused = paused;
+  if (intervals !== undefined) patch.intervals = sanitizePipelineIntervals(intervals);
+  if (!Object.keys(patch).length) {
+    throw new HttpsError("invalid-argument", "Rien à régler : fournir `paused` (booléen) et/ou `intervals` (objet).");
+  }
+  patch.updatedBy = request.auth.uid;
+  patch.updatedAt = FieldValue.serverTimestamp();
+  await firestoreDb().doc("config/runtime").set(patch, { merge: true });
+  logger.info(`setPipelineConfig: caller=${request.auth.uid} patch=${JSON.stringify({ paused: patch.paused, intervals: patch.intervals })}`);
+  return { ok: true };
 });
 
 /* ------------------------------------------------------------------------------------------- *
