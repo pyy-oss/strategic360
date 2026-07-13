@@ -61,9 +61,14 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: "952738555565"
           VITE_FIREBASE_APP_ID: "1:952738555565:web:c35c403f8c40f88367c824"
           VITE_FIREBASE_FIRESTORE_DATABASE_ID: strategic360
-          # App Check site key: not yet registered in the Firebase Console for this app — left
-          # blank on purpose (see README.md § Créer le secret GitHub Actions / App Check step).
-          VITE_FIREBASE_APPCHECK_SITE_KEY: ""
+          # App Check site key : pré-câblé sur le secret GitHub VITE_FIREBASE_APPCHECK_SITE_KEY.
+          # Tant que le secret n'existe pas, ${{ ... }} vaut "" → App Check reste désactivé côté client
+          # (le code gère la clé vide : avertissement, aucune contrainte). Pour activer App Check :
+          # 1) enregistrer une clé reCAPTCHA v3 dans Firebase Console > App Check pour cette app web ;
+          # 2) ajouter sa valeur comme secret repo VITE_FIREBASE_APPCHECK_SITE_KEY et redéployer ;
+          # 3) vérifier que les clients envoient des jetons, PUIS passer APPCHECK_ENFORCE=true dans
+          #    functions/.env.propulse-business-87f7a (sinon tous les callables rejettent les requêtes).
+          VITE_FIREBASE_APPCHECK_SITE_KEY: ${{ secrets.VITE_FIREBASE_APPCHECK_SITE_KEY }}
         # npm ci (audit 2026-07, M2 CI/CD) : installe EXACTEMENT le package-lock testé en CI —
         # npm install résolvait des versions flottantes et pouvait déployer des deps non testées.
         run: |
