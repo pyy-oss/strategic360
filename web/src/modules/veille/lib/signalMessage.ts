@@ -62,3 +62,8 @@ export function buildSignalMessage(item: Partial<IntelItem>): SignalMessage {
 export function whatsappHref(text: string): string {
   return `https://wa.me/?text=${encodeURIComponent(text)}`;
 }
+
+/** Lien mailto (objet + corps pré-remplis) — ouvre le client e-mail (audit v2). */
+export function mailtoHref(objet: string, corps: string): string {
+  return `mailto:?subject=${encodeURIComponent(objet)}&body=${encodeURIComponent(corps)}`;
+}

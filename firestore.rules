@@ -166,6 +166,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Cibles commerciales (waouh v2 — pilotage de la performance). nt360 étant en lecture seule, les
+    // objectifs/quotas par commercial vivent ici (base strategic360), éditables par les MANAGERS
+    // (direction commerciale + exécutifs) et lisibles par eux seuls.
+    match /salesTargets/{d} {
+      allow read: if request.auth != null && (exec() || role() == 'commercial_dir');
+      allow write: if request.auth != null && (exec() || role() == 'commercial_dir');
+    }
+
     // — Config & sécurité —
     match /config/permissions {
       allow read: if request.auth != null;

@@ -233,3 +233,19 @@ describe("config/* (hors permissions) — lecture exec-only", () => {
     await assertFails(db.doc("config/onboardingDraft").set({ status: "draft" }));
   });
 });
+
+// Waouh v2 — cibles commerciales : lecture/écriture réservées aux managers (exec + commercial_dir).
+describe("salesTargets — managers only", () => {
+  const MANAGERS = ["direction", "strategie", "innovation", "commercial_dir"];
+  const NON_MANAGERS = ["commercial", "pmo", "achats", "lecture"];
+  it.each(MANAGERS)("read+write allowed for manager role=%s", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertSucceeds(db.doc("salesTargets/current").set({ targets: { "a@x.com": 1000 } }));
+    await assertSucceeds(db.doc("salesTargets/current").get());
+  });
+  it.each(NON_MANAGERS)("read+write rejected for role=%s", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertFails(db.doc("salesTargets/current").get());
+    await assertFails(db.doc("salesTargets/current").set({ targets: { "a@x.com": 1000 } }));
+  });
+});

@@ -39,21 +39,28 @@ export function matchSignposts(
   items: IntelItem[],
   opts?: { minShared?: number; maxItems?: number }
 ): SignpostMatch[] {
-  const minShared = opts?.minShared ?? 2;
+  // Robustesse (audit v2) : appariement DURCI pour que le claim « rupture en approche » résiste au
+  // scepticisme d'un dirigeant. Un signal ne corrobore un signe que s'il partage l'ENTITÉ nommée du
+  // signe (match fort) OU un recouvrement lexical plus exigeant (≥ 3 jetons ≥ 4 lettres). Réduit
+  // fortement les faux positifs d'un simple recouvrement à 2 mots.
+  const minShared = opts?.minShared ?? 3;
   const maxItems = opts?.maxItems ?? 3;
   const indexed = (Array.isArray(items) ? items : []).map((it) => ({
     it,
     toks: tokens(`${it.title || ""} ${it.soWhat || ""} ${it.summary || ""} ${it.ent || ""}`),
+    entTok: tokens(it.ent || ""),
   }));
   return (Array.isArray(signposts) ? signposts : []).map((sp) => {
     const spToks = tokens(sp);
-    const matches: { it: IntelItem; overlap: number }[] = [];
-    for (const { it, toks } of indexed) {
+    const matches: { it: IntelItem; overlap: number; strong: boolean }[] = [];
+    for (const { it, toks, entTok } of indexed) {
       let overlap = 0;
       for (const t of spToks) if (toks.has(t)) overlap += 1;
-      if (overlap >= minShared) matches.push({ it, overlap });
+      // Entité nommée du signal citée dans le signe → match fort (même si peu de jetons partagés).
+      const entMatch = entTok.size > 0 && [...entTok].some((t) => spToks.has(t));
+      if (entMatch || overlap >= minShared) matches.push({ it, overlap, strong: entMatch });
     }
-    matches.sort((a, b) => b.overlap - a.overlap || (b.it.priorityScore ?? 0) - (a.it.priorityScore ?? 0));
+    matches.sort((a, b) => Number(b.strong) - Number(a.strong) || b.overlap - a.overlap || (b.it.priorityScore ?? 0) - (a.it.priorityScore ?? 0));
     return { text: sp, triggered: matches.length > 0, items: matches.slice(0, maxItems).map((m) => m.it) };
   });
 }

@@ -29,7 +29,9 @@ function SignpostRadar({ matches }: { matches: SignpostMatch[] }) {
             {m.items.map((it) => (
               <button
                 key={it.id}
-                onClick={() => navigate(`/veille/fil?ent=${encodeURIComponent(it.ent || "")}`)}
+                // Deep-link vers le signal : par entité si connue, sinon par recherche du titre (jamais
+                // un filtre ?ent= vide qui n'affiche rien — audit v2).
+                onClick={() => navigate(it.ent ? `/veille/fil?ent=${encodeURIComponent(it.ent)}` : `/veille/fil?q=${encodeURIComponent((it.title || "").slice(0, 40))}`)}
                 title={it.title}
                 style={{ border: "none", background: T.clay + "22", color: T.clay, cursor: "pointer", fontSize: 10, padding: "1px 6px", borderRadius: 6, marginLeft: 6 }}
               >

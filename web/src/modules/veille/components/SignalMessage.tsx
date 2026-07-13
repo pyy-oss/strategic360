@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { T } from "../../../design/tokens";
-import { buildSignalMessage, whatsappHref } from "../lib/signalMessage";
+import { buildSignalMessage, whatsappHref, mailtoHref } from "../lib/signalMessage";
 import type { IntelItem } from "../lib/intel";
 
 /**
@@ -13,8 +13,9 @@ export function SignalMessageButton({ item }: { item: Partial<IntelItem> }) {
   const [corps, setCorps] = useState("");
   const [copied, setCopied] = useState(false);
 
+  const [objet, setObjet] = useState("");
   const openPanel = () => {
-    if (!open) { setCorps(buildSignalMessage(item).corps); setCopied(false); }
+    if (!open) { const m = buildSignalMessage(item); setCorps(m.corps); setObjet(m.objet); setCopied(false); }
     setOpen((v) => !v);
   };
   const copy = async () => {
@@ -37,6 +38,7 @@ export function SignalMessageButton({ item }: { item: Partial<IntelItem> }) {
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
             <button className="pill on" onClick={copy} style={{ fontSize: 11, padding: "3px 10px" }}>{copied ? "✓ Copié" : "Copier"}</button>
             <a className="pill" href={whatsappHref(corps)} target="_blank" rel="noreferrer" style={{ fontSize: 11, padding: "3px 10px", textDecoration: "none" }}>WhatsApp</a>
+            <a className="pill" href={mailtoHref(objet, corps)} style={{ fontSize: 11, padding: "3px 10px", textDecoration: "none" }}>E-mail</a>
           </div>
           <div style={{ fontSize: 10.5, color: T.faint, marginTop: 6 }}>Brouillon généré depuis le signal — relisez et personnalisez avant d'envoyer.</div>
         </div>
