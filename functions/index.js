@@ -241,20 +241,17 @@ async function fetchSource(url) {
 /** Source health: auto-deactivate a source after this many consecutive fetch failures. */
 const MAX_CONSECUTIVE_FAILURES = 5;
 
-/** The 8 profiles from BUILD_KIT.md §7 / firestore.rules. */
-const VALID_ROLES = [
-  "direction",
-  "strategie",
-  "innovation",
-  "commercial_dir",
-  "commercial",
-  "pmo",
-  "achats",
-  "lecture",
-];
+// Modèle RBAC (13 profils ESN × 7 modules) — SOURCE UNIQUE dans domain/rbac.js, partagée avec
+// seed.js et le front (web/src/lib/rbac.ts, tenu en miroir). Voir ce fichier pour la matrice.
+const {
+  ROLES: VALID_ROLES,
+  EXEC_ROLES,
+  COMMERCIAL_ROLES,
+  COPILOTE_UNSCOPED_ROLES,
+  sanitizePermissionsMatrix,
+} = require("./domain/rbac");
 
-/** Mirrors `exec()` in firestore.rules (BUILD_KIT.md §7): direction/strategie/innovation. */
-const EXEC_ROLES = ["direction", "strategie", "innovation"];
+/** Mirrors `exec()` in firestore.rules: direction/strategie/innovation. */
 function isExecCaller(request) {
   const role = request.auth?.token?.role;
   return request.auth != null && EXEC_ROLES.includes(role);
@@ -266,7 +263,6 @@ function requireExecCaller(request, action) {
 }
 
 /** Copilote Commercial : rôles commerciaux + exécutifs (le copilote est un outil de vente). */
-const COMMERCIAL_ROLES = ["commercial", "commercial_dir", ...EXEC_ROLES];
 function requireCommercialCaller(request, action) {
   const role = request.auth?.token?.role;
   if (!request.auth || !COMMERCIAL_ROLES.includes(role)) {
@@ -3391,8 +3387,7 @@ exports.syncCopiloteAccountsNow = onCall(HEAVY_CALLABLE_OPTS, async (request) =>
  * aussi par firestore.rules). Bonus : règle aussi le point d'audit « ne pas streamer 800 docs ».
  * ------------------------------------------------------------------------------------------- */
 
-/** Rôles qui voient TOUT le portefeuille (pas de cloisonnement). */
-const COPILOTE_UNSCOPED_ROLES = ["commercial_dir", ...EXEC_ROLES];
+// COPILOTE_UNSCOPED_ROLES importé depuis domain/rbac.js (source unique) — rôles non cloisonnés.
 
 /**
  * listCopiloteAccounts — callable. Retourne les comptes visibles par l'appelant :
@@ -3722,4 +3717,34 @@ exports.setUserRole = onCall(CALLABLE_OPTS, async (request) => {
 
   logger.info(`setUserRole: uid=${uid} role=${role} bootstrap=${!bootstrapDone} caller=${request.auth?.uid ?? "none"}`);
   return { uid, role };
+});
+
+/**
+ * setPermissionsMatrix — callable (DG uniquement) : met à jour la MATRICE RBAC (rôle × module) dans
+ * config/permissions, sans redéploiement ni re-seed. `data.matrix` est nettoyée par
+ * sanitizePermissionsMatrix (n'accepte que rôles/modules connus, valeurs none/read/write). Réservé
+ * à `direction` (le seul rôle autorisé à écrire config/permissions, cf. firestore.rules). Merge :
+ * on peut ne pousser qu'un sous-ensemble de rôles. Audité dans auditLog.
+ */
+exports.setPermissionsMatrix = onCall(CALLABLE_OPTS, async (request) => {
+  if (request.auth?.token?.role !== "direction") {
+    throw new HttpsError("permission-denied", "Seule la Direction peut modifier la matrice des droits.");
+  }
+  const clean = sanitizePermissionsMatrix(request.data?.matrix);
+  if (!Object.keys(clean).length) {
+    throw new HttpsError("invalid-argument", "matrix (objet rôle→module→niveau) est requis.");
+  }
+  const db = firestoreDb();
+  // Merge par rôle : chaque rôle fourni remplace sa ligne ; les rôles non fournis sont conservés.
+  await db.doc("config/permissions").set({ matrix: clean }, { merge: true });
+  await db.collection("auditLog").add({
+    action: "setPermissionsMatrix",
+    entity: "config/permissions",
+    entityId: "permissions",
+    uid: request.auth.uid,
+    detail: { roles: Object.keys(clean) },
+    ts: FieldValue.serverTimestamp(),
+  });
+  logger.info(`setPermissionsMatrix: caller=${request.auth.uid} roles=${Object.keys(clean).join(",")}`);
+  return { ok: true, roles: Object.keys(clean) };
 });
