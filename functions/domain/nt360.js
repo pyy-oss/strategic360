@@ -9,8 +9,10 @@
  *
  * nt360 row shapes (inventoried read-only via inspect-internal-data.yml, 2026-07-02):
  *   orders        { _id, am, bu, cas, client, fp, mb, raf, suppliers: string[], yearPo, source:"pnl" }
- *   opportunities { _id, am, amount, bu, client, closingDate, fp, marginPct, oppId, probability,
- *                   stage: number, stageLabel: "2-Montage", weighted, source:"salesData" }
+ *   opportunities { _id, am, amount, bu, client, closingDate, designation (nom réel de l'opp),
+ *                   fp (souvent null sur les opps), marginPct, oppId, probability,
+ *                   stage: number, stageLabel: "2-Montage", visibleTo, weighted, source:"salesData" }
+ *                   (re-inventorié 2026-07-13 : `designation` est le vrai libellé d'opportunité.)
  *   invoices      { _id, amountHt, bu, client, date, fp, linked, numero, paymentStatus, prePo,
  *                   source:"facturationDf" }
  *   bcLines       { _id, amountXof, bcNumber, currency, description, expenseType, fp, lineIndex,
@@ -104,6 +106,8 @@ function mapOpportunities(nt360Opps) {
         montant: num(o.amount),
         etape: STAGE_TO_ETAPE[stage],
         idc: o.oppId || o._id || null,
+        // Nom réel de l'opportunité (nt360 `designation`) — repli sur fiche projet `fp` si absent.
+        designation: String(o.designation || o.fp || "").trim() || null,
         datePrev: o.closingDate || null,
         mbPct: Number.isFinite(Number(o.marginPct)) ? Number(o.marginPct) : null,
       };
@@ -304,14 +308,17 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
       const hasWeighted = o.weighted != null && Number.isFinite(Number(o.weighted));
       a.pipelinePondere += hasWeighted ? num(o.weighted) : num(o.amount) * 0.5;
       // Opportunité RÉELLE en cours (deal en pipeline) — détail chiffré pour l'effet « portefeuille vivant ».
-      // LIBELLÉ HUMAIN (audit 2026-07) : la source ne porte pas de nom libre — le seul libellé métier est
-      // `fp` (fiche projet). On l'utilise comme libellé ; à défaut, un descriptif lisible « Opportunité <offre> »
-      // (jamais l'`oppId`, code technique « h1r000wt » illisible). `oppId` est conservé comme `ref` (traçabilité).
+      // LIBELLÉ HUMAIN (corrigé 2026-07, inspection nt360) : la source PORTE un vrai nom d'opportunité,
+      // le champ `designation` (ex. « Plan de formation annuel du personnel — PMP — PowerBI »). L'ancien
+      // code se rabattait sur `fp` (souvent NULL sur les opps) puis sur « Opportunité <BU> » (BU souvent
+      // « AUTRE » → générique), d'où le nom exact qui ne remontait pas. Priorité : designation → fp →
+      // « Opportunité <offre> » → repli. `oppId` reste `ref` (code technique, jamais affiché comme nom).
+      const designation = String(o.designation || "").trim();
       const fp = String(o.fp || "").trim();
       const buLabel = o.bu ? String(o.bu).trim() : "";
       a.opps.push({
-        // Libellé fourre-tout (« AUTRE »…) → « Opportunité (offre à préciser) » plutôt que « Opportunité AUTRE ».
-        nom: fp || (isMeaningfulBu(buLabel) ? `Opportunité ${buLabel}` : "Opportunité (offre à préciser)"),
+        // designation prime ; sinon fp ; sinon libellé BU (hors fourre-tout « AUTRE »…) ; sinon repli explicite.
+        nom: designation || fp || (isMeaningfulBu(buLabel) ? `Opportunité ${buLabel}` : "Opportunité (offre à préciser)"),
         ref: String(o.oppId || "").trim(),
         montant: num(o.amount),
         etape: String(o.stageLabel || `Stade ${stage}`).trim(),
