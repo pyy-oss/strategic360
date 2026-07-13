@@ -29,31 +29,21 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RULES_PATH = path.resolve(__dirname, "..", "..", "firestore.rules");
 
-const ALL_ROLES = [
-  "direction",
-  "strategie",
-  "innovation",
-  "commercial_dir",
-  "commercial",
-  "pmo",
-  "achats",
-  "lecture",
-];
+// SOURCE UNIQUE du modèle RBAC (13 rôles × 7 modules) — importée pour que les tests restent
+// synchronisés avec la matrice réellement déployée (config/permissions seedé depuis ce même défaut).
+import { ROLES as ALL_ROLES, DEFAULT_PERMISSIONS_MATRIX as PERMISSIONS_MATRIX } from "../domain/rbac.js";
 
 const EXEC_ROLES = ["direction", "strategie", "innovation"];
-const CONTRIB_ROLES = ["direction", "strategie", "innovation", "commercial_dir", "commercial"];
-const READ_ONLY_ROLES = ["pmo", "achats", "lecture"];
-
-const PERMISSIONS_MATRIX = {
-  direction: { veille: "write" },
-  strategie: { veille: "write" },
-  innovation: { veille: "write" },
-  commercial_dir: { veille: "write" },
-  commercial: { veille: "write" },
-  pmo: { veille: "read" },
-  achats: { veille: "read" },
-  lecture: { veille: "read" },
-};
+// Groupes dérivés de la matrice (pas de liste en dur → pas de dérive quand la matrice évolue).
+const rolesWith = (mod, levels) => ALL_ROLES.filter((r) => levels.includes(PERMISSIONS_MATRIX[r]?.[mod]));
+const CONTRIB_ROLES = rolesWith("veille", ["write"]);                 // peuvent créer des intelItems
+const READ_ONLY_ROLES = rolesWith("veille", ["read"]);               // veille en lecture seule
+const FINANCE_READ_ROLES = rolesWith("finance", ["read", "write"]);  // accès agrégats financiers
+const FINANCE_NO_ROLES = ALL_ROLES.filter((r) => !FINANCE_READ_ROLES.includes(r));
+const STRAT_READ_ROLES = rolesWith("strategie", ["read", "write"]);  // accès cadres/scénarios
+const STRAT_NO_ROLES = ALL_ROLES.filter((r) => !STRAT_READ_ROLES.includes(r));
+const STRAT_WRITE_ROLES = rolesWith("strategie", ["write"]);
+const STRAT_NOWRITE_ROLES = ALL_ROLES.filter((r) => !STRAT_WRITE_ROLES.includes(r));
 
 let testEnv;
 
@@ -126,23 +116,21 @@ describe("intelItems", () => {
   });
 });
 
-describe("frameworks", () => {
-  it.each(EXEC_ROLES)("write is allowed for exec role=%s", async (role) => {
+// RBAC décomposé : frameworks/cadres relèvent du module `strategie` (lecture ET écriture selon la matrice).
+describe("frameworks (module strategie)", () => {
+  it.each(STRAT_WRITE_ROLES)("write allowed for strategie-write role=%s", async (role) => {
     const db = ctxFor(role).firestore();
     await assertSucceeds(db.collection("frameworks").doc("swot").set({ content: "x" }));
   });
-
-  it.each(["commercial_dir", "commercial", "pmo", "achats", "lecture"])(
-    "write is rejected for non-exec role=%s",
-    async (role) => {
-      const db = ctxFor(role).firestore();
-      await assertFails(db.collection("frameworks").doc("swot").set({ content: "x" }));
-    }
-  );
-
-  it.each(ALL_ROLES)("read is allowed for role=%s", async (role) => {
+  it.each(STRAT_NOWRITE_ROLES)("write rejected for role=%s", async (role) => {
     const db = ctxFor(role).firestore();
-    await assertSucceeds(db.collection("frameworks").doc("swot").get());
+    await assertFails(db.collection("frameworks").doc("swot").set({ content: "x" }));
+  });
+  it.each(STRAT_READ_ROLES)("read allowed for strategie-read role=%s", async (role) => {
+    await assertSucceeds(ctxFor(role).firestore().collection("frameworks").doc("swot").get());
+  });
+  it.each(STRAT_NO_ROLES)("read rejected for role=%s (pas de droit strategie)", async (role) => {
+    await assertFails(ctxFor(role).firestore().collection("frameworks").doc("swot").get());
   });
 });
 
@@ -158,21 +146,21 @@ describe("summaries/veille", () => {
   });
 });
 
-// Audit intégral 2026-07 (m3) : agrégats exécutifs/financiers réservés aux exécutifs.
-describe("summaries/veille_exec & quanti — exec-only", () => {
-  it.each(EXEC_ROLES)("read veille_exec allowed for exec role=%s", async (role) => {
+// RBAC décomposé : agrégats FINANCIERS réservés au module `finance` (DAF/achats/dir. co./exécutifs).
+describe("summaries/veille_exec & quanti — module finance", () => {
+  it.each(FINANCE_READ_ROLES)("read veille_exec allowed for finance-read role=%s", async (role) => {
     await assertSucceeds(ctxFor(role).firestore().doc("summaries/veille_exec").get());
   });
-  it.each(ALL_ROLES.filter((r) => !EXEC_ROLES.includes(r)))(
+  it.each(FINANCE_NO_ROLES)(
     "read veille_exec rejected for role=%s",
     async (role) => {
       await assertFails(ctxFor(role).firestore().doc("summaries/veille_exec").get());
     }
   );
-  it.each(EXEC_ROLES)("read quanti allowed for exec role=%s", async (role) => {
+  it.each(FINANCE_READ_ROLES)("read quanti allowed for finance-read role=%s", async (role) => {
     await assertSucceeds(ctxFor(role).firestore().doc("summaries/quanti").get());
   });
-  it.each(ALL_ROLES.filter((r) => !EXEC_ROLES.includes(r)))(
+  it.each(FINANCE_NO_ROLES)(
     "read quanti rejected for role=%s",
     async (role) => {
       await assertFails(ctxFor(role).firestore().doc("summaries/quanti").get());
@@ -218,10 +206,11 @@ describe("config/* (hors permissions) — lecture exec-only", () => {
     await assertSucceeds(db.doc("config/permissions").get());
   });
 
-  it.each(EXEC_ROLES)("read kpiHistory allowed for exec role=%s", async (role) => {
+  // kpiHistory = agrégat financier → module finance (comme veille_exec/quanti).
+  it.each(FINANCE_READ_ROLES)("read kpiHistory allowed for finance-read role=%s", async (role) => {
     await assertSucceeds(ctxFor(role).firestore().doc("summaries/kpiHistory").get());
   });
-  it.each(ALL_ROLES.filter((r) => !EXEC_ROLES.includes(r)))(
+  it.each(FINANCE_NO_ROLES)(
     "read kpiHistory rejected for role=%s",
     async (role) => {
       await assertFails(ctxFor(role).firestore().doc("summaries/kpiHistory").get());
@@ -249,7 +238,7 @@ describe("config/* (hors permissions) — lecture exec-only", () => {
 // Waouh v2 — cibles commerciales : lecture/écriture réservées aux managers (exec + commercial_dir).
 describe("salesTargets — managers only", () => {
   const MANAGERS = ["direction", "strategie", "innovation", "commercial_dir"];
-  const NON_MANAGERS = ["commercial", "pmo", "achats", "lecture"];
+  const NON_MANAGERS = ALL_ROLES.filter((r) => !MANAGERS.includes(r)); // 9 rôles non-managers
   it.each(MANAGERS)("read+write allowed for manager role=%s", async (role) => {
     const db = ctxFor(role).firestore();
     await assertSucceeds(db.doc("salesTargets/current").set({ targets: { "a@x.com": 1000 } }));
@@ -265,9 +254,10 @@ describe("salesTargets — managers only", () => {
 // Levier « waouh » n°2 — persistance marketing : lecture/écriture pour les rôles commerciaux +
 // exécutifs (même audience que l'add-on Copilote). createdBy imposé ; chacun édite/supprime les
 // siens, les exec gardent la main sur tout.
-describe("marketingContent — commercial/exec, createdBy imposé", () => {
-  const COMMERCIAL = ["commercial", "commercial_dir", "direction", "strategie", "innovation"];
-  const NON_COMMERCIAL = ["pmo", "achats", "lecture"];
+describe("marketingContent — module marketing + commercial, createdBy imposé", () => {
+  // Accès write = module marketing (rôle marketing) OU rôle commercial (dont avant_vente).
+  const COMMERCIAL = ["marketing", "commercial", "commercial_dir", "avant_vente", "direction", "strategie", "innovation"];
+  const NON_COMMERCIAL = ["pmo", "technique", "finance", "achats", "rh"];
 
   it.each(COMMERCIAL)("read allowed for role=%s", async (role) => {
     await assertSucceeds(ctxFor(role).firestore().doc("marketingContent/m1").get());
@@ -300,5 +290,36 @@ describe("marketingContent — commercial/exec, createdBy imposé", () => {
     await assertFails(peer.doc("marketingContent/owned").delete());
     // Un exécutif garde la main sur tout (revue éditoriale).
     await assertSucceeds(ctxFor("direction").firestore().doc("marketingContent/owned").update({ status: "publie" }));
+  });
+});
+
+// RBAC décomposé — module `innovation` (techRadar / innovationPortfolio).
+describe("innovation (techRadar/innovationPortfolio)", () => {
+  const INNO_WRITE = rolesWith("innovation", ["write"]);
+  const INNO_NOWRITE = ALL_ROLES.filter((r) => !INNO_WRITE.includes(r));
+  const INNO_READ = rolesWith("innovation", ["read", "write"]);
+  const INNO_NOREAD = ALL_ROLES.filter((r) => !INNO_READ.includes(r));
+
+  it.each(INNO_WRITE)("techRadar write allowed for role=%s", async (role) => {
+    await assertSucceeds(ctxFor(role).firestore().collection("techRadar").doc("t1").set({ name: "x" }));
+  });
+  it.each(INNO_NOWRITE)("techRadar write rejected for role=%s", async (role) => {
+    await assertFails(ctxFor(role).firestore().collection("techRadar").doc("t1").set({ name: "x" }));
+  });
+  it.each(INNO_READ)("innovationPortfolio read allowed for role=%s", async (role) => {
+    await assertSucceeds(ctxFor(role).firestore().collection("innovationPortfolio").doc("p1").get());
+  });
+  it.each(INNO_NOREAD)("innovationPortfolio read rejected for role=%s", async (role) => {
+    await assertFails(ctxFor(role).firestore().collection("innovationPortfolio").doc("p1").get());
+  });
+});
+
+// RBAC décomposé — imports (P&L) = module `finance`.
+describe("imports — module finance", () => {
+  it.each(FINANCE_READ_ROLES)("read allowed for finance-read role=%s", async (role) => {
+    await assertSucceeds(ctxFor(role).firestore().collection("imports").doc("i1").get());
+  });
+  it.each(FINANCE_NO_ROLES)("read rejected for role=%s", async (role) => {
+    await assertFails(ctxFor(role).firestore().collection("imports").doc("i1").get());
   });
 });

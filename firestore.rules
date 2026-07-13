@@ -16,8 +16,8 @@ service cloud.firestore {
     function canRead(m) { return request.auth != null && lvl(m) in ['read', 'write']; }
     function canWrite(m) { return request.auth != null && lvl(m) == 'write'; }
     function exec() { return role() in ['direction', 'strategie', 'innovation']; }
-    // Copilote Commercial (add-on) : rôles commerciaux + exécutifs.
-    function commercial() { return request.auth != null && role() in ['commercial', 'commercial_dir', 'direction', 'strategie', 'innovation']; }
+    // Copilote Commercial (add-on) : rôles commerciaux (dont ingénieur avant-vente) + exécutifs.
+    function commercial() { return request.auth != null && role() in ['commercial', 'commercial_dir', 'avant_vente', 'direction', 'strategie', 'innovation']; }
     // Rôles NON cloisonnés (voient tout le portefeuille) : directeurs commerciaux + exécutifs.
     function copiloteUnscoped() { return request.auth != null && role() in ['commercial_dir', 'direction', 'strategie', 'innovation']; }
     // Compte rattaché à l'appelant (audit 2026-07) : rôle non cloisonné, OU créateur, OU e-mail dans
@@ -45,38 +45,40 @@ service cloud.firestore {
       allow write: if exec();
     }
 
-    // — Cadres & analyse —
+    // — Cadres & analyse (module `strategie`) — RBAC décomposé : les cadres/scénarios/décisions/OKR
+    // relèvent du module stratégie (lecture/écriture selon la matrice), plus du module veille. Un
+    // profil sans droit `strategie` (commercial, finance, achats, rh…) ne voit donc plus ces vues.
     match /frameworks/{key} {
-      allow read: if canRead('veille');
-      allow write: if exec();
+      allow read: if canRead('strategie');
+      allow write: if canWrite('strategie');
     }
 
     // Expanded from: match /{c}/{id} where c in ['scenarios','decisions','strategicThemes','initiatives']
     match /scenarios/{id} {
-      allow read: if canRead('veille');
-      allow write: if exec();
+      allow read: if canRead('strategie');
+      allow write: if canWrite('strategie');
     }
     match /decisions/{id} {
-      allow read: if canRead('veille');
-      allow write: if exec();
+      allow read: if canRead('strategie');
+      allow write: if canWrite('strategie');
     }
     match /strategicThemes/{id} {
-      allow read: if canRead('veille');
-      allow write: if exec();
+      allow read: if canRead('strategie');
+      allow write: if canWrite('strategie');
     }
     match /initiatives/{id} {
-      allow read: if canRead('veille');
-      allow write: if exec();
+      allow read: if canRead('strategie');
+      allow write: if canWrite('strategie');
     }
 
-    // Expanded from: match /{c}/{id} where c in ['techRadar','innovationPortfolio']
+    // — Tech Radar & Innovation (module `innovation`) —
     match /techRadar/{id} {
-      allow read: if canRead('veille');
-      allow write: if role() in ['direction', 'innovation'];
+      allow read: if canRead('innovation');
+      allow write: if canWrite('innovation');
     }
     match /innovationPortfolio/{id} {
-      allow read: if canRead('veille');
-      allow write: if role() in ['direction', 'innovation'];
+      allow read: if canRead('innovation');
+      allow write: if canWrite('innovation');
     }
 
     match /battlecards/{id} {
@@ -89,7 +91,7 @@ service cloud.firestore {
     // backend pour que le pipeline IA garde la maîtrise du cycle de vie des docs.
     match /bizOpportunities/{id} {
       allow read: if canRead('veille');
-      allow update: if exec();
+      allow update: if canWrite('innovation');
       allow create, delete: if false;
     }
 
@@ -161,8 +163,12 @@ service cloud.firestore {
     // pas « surcharger » une règle générale permissive. On exprime donc la restriction DANS l'unique
     // règle summaries/{d} : veille_exec & quanti exigent exec(), les autres agrégats restent
     // lisibles par tout authentifié.
+    // RBAC décomposé : les agrégats FINANCIERS (veille_exec, quanti, kpiHistory) relèvent du module
+    // `finance` (DAF, achats, direction commerciale, exécutifs — selon la matrice), plus seulement
+    // des exécutifs. Les autres agrégats (veille, aiHealth, syncStatus) restent lisibles par tout
+    // authentifié (fil/radar/santé).
     match /summaries/{d} {
-      allow read: if request.auth != null && (!(d in ['veille_exec', 'quanti', 'kpiHistory']) || exec());
+      allow read: if request.auth != null && (!(d in ['veille_exec', 'quanti', 'kpiHistory']) || canRead('finance'));
       allow write: if false;
     }
 
@@ -180,10 +186,13 @@ service cloud.firestore {
     // de programmation). Même audience que l'add-on Copilote qui les produit : rôles commerciaux +
     // exécutifs. `createdBy` imposé à l'appelant à la création ; chacun édite/supprime les siens,
     // les exécutifs gardent la main sur tout (revue éditoriale).
+    // RBAC décomposé : co-géré par le module `marketing` (Direction/Chargé marketing = write) ET les
+    // rôles commerciaux (qui génèrent des angles dans le Copilote et enregistrent les leurs). Un
+    // profil marketing pilote tout le calendrier ; un commercial n'édite/supprime que ses créations.
     match /marketingContent/{id} {
-      allow read: if commercial();
-      allow create: if commercial() && request.resource.data.createdBy == request.auth.uid;
-      allow update, delete: if exec() || (commercial() && resource.data.createdBy == request.auth.uid);
+      allow read: if canRead('marketing') || commercial();
+      allow create: if (canWrite('marketing') || commercial()) && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if canWrite('marketing') || exec() || (commercial() && resource.data.createdBy == request.auth.uid);
     }
 
     // — Config & sécurité —
@@ -208,9 +217,9 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // — Imports (écrits par ingestInternal via Admin SDK ; lecture réservée exécutifs) —
+    // — Imports (écrits par ingestInternal via Admin SDK ; lecture = module `finance`, données P&L) —
     match /imports/{id} {
-      allow read: if exec();
+      allow read: if canRead('finance');
       allow write: if false;
     }
   }

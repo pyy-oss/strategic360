@@ -70,11 +70,15 @@ import { Briefing } from "./views/Briefing";
 import { Copilote } from "./views/Copilote";
 import { Equipe } from "./views/Equipe";
 import { Onboarding } from "./views/Onboarding";
-import { useIsExec } from "../../lib/rbac";
+import { useIsExec, usePermissions, ROLE_LABEL, type Role } from "../../lib/rbac";
+import { VIEW_MODULE } from "./data";
+import { Reglages } from "./views/Reglages";
 
 const VIEW_KEYS = NAV.map(([k]) => k);
 /** Vues réservées aux profils exécutifs (paramétrage produit) — masquées de la nav aux autres. */
 const EXEC_ONLY_VIEWS = new Set(["onboarding"]);
+/** Vues réservées à la Direction (édition des droits RBAC). */
+const DIRECTION_ONLY_VIEWS = new Set(["reglages"]);
 
 /** App shell — header (logo + lens pill selector) + nav tab bar + view switcher + footer.
  * Ported from the maquette's `export default function App()`. The active view now comes from
@@ -87,16 +91,28 @@ export default function VeilleApp() {
   const { view } = useParams<{ view: string }>();
   const { user, role } = useAuthClaims();
   const isExec = useIsExec();
+  const perms = usePermissions();
 
-  // Nav filtrée par rôle : le groupe « Config » (onboarding) n'apparaît qu'aux exécutifs.
+  // Visibilité d'une vue selon le RBAC : onboarding = exec ; reglages = Direction ; sinon lecture
+  // du module associé (VIEW_MODULE). Pendant le chargement de la matrice, on n'occulte pas les vues
+  // à module (optimiste) pour éviter un flash de nav vide / une redirection intempestive.
+  const canSeeView = (k: string): boolean => {
+    if (EXEC_ONLY_VIEWS.has(k)) return isExec;
+    if (DIRECTION_ONLY_VIEWS.has(k)) return role === "direction";
+    const m = VIEW_MODULE[k];
+    if (!m) return true;
+    return perms.loading ? true : perms.canRead(m);
+  };
+
   const visibleGroups = useMemo(
     () => NAV_GROUPS
-      .map((g) => ({ ...g, items: g.items.filter((k) => isExec || !EXEC_ONLY_VIEWS.has(k)) }))
+      .map((g) => ({ ...g, items: g.items.filter(canSeeView) }))
       .filter((g) => g.items.length > 0),
-    [isExec]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isExec, role, perms.loading, perms.matrix]
   );
 
-  if (!view || !VIEW_KEYS.includes(view) || (EXEC_ONLY_VIEWS.has(view) && !isExec)) {
+  if (!view || !VIEW_KEYS.includes(view) || !canSeeView(view)) {
     return <Navigate to="/veille/radar" replace />;
   }
   const setView = (v: string) => navigate(`/veille/${v}`);
@@ -142,7 +158,7 @@ export default function VeilleApp() {
               {l}
             </button>
           ))}
-          <Badge c={T.steel}>{role ?? "sans rôle"}</Badge>
+          <Badge c={T.steel}>{role ? (ROLE_LABEL[role as Role] ?? role) : "sans rôle"}</Badge>
           {user?.email && <span style={{ fontSize: 11, color: T.faint }}>{user.email}</span>}
           <button
             className="pill"
@@ -173,6 +189,7 @@ export default function VeilleApp() {
       {view === "copilote" && <Copilote />}
       {view === "equipe" && <Equipe />}
       {view === "onboarding" && <Onboarding />}
+      {view === "reglages" && <Reglages />}
 
       <footer style={{ marginTop: 22, paddingTop: 14, borderTop: `1px solid ${T.line}`, fontSize: 11.5, color: T.faint, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <span>Veille Stratégique · données réelles (Firestore) · IA Gemini avec revue humaine</span>

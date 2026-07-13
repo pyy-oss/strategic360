@@ -25,8 +25,13 @@ on:
           - innovation
           - commercial_dir
           - commercial
+          - avant_vente
+          - marketing
           - pmo
+          - technique
+          - finance
           - achats
+          - rh
           - lecture
       confirm:
         description: 'Tapez "confirm" pour valider'

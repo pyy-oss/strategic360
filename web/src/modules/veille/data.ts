@@ -196,7 +196,22 @@ export const NAV: [string, string][] = [
   ["copilote", "Copilote Commercial"],
   ["equipe", "Pilotage équipe"],
   ["onboarding", "Onboarding client"],
+  ["reglages", "Réglages & Droits"],
 ];
+
+/**
+ * Mapping vue → module RBAC. La nav filtre chaque vue par `canRead(module)` (rbac.ts) : un profil
+ * sans droit de lecture sur le module ne voit pas la vue. Les vues « veille » restent visibles par
+ * tout profil (tous ont au moins `read` sur veille). `onboarding`/`reglages` sont gérés à part
+ * (exec / direction). Miroir logique du remapping firestore.rules.
+ */
+export const VIEW_MODULE: Record<string, string> = {
+  radar: "veille", fil: "veille", detection: "veille", briefing: "veille", concurrence: "veille", plan: "veille",
+  indicateurs: "finance", portefeuille: "finance", valeur: "finance", simulateur: "finance",
+  cadres: "strategie", diagnostic: "strategie", scenarios: "strategie", execution: "strategie",
+  innovation: "innovation",
+  copilote: "copilote", equipe: "copilote",
+};
 
 /**
  * Navigation GROUPÉE (16 vues sur une ligne débordaient et masquaient des vues) : 4 groupes logiques,
@@ -208,6 +223,7 @@ export const NAV_GROUPS: { label: string; home: string; items: string[] }[] = [
   { label: "Analyse", home: "indicateurs", items: ["indicateurs", "cadres", "diagnostic", "concurrence"] },
   { label: "Croissance", home: "portefeuille", items: ["portefeuille", "valeur", "simulateur", "scenarios", "innovation"] },
   { label: "Action", home: "copilote", items: ["copilote", "equipe", "plan", "execution"] },
-  // Groupe EXEC uniquement (paramétrage produit) — App.tsx le masque aux non-exec.
-  { label: "Config", home: "onboarding", items: ["onboarding"] },
+  // Groupe EXEC/DG uniquement (paramétrage produit) — App.tsx masque onboarding aux non-exec et
+  // reglages (éditeur de droits RBAC) à tous sauf la Direction.
+  { label: "Config", home: "onboarding", items: ["onboarding", "reglages"] },
 ];

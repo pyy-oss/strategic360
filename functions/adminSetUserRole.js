@@ -39,16 +39,8 @@ const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
-const VALID_ROLES = [
-  "direction",
-  "strategie",
-  "innovation",
-  "commercial_dir",
-  "commercial",
-  "pmo",
-  "achats",
-  "lecture",
-];
+// SOURCE UNIQUE des rôles (13 profils ESN) — domain/rbac.js, partagée avec index.js/seed.js.
+const { ROLES: VALID_ROLES } = require("./domain/rbac");
 
 async function sendPasswordSetupEmail(email, apiKey) {
   const url = `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`;

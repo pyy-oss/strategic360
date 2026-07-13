@@ -36,16 +36,9 @@
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
-const DEFAULT_PERMISSIONS_MATRIX = {
-  direction: { veille: "write" },
-  strategie: { veille: "write" },
-  innovation: { veille: "write" },
-  commercial_dir: { veille: "write" },
-  commercial: { veille: "write" },
-  pmo: { veille: "read" },
-  achats: { veille: "read" },
-  lecture: { veille: "read" },
-};
+// Matrice RBAC (13 rôles ESN × 7 modules) — SOURCE UNIQUE dans domain/rbac.js (partagée avec
+// index.js et le miroir front web/src/lib/rbac.ts).
+const { DEFAULT_PERMISSIONS_MATRIX } = require("./domain/rbac");
 
 // intelWatchlist seed entries — taken from the maquette's `WATCH` sample data (docs/maquette_reference.jsx)
 // so the emulator-backed app has something to show for BUILD_KIT.md V2 ("intelWatchlist/intelSources").
