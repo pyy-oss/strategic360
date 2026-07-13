@@ -935,9 +935,15 @@ async function classifyRawText(rawText, watchlistEntities, context, profile) {
   });
   // Sémaphore global (M6) : borne la concurrence Vertex réelle à AI_CONCURRENCY, y compris quand
   // plusieurs sources classifient leurs items en parallèle.
-  const response = await vertexLimit(() => generateJson(prompt));
-  // La taxonomie du profil sert AUSSI à valider/normaliser la sortie (axes/subtypes custom).
-  return parseClassificationResponse(response, { ...(context || {}), taxonomy: profile && profile.taxonomy });
+  // Extraction : température 0 (déterministe, ne rien inventer — c'est de la classification factuelle).
+  const response = await vertexLimit(() => generateJson(prompt, { temperature: 0 }));
+  // La taxonomie du profil sert AUSSI à valider/normaliser la sortie (axes/subtypes custom). La
+  // watchlist est passée pour contraindre `ent` aux entités connues (anti faux-rattachement).
+  return parseClassificationResponse(response, {
+    ...(context || {}),
+    taxonomy: profile && profile.taxonomy,
+    watchlist: watchlistEntities,
+  });
 }
 
 /**
@@ -1347,7 +1353,8 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
   try {
   await runInBatches(items, AI_CONCURRENCY, async (it) => {
     try {
-      const parsed = parseEvaluateResponse(await generateJson(buildEvaluatePrompt(it, companyContext)));
+      // Jugement de pertinence : température 0 (verdict reproductible, non aléatoire d'une passe à l'autre).
+      const parsed = parseEvaluateResponse(await generateJson(buildEvaluatePrompt(it, companyContext), { temperature: 0 }));
       if (parsed && parsed.publier === false) {
         await db.doc(`intelItems/${it.id}`).update({ status: "rejected", evalScore: parsed.pertinence, evalReason: parsed.raison || "écarté par l'évaluateur", evalFailed: false, updatedAt: stamp() });
         rejected += 1;

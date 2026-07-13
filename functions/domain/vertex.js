@@ -75,14 +75,25 @@ function getClient() {
  * @param {string} prompt Full prompt text (already includes any schema description — Gemini's
  *   JSON mode constrains the *format* of the output, not a rigid schema by itself unless a
  *   `responseSchema` is also supplied; callers here describe the desired shape in the prompt).
- * @param {object} [schema] Optional JSON Schema-ish object passed through as
- *   `config.responseSchema` for stricter structured output.
+ * @param {object} [opts] Options de génération par appel :
+ *   - `opts.temperature` {number} : 0 pour l'EXTRACTION/le JUGEMENT (classify, evaluate — ne rien
+ *     inventer), ~0.2 (défaut) pour l'analyse, plus haut pour le créatif (scénarios, contenu).
+ *   - `opts.schema` {object} : JSON Schema passé en `config.responseSchema` (sortie structurée).
+ *   - `opts.maxOutputTokens` {number} : budget de sortie (défaut 8192).
+ *   Rétro-compat : historiquement le 2ᵉ argument était un `schema` — un objet ressemblant à un
+ *   schéma (présence de `type`/`properties`, sans clés d'options) est encore accepté comme tel.
  * @returns {Promise<any>} Parsed JSON response body.
  */
-async function generateJson(prompt, schema) {
+async function generateJson(prompt, opts) {
   if (typeof prompt !== "string" || !prompt.trim()) {
     throw new Error("generateJson: prompt (non-empty string) is required.");
   }
+  // Normalise `opts` : soit un sac d'options {temperature, schema, maxOutputTokens}, soit (rétro-compat)
+  // un schéma nu passé en 2ᵉ argument.
+  let o = opts && typeof opts === "object" ? opts : {};
+  const looksLikeSchema =
+    o && (o.type || o.properties) && o.temperature === undefined && o.schema === undefined && o.maxOutputTokens === undefined;
+  if (looksLikeSchema) o = { schema: o };
 
   const ai = getClient();
   const modelName = process.env.GEMINI_MODEL || DEFAULT_MODEL;
@@ -113,8 +124,13 @@ async function generateJson(prompt, schema) {
   // EMPTY response text in production — gemini-3.5-flash spends part of the output budget on
   // internal reasoning, and a longer JSON (Minto briefing) can exhaust 2048 before any text is
   // emitted. 8192 leaves ample room; cost impact is negligible at this call volume.
-  const config = { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 8192 };
-  if (schema) config.responseSchema = schema;
+  // Température paramétrable par appel (2026-07) : 0.2 par défaut, mais l'extraction/le jugement
+  // (classify, evaluate) passent 0 pour ne rien inventer, et le créatif peut monter. maxOutputTokens
+  // idem (défaut 8192, cf. note historique ci-dessus).
+  const temperature = Number.isFinite(Number(o.temperature)) ? Math.max(0, Math.min(2, Number(o.temperature))) : 0.2;
+  const maxOutputTokens = Number.isFinite(Number(o.maxOutputTokens)) ? Number(o.maxOutputTokens) : 8192;
+  const config = { responseMimeType: "application/json", temperature, maxOutputTokens };
+  if (o.schema) config.responseSchema = o.schema;
 
   const extractText = (response) =>
     typeof response.text === "string"

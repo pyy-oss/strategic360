@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildClassificationPrompt, parseClassificationResponse, deriveProxFromDueDate, deriveSourceRatingFromUrl } from "../domain/classify.js";
+import { buildClassificationPrompt, parseClassificationResponse, resolveWatchlistEntity, deriveProxFromDueDate, deriveSourceRatingFromUrl } from "../domain/classify.js";
 import { DEFAULT_PROFILE, buildClientProfile } from "../domain/profile.js";
 
 describe("PR D — prompt de classification paramétrable (non-régression)", () => {
@@ -50,6 +50,35 @@ describe("PR D — prompt de classification paramétrable (non-régression)", ()
     // Sans taxonomie (défaut), un axe inconnu retombe sur "tech".
     const legacy = parseClassificationResponse({ title: "Affaire", summary: "x", axis: "clients" }, {});
     expect(legacy.axis).toBe("tech");
+  });
+});
+
+describe("resolveWatchlistEntity — contraint l'entité aux entités watchlist (anti faux-rattachement)", () => {
+  const wl = [{ name: "SGCI", type: "client" }, { name: "Orange CI", type: "client" }, { name: "Société Générale Côte d'Ivoire", type: "client" }];
+  it("match exact/normalisé renvoie le nom canonique de la watchlist", () => {
+    expect(resolveWatchlistEntity("sgci", wl)).toBe("SGCI");
+    expect(resolveWatchlistEntity("Orange CI", wl)).toBe("Orange CI");
+    // Accents/casse normalisés → nom canonique.
+    expect(resolveWatchlistEntity("societe generale cote d ivoire", wl)).toBe("Société Générale Côte d'Ivoire");
+  });
+  it("sous-séquence de mots (2 sens) rattache à l'entité connue", () => {
+    expect(resolveWatchlistEntity("Groupe Orange CI SA", wl)).toBe("Orange CI");
+  });
+  it("entité hors watchlist (hallucinée / homonyme) → undefined (non rattachée)", () => {
+    expect(resolveWatchlistEntity("Ecobank", wl)).toBeUndefined();
+    expect(resolveWatchlistEntity("MTN", wl)).toBeUndefined();
+  });
+  it("sans watchlist fournie → valeur telle quelle (rétro-compat) ; valeur vide → undefined", () => {
+    expect(resolveWatchlistEntity("N'importe Quoi", [])).toBe("N'importe Quoi");
+    expect(resolveWatchlistEntity("Ecobank", undefined)).toBe("Ecobank");
+    expect(resolveWatchlistEntity("", wl)).toBeUndefined();
+    expect(resolveWatchlistEntity(null, wl)).toBeUndefined();
+  });
+  it("intégration parseClassificationResponse : ctx.watchlist filtre `ent`", () => {
+    const ok = parseClassificationResponse({ title: "AO", summary: "x", entity: "sgci" }, { watchlist: wl });
+    expect(ok.ent).toBe("SGCI");
+    const ko = parseClassificationResponse({ title: "AO", summary: "x", entity: "Banque Inconnue" }, { watchlist: wl });
+    expect(ko.ent).toBeUndefined();
   });
 });
 
