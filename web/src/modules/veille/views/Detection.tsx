@@ -48,10 +48,19 @@ export function Detection() {
   const rows = EVENTS
     .filter((e) => cat === "all" || e.cat === cat)
     .filter((e) => subtype === "all" || e.subtype === subtype)
+    // Tri COHÉRENT avec le Fil et le Radar (audit pertinence 2026-07) : le priorityScore (crédibilité,
+    // potentiel business, valeur-compte, impact, proximité — barème scoring.js) prime. L'imminence
+    // effective puis l'impact ne servent que de départage à score égal. Auparavant le classement
+    // ignorait TOTALEMENT le priorityScore : une rumeur peu crédible mais « imminente » passait devant
+    // un AO chiffré à échéance « court ».
     .sort((a, b) => {
       const P: Record<string, number> = { imminent: 0, court: 1, moyen: 2, horizon: 3 };
       const I: Record<string, number> = { high: 0, medium: 1, low: 2 };
-      return P[a.eprox as string] - P[b.eprox as string] || I[a.impact] - I[b.impact];
+      return (
+        (b.priorityScore ?? 0) - (a.priorityScore ?? 0) ||
+        P[a.eprox as string] - P[b.eprox as string] ||
+        I[a.impact] - I[b.impact]
+      );
     });
   const neuf = EVENTS.filter((e) => e.neuf).length;
   const paged = usePaged(rows, 25, `${cat}|${subtype}`);

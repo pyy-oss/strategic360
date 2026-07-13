@@ -290,6 +290,46 @@ function coerceString(value, fallback) {
   return fallback;
 }
 
+/** Normalise pour rapprochement d'entités : minuscules, sans accents, alphanumérique séparé par espaces. */
+function normEntity(s) {
+  return String(s)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Contraint l'entité renvoyée par le modèle aux entités RÉELLES de la watchlist — anti faux
+ * rattachement compte<->signal (audit pertinence 2026-07). Le prompt demande « l'entité de la
+ * watchlist la plus proche, sinon null », mais la valeur était reprise verbatim : le modèle pouvait
+ * renvoyer une entité hors-liste ou un homonyme, provoquant un maillage veille<->compte erroné en
+ * aval (copilote). Rapprochement DÉTERMINISTE (pas d'IA) : match normalisé exact ou sur frontières de
+ * mots, dans les deux sens ; on renvoie le nom CANONIQUE de la watchlist (casse/variantes
+ * normalisées). Hors-liste -> undefined (non rattachée). Sans watchlist fournie -> valeur telle
+ * quelle (rétro-compat : onboarding, tests, profils sans watchlist).
+ * @param {unknown} rawEntity
+ * @param {Array<{name:string}|string>} watchlist
+ * @returns {string | undefined}
+ */
+function resolveWatchlistEntity(rawEntity, watchlist) {
+  const val = coerceString(rawEntity, undefined);
+  if (!val) return undefined;
+  const names = Array.isArray(watchlist)
+    ? watchlist.map((w) => (w && typeof w === "object" ? w.name : w)).filter((n) => typeof n === "string" && n.trim())
+    : [];
+  if (!names.length) return val; // pas de watchlist -> comportement historique
+  const pv = ` ${normEntity(val)} `;
+  if (pv.trim() === "") return undefined;
+  for (const n of names) {
+    const pn = ` ${normEntity(n)} `;
+    if (pn.trim() === "") continue;
+    if (pv.includes(pn) || pn.includes(pv)) return n; // exact ou sous-séquence de mots (2 sens)
+  }
+  return undefined; // entité hors watchlist -> non rattachée
+}
+
 /**
  * Coerces the optional `businessAngle` block (Action 4.2) onto its persisted shape. Every
  * sub-field is either a trimmed non-empty string (enum-checked for `bu`) or ABSENT — never
@@ -357,7 +397,7 @@ function parseClassificationResponse(rawJsonResponse, context) {
     subtype: normalizeSubtype(r.subtype, tax.subtypes, tax.subtypeSynonyms),
     impact: coerceEnum(r.impact, VALID_IMPACTS, "low"),
     stance: coerceEnum(r.stance, VALID_STANCES, "neutral"),
-    ent: coerceString(r.entity, undefined),
+    ent: resolveWatchlistEntity(r.entity, ctx.watchlist),
     geo: normalizeGeo(r.geo),
     prox: coerceEnum(r.prox, VALID_PROX, "moyen"),
     neuf: r.weakSignal === true,
@@ -415,6 +455,7 @@ function parseClassificationResponse(rawJsonResponse, context) {
 module.exports = {
   buildClassificationPrompt,
   parseClassificationResponse,
+  resolveWatchlistEntity,
   deriveProxFromDueDate,
   deriveSourceRatingFromUrl,
   VALID_AXES,

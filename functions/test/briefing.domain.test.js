@@ -31,6 +31,25 @@ describe("buildBriefingPrompt", () => {
     expect(prompt).toContain("indisponible");
     expect(prompt).toContain("aucun signal prioritaire");
   });
+
+  it("numérote les signaux [n] et impose une directive de grounding + citation (audit qualité 2026-07)", () => {
+    const prompt = buildBriefingPrompt({
+      period: "s",
+      veilleSummary: { countsByAxis: {} },
+      veilleExecSummary: { boardKpis: {} },
+      topItems: [
+        { title: "AO Douanes", stance: "opportunity", impact: "high", priorityScore: 88 },
+        { title: "EOL Cisco", stance: "threat", impact: "medium", priorityScore: 70 },
+      ],
+    });
+    // Signaux numérotés pour servir de table de sources.
+    expect(prompt).toContain("[1]");
+    expect(prompt).toContain("[2]");
+    // Directive de grounding + plage de citation bornée au nombre de signaux.
+    expect(prompt).toContain("ANCRAGE");
+    expect(prompt).toContain("N'invente aucun fait");
+    expect(prompt).toContain("1 à 2");
+  });
 });
 
 describe("parseBriefingResponse — valid fixture", () => {

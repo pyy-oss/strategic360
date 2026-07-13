@@ -37,11 +37,14 @@ function buildBriefingPrompt(input) {
 
   // Action 4.3 : `ent` (entité watchlist résolue) et `date` sont rendus quand ils sont présents,
   // pour que les recommandations puissent nommer un compte/AO précis et être datées.
+  // Signaux NUMÉROTÉS [1..n] : servent de table de sources pour le grounding — chaque affirmation du
+  // briefing doit pouvoir citer le signal [n] qui la fonde (audit qualité 2026-07 : le briefing était
+  // la sortie la MOINS ancrée de la chaîne, sans directive de grounding ni citation).
   const itemsBlock = items.length
     ? items
         .map(
-          (i) =>
-            `- [${i.stance ?? "?"}/${i.impact ?? "?"}${i.ent ? ` — ${i.ent}` : ""}${i.date ? ` — ${i.date}` : ""}] ${i.title}${i.soWhat ? ` — so-what: ${i.soWhat}` : ""} (score ${i.priorityScore ?? "?"})`
+          (i, idx) =>
+            `[${idx + 1}] [${i.stance ?? "?"}/${i.impact ?? "?"}${i.ent ? ` — ${i.ent}` : ""}${i.date ? ` — ${i.date}` : ""}] ${i.title}${i.soWhat ? ` — so-what: ${i.soWhat}` : ""} (score ${i.priorityScore ?? "?"})`
         )
         .join("\n")
     : "(aucun signal prioritaire disponible)";
@@ -60,8 +63,16 @@ Période : ${period || "période courante"}
 KPIs du board (summaries/veille_exec.boardKpis) : ${kpisBlock}
 Répartition des signaux par axe (summaries/veille.countsByAxis) : ${countsBlock}
 
-Top signaux prioritaires (triés par priorityScore) :
+Top signaux prioritaires (triés par priorityScore), NUMÉROTÉS pour citation :
 ${itemsBlock}
+
+ANCRAGE (grounding) — impératif :
+- Fonde CHAQUE argument, opportunité, menace et recommandation UNIQUEMENT sur les signaux numérotés
+  ci-dessus et sur les KPIs/répartitions fournis. N'invente aucun fait, chiffre, compte ni échéance.
+- Cite le(s) signal(aux) source entre crochets — ex. « ... [2] » ou « ... [1][4] » — dans le "body"
+  de chaque argument, le "narrative" et chaque "action". N'utilise que des numéros de la liste
+  (1 à ${items.length || 0}) ; ne cite jamais un numéro absent.
+- Si un point n'est soutenu par aucun signal listé, ne l'affirme pas.
 
 Réponds UNIQUEMENT avec un objet JSON valide (pas de markdown, pas de texte hors JSON)
 respectant exactement ce schéma :
