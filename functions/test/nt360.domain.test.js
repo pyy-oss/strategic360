@@ -58,11 +58,13 @@ describe("mapOpportunities", () => {
     const opps = mapOpportunities([
       { client: "SONAPIE", amount: 100, stage: 6, oppId: "a" },
       { client: "BRVM", amount: 50, stage: 7, oppId: "b" },
-      { client: "ORANGE", amount: 200, stage: 2, oppId: "c", closingDate: "2026-09-30", marginPct: 0.2 },
+      { client: "ORANGE", amount: 200, stage: 2, oppId: "c", designation: "Refonte SI Orange", closingDate: "2026-09-30", marginPct: 0.2 },
     ]);
     expect(opps[0].etape).toBe("Gagné");
     expect(opps[1].etape).toBe("Perdu");
-    expect(opps[2]).toMatchObject({ etape: "Proposition", montant: 200, idc: "c", datePrev: "2026-09-30", mbPct: 0.2 });
+    expect(opps[2]).toMatchObject({ etape: "Proposition", montant: 200, idc: "c", designation: "Refonte SI Orange", datePrev: "2026-09-30", mbPct: 0.2 });
+    // designation absente → repli fp, sinon null (jamais undefined).
+    expect(opps[0].designation).toBeNull();
     const { winRate } = computePipeline({ opportunities: opps });
     expect(winRate).toBe(0.5); // 1 won / 2 closed
   });
@@ -171,18 +173,37 @@ describe("deriveCopiloteAccounts (empreinte comptes pour le Copilote)", () => {
       { client: "SGCI", bu: "FORMATION", stage: 6, amount: 200 }, // gagné
       { client: "SGCI", bu: "CYBER", stage: 6, amount: 500 },     // gagné
       { client: "SGCI", bu: "ICT", stage: 3, amount: 400, oppId: "OPP-1", fp: "Refonte SI SGCI", stageLabel: "3-Négociation", closingDate: "2026-09-30", probability: 60 },
-      { client: "SGCI", bu: "WAN", stage: 2, amount: 900, oppId: "OPP-2", stageLabel: "2-Montage" },
+      { client: "SGCI", bu: "WAN", stage: 2, amount: 900, oppId: "OPP-2", designation: "Interconnexion agences WAN", stageLabel: "2-Montage" },
       { client: "SGCI", bu: "ICT", stage: 7, amount: 999 },       // perdu → ignoré
     ];
     const sgci = deriveCopiloteAccounts([], opps).find((a) => a.slug === "sgci");
     expect(sgci.wins).toBe(2);
     expect(sgci.opportunites).toHaveLength(2);
-    // Triées par montant décroissant. LIBELLÉ HUMAIN : `fp` (fiche projet) si présent, sinon
-    // « Opportunité <offre> » — jamais l'oppId (code technique), conservé en `ref` (traçabilité).
-    expect(sgci.opportunites[0]).toMatchObject({ nom: "Opportunité WAN", ref: "OPP-2", montant: 900, etape: "2-Montage", bu: "WAN" });
+    // Triées par montant décroissant. LIBELLÉ HUMAIN (corrigé 2026-07-13) : `designation` (nom réel nt360)
+    // prime, sinon `fp` (fiche projet), sinon « Opportunité <offre> ». Jamais l'oppId, conservé en `ref`.
+    expect(sgci.opportunites[0]).toMatchObject({ nom: "Interconnexion agences WAN", ref: "OPP-2", montant: 900, etape: "2-Montage", bu: "WAN" });
     expect(sgci.opportunites[1]).toMatchObject({ nom: "Refonte SI SGCI", ref: "OPP-1", montant: 400, etape: "3-Négociation", closingDate: "2026-09-30", probability: 60 });
     // Jamais d'undefined : probability absente → null.
     expect(sgci.opportunites[0].probability).toBeNull();
+  });
+
+  it("remonte le NOM EXACT via `designation` même quand fp est null et la BU est fourre-tout (bug nt360 2026-07-13)", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const opps = [
+      // Cas réel : designation renseignée, fp null, bu « AUTRE » — l'ancien code affichait
+      // « Opportunité (offre à préciser) » au lieu du vrai nom.
+      { client: "SONAPIE", bu: "AUTRE", stage: 2, amount: 50000000, oppId: "h100fwye", fp: null, designation: "Plan de formation annuel du personnel - PMP - PowerBI", stageLabel: "2-Montage" },
+    ];
+    const a = deriveCopiloteAccounts([], opps).find((x) => x.slug === "sonapie");
+    expect(a.opportunites[0].nom).toBe("Plan de formation annuel du personnel - PMP - PowerBI");
+    expect(a.opportunites[0].ref).toBe("h100fwye");
+  });
+
+  it("sans designation ni fp, BU fourre-tout → repli explicite « offre à préciser »", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const opps = [{ client: "SONAPIE", bu: "AUTRE", stage: 2, amount: 1000, oppId: "X" }];
+    const a = deriveCopiloteAccounts([], opps).find((x) => x.slug === "sonapie");
+    expect(a.opportunites[0].nom).toBe("Opportunité (offre à préciser)");
   });
 
   it("résout le stade via stageLabel quand `stage` numérique est absent (deal sinon perdu du pipeline)", async () => {
