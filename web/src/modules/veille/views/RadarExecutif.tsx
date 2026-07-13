@@ -7,6 +7,7 @@ import { Toggle } from "../../../design/fields";
 import { useActions, useDecisions } from "../lib/execution";
 import { BUSINESS_SUBTYPES, PUBLISHED_STATUSES, useBizOpportunities, useIntelItems, useWatchlist } from "../lib/intel";
 import { isPastDue } from "../lib/freshness";
+import { rankByLens, lensAdjustedScore, diversifyTopN } from "../lib/ranking";
 import { useVeilleExecSummary, useAiHealth, useKpiHistory, kpiDelta, backfillKpiHistory, type KpiDelta } from "../lib/summaries";
 import { useIsExec } from "../../../lib/rbac";
 import { computeVeilleAttribution } from "../lib/attribution";
@@ -192,7 +193,10 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   const dMenaces = React.useMemo<KpiDelta | null>(() => kpiDelta(kpiHistory, "menacesTotal"), [kpiHistory]);
   const dWinRate = React.useMemo<KpiDelta | null>(() => kpiDelta(kpiHistory, "winRateGlobal"), [kpiHistory]);
   const dOkr = React.useMemo<KpiDelta | null>(() => kpiDelta(kpiHistory, "okrProgress"), [kpiHistory]);
-  const sorted = [...items].sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
+  // Classement PERSONNALISÉ à la focale (audit pertinence 2026-07) : la focale « innovation » remonte
+  // enfin la tech, « stratégie » l'exécution commerciale/réglementaire ; « dg » reste la priorité
+  // globale. Re-tri au rendu uniquement (le score serveur reste l'autorité).
+  const sorted = rankByLens(items, lens);
   const menaces = sorted.filter((s) => s.stance === "threat");
   const opps = sorted.filter((s) => s.stance === "opportunity");
   // « Business imminent » (plan d'audit §5.4) : signaux à échéance proche OU à contenu business
@@ -200,10 +204,15 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   // Anti-obsolescence : on EXCLUT les items périmés (échéance dépassée) — un AO déjà clos ou un
   // scrutin passé n'a rien d'« imminent ».
   const nowMs = Date.now();
-  const bizImminent = sorted
-    .filter((s) => !isPastDue(s, nowMs))
-    .filter((s) => s.prox === "imminent" || s.prox === "court" || BUSINESS_SUBTYPES.has(s.subtype ?? ""))
-    .slice(0, 6);
+  // Diversité (MMR-lite) : un même compte ne monopolise pas le top-6 (plafonné à 2 signaux/entité),
+  // pour que « Business imminent » couvre plusieurs affaires plutôt que 4 fois le même client.
+  const bizImminent = diversifyTopN(
+    sorted
+      .filter((s) => !isPastDue(s, nowMs))
+      .filter((s) => s.prox === "imminent" || s.prox === "court" || BUSINESS_SUBTYPES.has(s.subtype ?? "")),
+    6,
+    (s) => s.ent
+  );
   // « Décision du jour » : recommandation = idée directrice / reco n°1 du dernier briefing, sinon
   // l'action recommandée (ou le so-what) du signal le plus chaud. CTA vers la source de l'action.
   const topUrgent = bizImminent[0] ?? null;
@@ -215,14 +224,17 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   // Top signaux : mêmes items, mais les périmés (échéance dépassée) sont repoussés en bas de liste
   // (audit pertinence 2026-07 — un AO déjà clos à score élevé ne doit pas trôner en tête de ce que
   // le dirigeant lit en premier). Ils restent visibles mais marqués « Échéance passée ».
-  const topSignals = [...items]
-    .sort((a, b) => {
+  // Top signaux : périmés repoussés en bas, puis classement à la focale, puis diversité par entité.
+  const topSignals = diversifyTopN(
+    [...items].sort((a, b) => {
       const pa = isPastDue(a, nowMs) ? 1 : 0;
       const pb = isPastDue(b, nowMs) ? 1 : 0;
       if (pa !== pb) return pa - pb;
-      return (b.priorityScore ?? 0) - (a.priorityScore ?? 0);
-    })
-    .slice(0, 6);
+      return lensAdjustedScore(b, lens) - lensAdjustedScore(a, lens);
+    }),
+    6,
+    (s) => s.ent
+  );
   const cell = (imp: string, st: string) => items.filter((s) => s.impact === imp && s.stance === st).length;
   const intro = (
     {
