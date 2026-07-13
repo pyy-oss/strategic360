@@ -266,6 +266,10 @@ describe("Copilote — CVP : différenciateurs source unique + angle métier (au
     expect(p).toContain("Neurones Academy"); // Academy n'est plus oubliée de l'argumentaire
     expect(p).toContain("WALLIX Premier"); // source unique des différenciateurs
     expect(p).toContain("ANGLE MÉTIER"); // lentille innovation (pas que cloud/cyber)
+    // Anti-fixation partenaire (obsession WALLIX/PAM constatée 2026-07) : la CVP doit choisir le
+    // différenciateur selon le besoin du compte, jamais un vendor par défaut.
+    expect(p).toContain("anti-fixation");
+    expect(p).toMatch(/ne mets pas en avant par défaut/i);
   });
 });
 

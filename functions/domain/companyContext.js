@@ -23,9 +23,13 @@ ATTENTION HOMONYMIE : AUCUN lien avec le groupe français coté NEURONES (neuron
 // (elle était absente de l'argumentaire commercial alors que c'est une des deux BU).
 const NT_DIFFERENCIATEURS =
   "proximité locale & souveraineté de la donnée ; agrément PASSI (en cours) ANSSI-CI ; modèle managé " +
-  "OPEX (SOC/NOC récurrent) ; montage en groupement solidaire (chef de file) ; statut WALLIX Premier " +
-  "(PAM) ; Neurones Academy (220+ formations certifiantes — levier de valeur, de cross-sell et " +
-  "d'ancrage compte) ; références bancaires/institutionnelles (BCEAO, BRVM, BAD) ; proximité des " +
-  "régulateurs (ANSSI-CI, ARTCI, AMF-UMOA)";
+  "OPEX (SOC/NOC récurrent) ; montage en groupement solidaire (chef de file) ; Neurones Academy " +
+  "(220+ formations certifiantes — levier de valeur, de cross-sell et d'ancrage compte) ; références " +
+  "bancaires/institutionnelles (BCEAO, BRVM, BAD) ; proximité des régulateurs (ANSSI-CI, ARTCI, " +
+  "AMF-UMOA) ; portefeuille d'expertises éditeurs à haut niveau de certification à mobiliser SELON le " +
+  "besoin réel du compte — cybersécurité (statut WALLIX Premier en PAM, Fortinet, Palo Alto, Check " +
+  "Point), réseau/datacenter (Cisco, HPE/Aruba), cloud & collaboration (Microsoft M365/Azure), ERP " +
+  "(Odoo), sauvegarde/résilience (Veeam) — AUCUN n'est un argument par défaut : on met en avant celui " +
+  "que l'enjeu du compte appelle";
 
 module.exports = { COMPANY_CONTEXT, NT_DIFFERENCIATEURS };

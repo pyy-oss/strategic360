@@ -448,13 +448,19 @@ Quand tu proposes d'ouvrir une offre, CHIFFRE-la au panier de référence réel 
 
 Différenciateurs NT mobilisables (source unique — à relier chacun à UN enjeu/whitespace/deal NOMMÉ de ce compte, jamais en vrac ; Neurones Academy est un levier de cross-sell/ancrage à ne pas oublier) :
 ${NT_DIFFERENCIATEURS}.
+ADAPTATION AU COMPTE (impératif — anti-fixation) : choisis les différenciateurs qui répondent au SECTEUR
+et au besoin RÉEL de CE compte, étayés par ses faits/signaux/whitespace. NE mets PAS en avant par défaut
+un même partenaire ou produit (ex. une solution PAM / WALLIX) si l'enjeu du compte ne l'appelle pas
+explicitement : une expertise éditeur n'a sa place que si un besoin nommé la justifie. Varie les angles
+selon les comptes ; à défaut de besoin technique nommé, appuie-toi sur les différenciateurs transverses
+(proximité/souveraineté, modèle managé OPEX, Neurones Academy, références, proximité régulateurs).
 ANGLE MÉTIER (lentille innovation) : quand le secteur du compte et son whitespace/ses signaux le permettent, formule la valeur au niveau de la TRANSFORMATION MÉTIER du client (data/IA, RPA, open banking/mobile money & fintech, e-gov/GovTech, IoT/edge, verticaux insurtech/agritech…) et positionne cloud/souveraineté/cybersécurité comme ENABLERS, pas comme finalité — sans inventer de besoin non étayé par les faits.
 Preuves / références NT : ${list(c.preuves)}.${pestel ? `\nAngle de marché (à n'utiliser QUE s'il éclaire un besoin concret de ce compte) : ${pestel}` : ""}
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
   "message": string,                       // 2 phrases ADRESSÉES AU CLIENT : le bénéfice métier concret que NT lui apporte, avec un angle qui prouve qu'on connaît son contexte (une offre déjà livrée, un enjeu réel) — SANS parler de notre pipeline. Ni slogan creux, ni diagnostic interne.
-  "differenciateurs": [string],            // 3 : chacun = un différenciateur NT (WALLIX PAM, modèle managé OPEX, Neurones Academy…) traduit en BÉNÉFICE pour le client sur un besoin PRÉCIS, chiffré au panier réel si une offre est visée. Formulé côté valeur client.
+  "differenciateurs": [string],            // 3 : chacun = un différenciateur NT ADAPTÉ AU BESOIN DE CE COMPTE (p. ex. modèle managé OPEX, Neurones Academy, cloud souverain, PASSI/ANSSI-CI, ou une expertise éditeur — Cisco, Fortinet, PAM… — UNIQUEMENT si l'enjeu du compte l'appelle) traduit en BÉNÉFICE pour le client sur un besoin PRÉCIS, chiffré au panier réel si une offre est visée. Formulé côté valeur client. Ne répète pas le même partenaire par défaut d'un compte à l'autre.
   "prochaineEtape": string                 // LA prochaine action commerciale concrète pour matérialiser cette valeur (RDV de cadrage, chiffrage d'une offre nommée, atelier…) — courte, actionnable.
 }
 JSON uniquement.`;
@@ -864,7 +870,7 @@ Réponds UNIQUEMENT avec un objet JSON valide :
       "titre": string,               // accroche / titre éditorial percutant
       "accroche": string,            // 1re phrase qui arrête le scroll (le "hook")
       "corps": string,               // 4-8 lignes : le propos, l'insight, la valeur — ancré sur le signal + le différenciateur, jamais un argumentaire de vente
-      "differenciateur": string,     // LE différenciateur NT mis en avant (WALLIX PAM, modèle managé OPEX, Neurones Academy, PASSI/ANSSI-CI…)
+      "differenciateur": string,     // LE différenciateur NT mis en avant, adapté au signal et au secteur (p. ex. modèle managé OPEX, Neurones Academy, PASSI/ANSSI-CI, cloud souverain, ou une expertise éditeur pertinente — Cisco, Fortinet, PAM… — pas un partenaire par défaut)
       "signalSource": string,        // le signal de veille sur lequel l'angle s'appuie (repris de la liste)
       "cta": string,                 // appel à l'action doux et non commercial (« échangeons », « notre point de vue en commentaire »…)
       "hashtags": [string]           // 3-5 hashtags pertinents
