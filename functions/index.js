@@ -2432,7 +2432,16 @@ async function assembleCopiloteContext(db, accountId) {
   // classe par PERTINENCE au compte (secteur + whitespace + enjeux) — la prospection voit les leads
   // qui comptent pour CE compte, pas un échantillon aveugle.
   const prospectTerms = [a.secteur, ...(Array.isArray(a.whitespace) ? a.whitespace : []), ...(Array.isArray(a.enjeux) ? a.enjeux : [])].filter(Boolean);
-  const signaux = pickRelevant(bizAll, { terms: prospectTerms }, 10).map((o) => ({ titre: o.name }));
+  // Signaux enrichis (audit v2) : au-delà du titre nu, on joint l'angle actionnable (événement
+  // déclencheur / prochaine action / offre) — matière plus riche pour la prospection ET l'agent
+  // Contenu marketing au niveau marché. Champs ajoutés seulement s'ils existent (pas d'undefined).
+  const signaux = pickRelevant(bizAll, { terms: prospectTerms }, 10).map((o) => {
+    const sig = { titre: o.name };
+    const so = o.triggerEvent || o.nextAction;
+    if (typeof so === "string" && so.trim()) sig.soWhat = so.trim();
+    if (typeof o.offering === "string" && o.offering.trim()) sig.offre = o.offering.trim();
+    return sig;
+  });
   // Déclencheurs de veille RATTACHÉS au compte : on privilégie `nt.veille.top` (persisté au sync —
   // titre + date + so-what + impact + offre déclenchée), qui porte l'actionnabilité, au lieu des
   // seuls titres de bizOpportunities. Audit pertinence 2026-07 (constat « la boucle veille→vente

@@ -145,6 +145,7 @@ export function Fil() {
   // du radar, graphiques Concurrence…) ouvre le Fil pré-filtré via ?ent= / ?ax= / ?st= / ?imp=.
   const [sp, setSp] = useSearchParams();
   const entFilter = sp.get("ent") || "";
+  const qFilter = sp.get("q") || ""; // recherche plein-texte (deep-link « preuve ↗ » des scénarios)
   // Filtres initialisés depuis l'URL (deep-link) puis pilotés localement par les pills.
   const [ax, setAx] = useState(() => (sp.get("ax") && AX[sp.get("ax") as string] ? (sp.get("ax") as string) : "all"));
   const [st, setSt] = useState(() => (["opportunity", "threat", "neutral"].includes(sp.get("st") || "") ? (sp.get("st") as string) : "all"));
@@ -171,6 +172,7 @@ export function Fil() {
         (prx === "all" || effectiveProx(s) === prx) &&
         (!watchOnly || !!s.ent) &&
         (!entFilter || (s.ent ? norm(s.ent).includes(norm(entFilter)) || norm(entFilter).includes(norm(s.ent)) : false)) &&
+        (!qFilter || norm(`${s.title || ""} ${s.summary || ""} ${s.soWhat || ""} ${s.ent || ""}`).includes(norm(qFilter))) &&
         (!bizOnly || BUSINESS_SUBTYPES.has(s.subtype ?? "")) &&
         // Porte de qualité : par défaut on ne montre que les signaux PUBLIÉS. Les vues attente/rejetés/
         // archivés (exec) isolent respectivement pending / rejected / archived.
@@ -186,7 +188,7 @@ export function Fil() {
     );
 
   // Pagination : le fil peut atteindre des centaines de signaux (retour à la page 1 si un filtre change).
-  const paged = usePaged(rows, 25, `${ax}|${st}|${imp}|${prx}|${watchOnly}|${bizOnly}|${statusView}|${entFilter}`);
+  const paged = usePaged(rows, 25, `${ax}|${st}|${imp}|${prx}|${watchOnly}|${bizOnly}|${statusView}|${entFilter}|${qFilter}`);
 
   return (
     <div>
@@ -256,6 +258,11 @@ export function Fil() {
           {entFilter && (
             <button className="pill on" onClick={clearEnt} title="Retirer le filtre entité" style={{ marginLeft: 10 }}>
               Entité : {entFilter} ✕
+            </button>
+          )}
+          {qFilter && (
+            <button className="pill on" onClick={() => { const n = new URLSearchParams(sp); n.delete("q"); setSp(n, { replace: true }); }} title="Retirer la recherche" style={{ marginLeft: 10 }}>
+              Recherche : {qFilter} ✕
             </button>
           )}
         </div>

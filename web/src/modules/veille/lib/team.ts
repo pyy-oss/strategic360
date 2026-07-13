@@ -5,7 +5,36 @@
  * (e-mail) pour donner au Directeur Commercial une vue forecast + couverture + prochaine action par
  * tête — sans nouveau moteur, pure agrégation. PUR.
  */
+import { useEffect, useState } from "react";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { db } from "../../../lib/firebase";
 import type { CopiloteAccount } from "./copilote";
+
+/* --------------------------------------------------------------------------------------------- *
+ * Cibles commerciales (waouh v2) — objectif de forecast pondéré par commercial (owner e-mail),
+ * stocké dans strategic360 (salesTargets/current) car nt360 est en lecture seule. Éditable par les
+ * managers ; sert à afficher la COUVERTURE (forecast vs target) dans le cockpit équipe.
+ * ------------------------------------------------------------------------------------------- */
+const TARGETS_DOC = doc(db, "salesTargets", "current");
+
+export function useSalesTargets(): { targets: Record<string, number>; loading: boolean } {
+  const [targets, setTargets] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const unsub = onSnapshot(
+      TARGETS_DOC,
+      (snap) => { setTargets((snap.exists() ? (snap.data().targets as Record<string, number>) : {}) || {}); setLoading(false); },
+      () => { setTargets({}); setLoading(false); }
+    );
+    return unsub;
+  }, []);
+  return { targets, loading };
+}
+
+/** Définit (ou efface si ≤0) la cible d'un commercial. Réservé managers (garde serveur). */
+export async function setSalesTarget(owner: string, value: number): Promise<void> {
+  await setDoc(TARGETS_DOC, { targets: { [owner]: value > 0 ? Math.round(value) : 0 } }, { merge: true });
+}
 
 export interface OwnerNextAction {
   account: string;
@@ -61,7 +90,9 @@ export function aggregateTeam(accounts: CopiloteAccount[]): OwnerCockpit[] {
       const topVeille = veille?.top?.[0];
       const eventOffer = nt.eventOffers?.[0];
       if (topVeille) {
-        actions.push({ account: a.nom, action: topVeille.soWhat || topVeille.title, why: `Veille : ${topVeille.title}`, montant: num(eventOffer?.montant) });
+        // Un déclencheur veille (veille.top) ne porte pas de montant propre : ne PAS emprunter le
+        // montant d'un eventOffer sans rapport (chiffrage trompeur, audit v2) → 0 = « à chiffrer ».
+        actions.push({ account: a.nom, action: topVeille.soWhat || topVeille.title, why: `Veille : ${topVeille.title}`, montant: 0 });
       } else if (eventOffer) {
         actions.push({ account: a.nom, action: `Proposer ${eventOffer.offre}`, why: eventOffer.event || "opportunité offre", montant: num(eventOffer.montant) });
       } else if (nt.whitespaceValue?.[0]) {

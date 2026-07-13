@@ -121,11 +121,17 @@ function DecisionDuJour({
         <div style={{ minWidth: 0, flex: 1 }}>
           <Eyebrow color={T.gold}>Décision du jour</Eyebrow>
           <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 18, fontWeight: 700, color: T.ink, marginTop: 6, lineHeight: 1.35, overflowWrap: "anywhere" }}>
-            {moneyXof > 0 && (
-              <>💰 <span style={{ color: T.emerald }}>{fmt(moneyXof)} XOF</span> en jeu{declencheeXof > 0 ? <> (dont <span style={{ color: T.gold }}>{fmt(declencheeXof)}</span> déclenchés par la veille)</> : null}</>
-            )}
+            {/* Chiffre directeur = veille→cash STRICT (opportunités portant un vrai déclencheur de
+                veille). Le pipeline attribuable total passe en contexte, explicitement étiqueté —
+                fini l'amalgame « en jeu » et le doublon nu avec le panneau d'attribution ci-dessous. */}
+            {declencheeXof > 0 ? (
+              <>💰 <span style={{ color: T.emerald }}>{fmt(declencheeXof)} XOF</span> déclenchés par la veille
+                {moneyXof > declencheeXof ? <span style={{ color: T.faint, fontSize: 13, fontWeight: 600 }}> · {fmt(moneyXof)} de pipeline attribuable</span> : null}</>
+            ) : moneyXof > 0 ? (
+              <>💰 <span style={{ color: T.gold }}>{fmt(moneyXof)} XOF</span> de pipeline attribuable à la veille</>
+            ) : null}
             {urgent && (
-              <>{moneyXof > 0 ? " · " : "⏱️ "}<span style={{ color: T.clay }}>{urgent.count} signal{urgent.count > 1 ? "aux" : ""} business imminent{urgent.count > 1 ? "s" : ""}</span></>
+              <>{(declencheeXof > 0 || moneyXof > 0) ? " · " : "⏱️ "}<span style={{ color: T.clay }}>{urgent.count} signal{urgent.count > 1 ? "aux" : ""} business imminent{urgent.count > 1 ? "s" : ""}</span></>
             )}
           </div>
           {reco && (
