@@ -56,6 +56,20 @@ function num(v) {
 }
 
 /**
+ * normalizePct(v) -> probabilite en pourcentage 0-100 (entier), ou null si non renseignee.
+ * nt360 stocke la probabilite d'un deal en fraction 0-1 (0.5 = 50 %), mais l'app l'affiche/la teste
+ * en 0-100 (barre DealRow, seuil « point mort » < 20). Heuristique robuste aux deux echelles : une
+ * valeur <= 1 est une fraction (x100), une valeur > 1 est deja un pourcentage (laissee telle quelle).
+ * Bornee 0-100.
+ */
+function normalizePct(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  const pct = n <= 1 ? n * 100 : n;
+  return Math.round(Math.max(0, Math.min(100, pct)));
+}
+
+/**
  * mapOrders(nt360Orders, currentFy) -> quanti `orders` rows.
  * nt360's P&L keeps one row per order tagged with its PO year (`yearPo`) instead of carrying
  * cas/casN1 column pairs — so "CAS N" = cas of rows with yearPo === currentFy and "CAS N-1" = cas
@@ -324,7 +338,11 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
         etape: String(o.stageLabel || `Stade ${stage}`).trim(),
         bu: buLabel,
         closingDate: typeof o.closingDate === "string" ? o.closingDate : "",
-        probability: Number.isFinite(Number(o.probability)) ? Number(o.probability) : null,
+        // ECHELLE CANONIQUE 0-100 (corrige l'affichage « 0.5% », 2026-07) : nt360 porte la probabilite
+        // en fraction 0-1 (0.5 = 50 %), mais le front (DealRow) et le signal « point mort » (< 20) la
+        // lisent en 0-100. On normalise ici, a la frontiere : une valeur <= 1 est une fraction (x100),
+        // une valeur > 1 est deja en pourcentage (laissee telle quelle). Bornee 0-100, arrondie.
+        probability: normalizePct(o.probability),
       });
     }
   }

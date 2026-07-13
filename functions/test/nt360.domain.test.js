@@ -187,6 +187,24 @@ describe("deriveCopiloteAccounts (empreinte comptes pour le Copilote)", () => {
     expect(sgci.opportunites[0].probability).toBeNull();
   });
 
+  it("normalise la probabilité sur l'échelle 0-100 (nt360 la stocke en fraction 0-1 → corrige « 0.5% »)", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const opps = [
+      // Fraction 0-1 (cas réel nt360) : 0.5 → 50, 0.008 → 1, 1 → 100.
+      { client: "AGL", bu: "AUTRE", stage: 3, amount: 500, oppId: "OPP-A", designation: "Acquisition 16 serveurs", stageLabel: "3-Transmise", probability: 0.5 },
+      { client: "AGL", bu: "ICT", stage: 2, amount: 300, oppId: "OPP-B", designation: "Deal quasi mort", stageLabel: "2-Montage", probability: 0.008 },
+      { client: "AGL", bu: "CYBER", stage: 4, amount: 800, oppId: "OPP-C", designation: "Deal quasi signé", stageLabel: "4-Négociation", probability: 1 },
+      // Déjà en pourcentage (> 1) : laissé tel quel.
+      { client: "AGL", bu: "WAN", stage: 2, amount: 100, oppId: "OPP-D", designation: "Deal en pourcentage", stageLabel: "2-Montage", probability: 40 },
+    ];
+    const agl = deriveCopiloteAccounts([], opps).find((a) => a.slug === "agl");
+    const byRef = Object.fromEntries(agl.opportunites.map((o) => [o.ref, o.probability]));
+    expect(byRef["OPP-A"]).toBe(50);
+    expect(byRef["OPP-B"]).toBe(1);
+    expect(byRef["OPP-C"]).toBe(100);
+    expect(byRef["OPP-D"]).toBe(40);
+  });
+
   it("remonte le NOM EXACT via `designation` même quand fp est null et la BU est fourre-tout (bug nt360 2026-07-13)", async () => {
     const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
     const opps = [
