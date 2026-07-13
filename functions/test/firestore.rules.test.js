@@ -218,6 +218,16 @@ describe("config/* (hors permissions) — lecture exec-only", () => {
     await assertSucceeds(db.doc("config/permissions").get());
   });
 
+  it.each(EXEC_ROLES)("read kpiHistory allowed for exec role=%s", async (role) => {
+    await assertSucceeds(ctxFor(role).firestore().doc("summaries/kpiHistory").get());
+  });
+  it.each(ALL_ROLES.filter((r) => !EXEC_ROLES.includes(r)))(
+    "read kpiHistory rejected for role=%s",
+    async (role) => {
+      await assertFails(ctxFor(role).firestore().doc("summaries/kpiHistory").get());
+    }
+  );
+
   it.each(ALL_ROLES)("write config/onboardingDraft always rejected for role=%s", async (role) => {
     const db = ctxFor(role).firestore();
     await assertFails(db.doc("config/onboardingDraft").set({ status: "draft" }));

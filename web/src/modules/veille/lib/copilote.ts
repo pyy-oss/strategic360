@@ -191,6 +191,7 @@ export async function deleteCopiloteAccount(id: string): Promise<void> {
 
 export type CopiloteAgent =
   | "prospection" | "cvp" | "triennal" | "planCompte" | "planAction" | "redaction"
+  | "contenu"
   | "meddic" | "brief" | "dealAnalysis" | "businessCase" | "sequence" | "stakeholders";
 
 export interface ProspectionCible { nom: string; source?: string; angle: string; accroche: string; offre?: string; chaleur: "Chaud" | "Tiède" | "Froid" }
@@ -210,6 +211,14 @@ export interface PlanActionResult { plan: PlanActionItem[] }
 
 export interface RedactionVariante { label: string; objet: string; corps: string }
 export interface RedactionResult { variantes: RedactionVariante[] }
+
+/** Contenu marketing (levier « waouh » n°2) — angles de contenu 1:N nourris par la veille. */
+export interface ContenuAngle {
+  format: "LinkedIn" | "Tribune";
+  titre: string; accroche: string; corps: string;
+  differenciateur: string; signalSource: string; cta: string; hashtags: string[];
+}
+export interface ContenuResult { angles: ContenuAngle[] }
 
 /* --- Nouveaux livrables à forte valeur (audit profondeur 2026-07) --- */
 export interface MeddicResult {

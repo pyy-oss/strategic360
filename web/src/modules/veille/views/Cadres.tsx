@@ -16,6 +16,7 @@ import { Eyebrow, Card, Tip, Badge } from "../../../design/ui";
 import { Select } from "../../../design/fields";
 import { useIsExec } from "../../../lib/rbac";
 import { useFramework, updateFramework } from "../lib/frameworks";
+import { CitedText, SourcesFooter } from "../components/Citations";
 import { useQuantiSummary } from "../lib/quanti";
 
 /**
@@ -181,18 +182,21 @@ function SwotTab() {
       {editing && isExec && <SwotEditor initial={content} onClose={() => setEditing(false)} />}
       {!hasContent && !editing && <EmptyFramework label="SWOT" />}
       {hasContent && (
-        <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          {SWOT_KEYS.map((k) => (
-            <Card key={k} style={{ borderTop: `3px solid ${swotC[k]}` }}>
-              <Eyebrow color={swotC[k]}>{k}</Eyebrow>
-              <ul style={{ margin: "10px 0 0", paddingLeft: 18, fontSize: 12.5, color: T.dim, lineHeight: 1.7 }}>
-                {(content?.[k] ?? []).map((x, i) => (
-                  <li key={i}>{x}</li>
-                ))}
-              </ul>
-            </Card>
-          ))}
-        </div>
+        <>
+          <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            {SWOT_KEYS.map((k) => (
+              <Card key={k} style={{ borderTop: `3px solid ${swotC[k]}` }}>
+                <Eyebrow color={swotC[k]}>{k}</Eyebrow>
+                <ul style={{ margin: "10px 0 0", paddingLeft: 18, fontSize: 12.5, color: T.dim, lineHeight: 1.7 }}>
+                  {(content?.[k] ?? []).map((x, i) => (
+                    <li key={i}><CitedText text={x} sources={fw?.sources} /></li>
+                  ))}
+                </ul>
+              </Card>
+            ))}
+          </div>
+          <SourcesFooter sources={fw?.sources} />
+        </>
       )}
     </div>
   );
@@ -273,10 +277,11 @@ function PestelTab() {
                 <div style={{ height: 7, background: T.panel2, borderRadius: 4, marginBottom: 4 }}>
                   <div style={{ width: `${p.imp * 100}%`, height: "100%", background: T.gold, borderRadius: 4 }} />
                 </div>
-                <div style={{ fontSize: 12, color: T.dim }}>{p.d}</div>
+                <div style={{ fontSize: 12, color: T.dim }}><CitedText text={p.d} sources={fw?.sources} /></div>
               </div>
             ))}
           </div>
+          <SourcesFooter sources={fw?.sources} />
         </Card>
       )}
     </div>

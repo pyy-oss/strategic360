@@ -1697,6 +1697,50 @@ async function computeVeilleExecSummary(db) {
 }
 
 /**
+ * snapshotVeilleKpis — HISTORIQUE des KPIs (levier « waouh » n°1 : tendances). L'app n'avait aucun
+ * store d'historique → tout était un instantané, sans « dans quel sens ça bouge ». Ce cron quotidien
+ * fige les KPIs exécutifs du jour dans `summaries/kpiHistory.points[]` (tableau plafonné à 90 j) ;
+ * le front en dérive les deltas semaine-sur-semaine (flèches ↑/↓). Idempotent : un point du même
+ * jour est remplacé (pas de doublon si le cron rejoue). Best-effort : n'échoue jamais bruyamment.
+ */
+const KPI_HISTORY_CAP = 90;
+exports.snapshotVeilleKpis = onSchedule(
+  { schedule: "7 1 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1" },
+  async () => {
+    try {
+      const db = firestoreDb();
+      const execSnap = await db.doc("summaries/veille_exec").get();
+      if (!execSnap.exists) { logger.info("snapshotVeilleKpis: summaries/veille_exec absent — rien à figer"); return; }
+      const s = execSnap.data() || {};
+      const bk = s.boardKpis || {};
+      const day = new Date().toISOString().slice(0, 10);
+      const point = {
+        date: day,
+        pipelineInfluenced: typeof s.pipelineInfluenced === "number" ? s.pipelineInfluenced : null,
+        menacesTotal: bk.menacesTotal ?? null,
+        menacesTraitees: bk.menacesTraitees ?? null,
+        opportunites: bk.opportunites ?? null,
+        winRateGlobal: bk.winRateGlobal ?? null,
+        okrProgress: typeof s.okrProgress === "number" ? s.okrProgress : null,
+        threatsHighUnactioned: s.threatsHighUnactionedCount ?? null,
+      };
+      const ref = db.doc("summaries/kpiHistory");
+      await db.runTransaction(async (tx) => {
+        const cur = await tx.get(ref);
+        const points = (cur.exists && Array.isArray(cur.data().points) ? cur.data().points : []).filter((p) => p && p.date !== day);
+        points.push(point);
+        points.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        const trimmed = points.slice(-KPI_HISTORY_CAP);
+        tx.set(ref, { points: trimmed, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      });
+      logger.info(`snapshotVeilleKpis: point ${day} figé (pipeline=${point.pipelineInfluenced}).`);
+    } catch (err) {
+      logger.error(`snapshotVeilleKpis: FAILED — ${err.message}`, { err });
+    }
+  }
+);
+
+/**
  * aggregateVeilleExec — planifié (toutes les 60 min)
  * Construit summaries/veille_exec (boardKpis, decisionsPending, porter, winRateByCompetitor, ...).
  * Roadmap: V3 Scoring & agrégats veille.
@@ -1833,6 +1877,7 @@ const {
   buildScenariosPrompt,
   parseScenariosResponse,
   pickSignalsForEnrichment,
+  sourcesFromSignals,
   diversifySignals,
   slugId: enrichSlugId,
 } = require("./domain/enrich");
@@ -1846,7 +1891,7 @@ const {
  * re-enable AI regeneration per framework is planned; until then the human can clear/delete the
  * doc to let the AI take over again).
  */
-async function writeFrameworkDoc(db, key, content) {
+async function writeFrameworkDoc(db, key, content, sources) {
   const ref = db.doc(`frameworks/${key}`);
   const existing = await ref.get();
   const existingUpdatedBy = existing.exists ? existing.data()?.updatedBy : null;
@@ -1857,6 +1902,9 @@ async function writeFrameworkDoc(db, key, content) {
   await ref.set({
     key,
     content,
+    // sources : table de correspondance des citations [n] → signal (levier « waouh » n°3). Persistée
+    // seulement si fournie (les cadres non encore câblés gardent le comportement actuel).
+    ...(Array.isArray(sources) && sources.length ? { sources } : {}),
     version: existing.exists ? (existing.data()?.version ?? 0) + 1 : 1,
     updatedBy: "ai:enrichStrategicArtifacts",
     updatedAt: FieldValue.serverTimestamp(),
@@ -1908,7 +1956,7 @@ function anchorGe9PositionsOnInternalCas(items, granularite) {
 
 async function runEnrichment(db) {
   const itemsSnap = await db.collection("intelItems").get();
-  const signals = pickSignalsForEnrichment(itemsSnap.docs.map((d) => d.data()));
+  const signals = pickSignalsForEnrichment(itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
   // Échantillon ENTRELACÉ PAR AXE (audit pertinence 2026-07) : les cadres qui visent la BREADTH
   // (SWOT/PESTEL, Diagnostic, GE9, Ansoff, Horizons, paris d'innovation, scénarios) doivent voir un
   // input équilibré, pas la seule tête priorité-clusterisée. La diversité est déjà garantie dans la
@@ -1964,8 +2012,11 @@ async function runEnrichment(db) {
       summary.swotPestel = "parse-failed";
       logger.error("runEnrichment: SWOT/PESTEL response unusable (parse returned null)");
     } else {
-      const swotStatus = await writeFrameworkDoc(db, "swot", parsed.swot);
-      const pestelStatus = await writeFrameworkDoc(db, "pestel", parsed.pestel);
+      // SWOT/PESTEL sont générés à partir de `diverseSignals` : on persiste la table de sources
+      // correspondante pour rendre les citations [n] cliquables côté front (levier « waouh » n°3).
+      const swotPestelSources = sourcesFromSignals(diverseSignals);
+      const swotStatus = await writeFrameworkDoc(db, "swot", parsed.swot, swotPestelSources);
+      const pestelStatus = await writeFrameworkDoc(db, "pestel", parsed.pestel, swotPestelSources);
       summary.swotPestel = swotStatus === pestelStatus ? swotStatus : `swot=${swotStatus},pestel=${pestelStatus}`;
     }
   } catch (err) {
@@ -2575,7 +2626,9 @@ exports.copiloteGenerate = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   const { agent, accountId, extra } = request.data || {};
   const spec = COPILOTE_AGENTS[agent];
   if (!spec) throw new HttpsError("invalid-argument", `agent inconnu : ${agent}`);
-  assertAccountId(accountId);
+  // Agents « niveau marché » (ex. contenu marketing 1:N) : pas d'accountId requis (levier waouh n°2).
+  if (!spec.accountOptional) assertAccountId(accountId);
+  else if (accountId) assertAccountId(accountId); // si un compte est fourni, il doit rester valide
   const db = firestoreDb();
   const base = await assembleCopiloteContext(db, accountId);
   // Agents mono-deal : refuser proprement si le compte n'a aucune opportunité ouverte, plutôt que de

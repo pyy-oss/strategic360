@@ -1,0 +1,87 @@
+/**
+ * team.ts — COCKPIT « MON ÉQUIPE » (levier « waouh » n°7). Le trou pointé par l'audit : toute
+ * l'intelligence (réserve captée/disponible, deals chauds, veille, win-rate) est calculée au niveau
+ * PORTEFEUILLE, jamais agrégée par COMMERCIAL. Ici on regroupe les comptes du Copilote par owner
+ * (e-mail) pour donner au Directeur Commercial une vue forecast + couverture + prochaine action par
+ * tête — sans nouveau moteur, pure agrégation. PUR.
+ */
+import type { CopiloteAccount } from "./copilote";
+
+export interface OwnerNextAction {
+  account: string;
+  action: string; // prochaine meilleure action (déclencheur veille / signal / reco)
+  why: string;    // pourquoi maintenant
+  montant: number; // valeur associée (XOF) si connue
+}
+
+export interface OwnerCockpit {
+  owner: string;
+  comptes: number;
+  pipelinePondere: number;   // forecast pondéré (somme)
+  reserveDisponible: number; // whitespace + upsell non capté (somme)
+  wins: number;
+  dealsChauds: number;       // comptes avec un signal de veille chaud
+  veilleTriggers: number;    // nombre de déclencheurs de veille rattachés
+  topComptes: { nom: string; pipelinePondere: number; score: number }[];
+  prochainesActions: OwnerNextAction[];
+}
+
+function num(n: unknown): number {
+  return typeof n === "number" && Number.isFinite(n) ? n : 0;
+}
+
+/** aggregateTeam(accounts) → un cockpit par owner (trié par pipeline pondéré décroissant). PUR. */
+export function aggregateTeam(accounts: CopiloteAccount[]): OwnerCockpit[] {
+  const byOwner = new Map<string, CopiloteAccount[]>();
+  for (const a of Array.isArray(accounts) ? accounts : []) {
+    const owners = Array.isArray(a.owners) && a.owners.length ? a.owners : ["(non attribué)"];
+    for (const o of owners) {
+      const key = String(o || "(non attribué)").trim().toLowerCase() || "(non attribué)";
+      if (!byOwner.has(key)) byOwner.set(key, []);
+      byOwner.get(key)!.push(a);
+    }
+  }
+
+  const cockpits: OwnerCockpit[] = [];
+  for (const [owner, accs] of byOwner) {
+    let pipe = 0, reserve = 0, wins = 0, chauds = 0, triggers = 0;
+    const actions: OwnerNextAction[] = [];
+    const topComptes: { nom: string; pipelinePondere: number; score: number }[] = [];
+    for (const a of accs) {
+      const nt = a.nt360 || {};
+      const p = num(nt.pipelinePondere);
+      pipe += p;
+      reserve += num(nt.whitespacePotential) + num(nt.upsellHeadroom);
+      wins += num(nt.wins);
+      const veille = nt.veille;
+      if (veille?.hot) chauds += 1;
+      triggers += num(veille?.count);
+      topComptes.push({ nom: a.nom, pipelinePondere: p, score: num(nt.scorePotentiel) });
+      // Prochaine meilleure action : déclencheur veille chaud > offre événementielle > reco whitespace.
+      const topVeille = veille?.top?.[0];
+      const eventOffer = nt.eventOffers?.[0];
+      if (topVeille) {
+        actions.push({ account: a.nom, action: topVeille.soWhat || topVeille.title, why: `Veille : ${topVeille.title}`, montant: num(eventOffer?.montant) });
+      } else if (eventOffer) {
+        actions.push({ account: a.nom, action: `Proposer ${eventOffer.offre}`, why: eventOffer.event || "opportunité offre", montant: num(eventOffer.montant) });
+      } else if (nt.whitespaceValue?.[0]) {
+        actions.push({ account: a.nom, action: `Cross-sell ${nt.whitespaceValue[0].offre}`, why: "réserve de valeur non captée", montant: num(nt.whitespaceValue[0].montant) });
+      }
+    }
+    topComptes.sort((x, y) => y.pipelinePondere - x.pipelinePondere || y.score - x.score);
+    actions.sort((x, y) => y.montant - x.montant);
+    cockpits.push({
+      owner,
+      comptes: accs.length,
+      pipelinePondere: Math.round(pipe),
+      reserveDisponible: Math.round(reserve),
+      wins,
+      dealsChauds: chauds,
+      veilleTriggers: triggers,
+      topComptes: topComptes.slice(0, 4),
+      prochainesActions: actions.slice(0, 4),
+    });
+  }
+  cockpits.sort((a, b) => b.pipelinePondere - a.pipelinePondere);
+  return cockpits;
+}

@@ -820,6 +820,79 @@ function parseRedactionResponse(raw, ctx) {
 }
 
 /* ------------------------------------------------------------------------------------------- *
+ * §G-bis — CONTENU MARKETING (levier « waouh » n°2 : servir le Directeur Marketing). À partir des
+ * signaux de veille + des différenciateurs NT + du secteur, produit des ANGLES DE CONTENU 1:N
+ * (posts LinkedIn, tribune) ancrés sur un signal RÉEL et un différenciateur RÉEL — pas du sales 1:1.
+ * ------------------------------------------------------------------------------------------- */
+function marketSignalsBlock(c) {
+  const items = [
+    ...(Array.isArray(c.signauxCompte) ? c.signauxCompte : []),
+    ...(Array.isArray(c.signaux) ? c.signaux : []),
+  ].filter((s) => s && (s.titre || s.title)).slice(0, 8);
+  if (!items.length) return "(aucun signal de veille exploitable — dis-le et propose un angle générique prudent, sans inventer d'actualité)";
+  return items.map((s) => `- ${coerceStr(s.titre || s.title)}${s.soWhat ? ` — ${coerceStr(s.soWhat)}` : ""}`).join("\n");
+}
+
+function buildContenuPrompt(ctx) {
+  const c = ctx || {};
+  const pestel = (c.pestel || []).filter((p) => p && (p.axe || p.texte)).slice(0, 2)
+    .map((p) => `${coerceStr(p.axe, "?")} : ${coerceStr(p.texte)}`).join(" · ");
+  return `${roleOf(c)}
+Tu es aussi le bras droit du MARKETING de Neurones Technologies. Tu produis du CONTENU de marque à
+diffusion large (1:N), pas un message de vente à un client précis.
+${ANTI_VERBIAGE}
+${NO_GENERIC}
+
+OBJECTIF : proposer 3 ANGLES DE CONTENU (post LinkedIn ou tribune) qui positionnent Neurones
+Technologies en référence sur son marché (Côte d'Ivoire / UEMOA), CHACUN ancré sur (a) un SIGNAL DE
+VEILLE réel ci-dessous et (b) UN différenciateur NT réel. Ton expert, utile, non promotionnel : on
+éduque le marché, on ne vend pas frontalement. Interdits : superlatifs creux, « leader incontesté »,
+promesses non étayées, chiffres inventés.
+
+Secteur d'éclairage : ${coerceStr(c.secteur, "IT/cyber/cloud, tous secteurs")}.
+Signaux de veille (matière — n'invente aucune actualité au-delà de cette liste) :
+${marketSignalsBlock(c)}
+Différenciateurs NT mobilisables (relier chaque angle à UN d'entre eux) :
+${NT_DIFFERENCIATEURS}.
+${pestel ? `Toile de fond marché (optionnel) : ${pestel}.` : ""}
+
+Réponds UNIQUEMENT avec un objet JSON valide :
+{
+  "angles": [
+    {
+      "format": "LinkedIn" | "Tribune",
+      "titre": string,               // accroche / titre éditorial percutant
+      "accroche": string,            // 1re phrase qui arrête le scroll (le "hook")
+      "corps": string,               // 4-8 lignes : le propos, l'insight, la valeur — ancré sur le signal + le différenciateur, jamais un argumentaire de vente
+      "differenciateur": string,     // LE différenciateur NT mis en avant (WALLIX PAM, modèle managé OPEX, Neurones Academy, PASSI/ANSSI-CI…)
+      "signalSource": string,        // le signal de veille sur lequel l'angle s'appuie (repris de la liste)
+      "cta": string,                 // appel à l'action doux et non commercial (« échangeons », « notre point de vue en commentaire »…)
+      "hashtags": [string]           // 3-5 hashtags pertinents
+    }
+  ]
+}
+Exactement 3 angles, à ANGLES DIFFÉRENTS (ex. cyber-souveraineté, transformation métier, montée en compétences). JSON uniquement.`;
+}
+
+function parseContenuResponse(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.angles)) return null;
+  const angles = raw.angles
+    .filter((a) => a && typeof a === "object" && coerceStr(a.corps))
+    .map((a) => ({
+      format: a.format === "Tribune" ? "Tribune" : "LinkedIn",
+      titre: coerceStr(a.titre),
+      accroche: coerceStr(a.accroche),
+      corps: coerceStr(a.corps),
+      differenciateur: coerceStr(a.differenciateur),
+      signalSource: coerceStr(a.signalSource),
+      cta: coerceStr(a.cta),
+      hashtags: coerceStrArray(a.hashtags).slice(0, 6),
+    }))
+    .slice(0, 3);
+  return angles.length ? { angles } : null;
+}
+
+/* ------------------------------------------------------------------------------------------- *
  * §H — QUALIFICATION MEDDIC/BANT (deal). Structure la qualification sur les faits réels du compte
  * et pointe les TROUS à combler + les prochaines actions. Aucun champ inventé : si l'info manque,
  * le champ le dit et devient une action de qualification.
@@ -1131,6 +1204,7 @@ const AGENTS = {
   planCompte: { build: buildPlanComptePrompt, parse: parsePlanCompteResponse },
   planAction: { build: buildPlanActionPrompt, parse: parsePlanActionResponse },
   redaction: { build: buildRedactionPrompt, parse: parseRedactionResponse },
+  contenu: { build: buildContenuPrompt, parse: parseContenuResponse, accountOptional: true },
   // `requiresDeal` : agents MONO-DEAL — sans opportunité ouverte, ils ne produisent qu'une coquille
   // « à qualifier » partout (score 0), qui décrédibilise l'outil. L'appelant les court-circuite avec
   // un message clair au lieu de générer du vide (audit pertinence 2026-07).
@@ -1153,6 +1227,7 @@ module.exports = {
   buildPlanActionPrompt, parsePlanActionResponse,
   buildChatSystem, buildChatPrompt, parseChatResponse,
   buildRedactionPrompt, parseRedactionResponse,
+  buildContenuPrompt, parseContenuResponse,
   buildMeddicPrompt, parseMeddicResponse,
   buildBriefPrompt, parseBriefResponse,
   buildDealAnalysisPrompt, parseDealAnalysisResponse,

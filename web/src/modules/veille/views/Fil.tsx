@@ -10,6 +10,7 @@ import { BUSINESS_SUBTYPES, DETECTION_SUBTYPE_LABELS, PUBLISHED_STATUSES, create
 import { createAction } from "../lib/execution";
 import { effectiveProx, isPastDue } from "../lib/freshness";
 import { useIsExec } from "../../../lib/rbac";
+import { SignalMessageButton } from "../components/SignalMessage";
 
 const AXIS_KEYS = Object.keys(AX) as IntelAxis[];
 
@@ -361,9 +362,11 @@ function SignalLifecycle({ s }: { s: IntelItem }) {
   const [open, setOpen] = useState(false);
   if (!isExec) {
     return (
-      <div style={{ marginTop: 8 }}>
+      <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <Badge c={STATUS_META[s.status]?.c ?? T.faint}>{STATUS_META[s.status]?.l ?? s.status}</Badge>
         {s.owner && <Badge c={T.emerald}>Porteur : {s.owner}</Badge>}
+        {/* Message prêt-à-envoyer (levier waouh n°4) : accessible aux commerciaux, sans droit d'écriture. */}
+        <SignalMessageButton item={s} />
       </div>
     );
   }
@@ -399,6 +402,7 @@ function SignalLifecycle({ s }: { s: IntelItem }) {
         </button>
       ))}
       {s.owner && <Badge c={T.emerald}>Porteur : {s.owner}</Badge>}
+      <SignalMessageButton item={s} />
       <button className="pill" disabled={busy} onClick={() => setOpen((v) => !v)} style={{ fontSize: 11, padding: "3px 8px", marginLeft: 6 }}>
         {open ? "Annuler" : "→ Créer une action"}
       </button>

@@ -119,6 +119,9 @@ function pickSignalsForEnrichment(items, options) {
         stance: it.stance,
         date: it.date,
       };
+      // id conservé (levier « waouh » n°3 : citations [n] cliquables) — permet de tracer chaque
+      // puce de cadre jusqu'au signal source. Présent seulement s'il a été fourni par l'appelant.
+      if (typeof it.id === "string" && it.id) signal.id = it.id;
       if (typeof it.soWhat === "string" && it.soWhat.trim()) signal.soWhat = it.soWhat;
       // Action 4.4 — mêmes gardes que soWhat : champ présent seulement si non vide (jamais
       // undefined, contrainte Firestore/prompt).
@@ -167,6 +170,20 @@ function diversifySignals(signals, options) {
     }
   }
   return out;
+}
+
+/**
+ * sourcesFromSignals(items) → [{ n, id, title, ent }] — table de correspondance des citations [n]
+ * (levier « waouh » n°3). MÊME ordre que signalsBlock (le modèle cite le numéro de cette liste),
+ * pour que le front rende chaque [n] cliquable vers le signal source. PUR.
+ */
+function sourcesFromSignals(items) {
+  return (Array.isArray(items) ? items : []).map((s, i) => {
+    const src = { n: i + 1, title: typeof s.title === "string" ? s.title : "" };
+    if (typeof s.id === "string" && s.id) src.id = s.id;
+    if (typeof s.ent === "string" && s.ent.trim()) src.ent = s.ent.trim();
+    return src;
+  });
 }
 
 /** Renders the signals block shared by all three prompts. */
@@ -1421,6 +1438,7 @@ module.exports = {
   parsePorterResponse,
   CONTEXT_REQUIRED_MARKERS,
   pickSignalsForEnrichment,
+  sourcesFromSignals,
   diversifySignals,
   slugId,
   SWOT_KEYS,

@@ -162,7 +162,7 @@ service cloud.firestore {
     // règle summaries/{d} : veille_exec & quanti exigent exec(), les autres agrégats restent
     // lisibles par tout authentifié.
     match /summaries/{d} {
-      allow read: if request.auth != null && (!(d in ['veille_exec', 'quanti']) || exec());
+      allow read: if request.auth != null && (!(d in ['veille_exec', 'quanti', 'kpiHistory']) || exec());
       allow write: if false;
     }
 

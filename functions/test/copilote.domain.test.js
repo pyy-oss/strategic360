@@ -470,3 +470,45 @@ describe("Copilote — désambiguïsation de marque dans les contenus sortants (
     expect(mail).toContain("Abidjan");
   });
 });
+
+describe("Levier waouh n°2 — agent Contenu marketing", () => {
+  it("buildContenuPrompt injecte les signaux réels + différenciateurs, pas d'invention", async () => {
+    const { buildContenuPrompt } = await import("../domain/copilote.js");
+    const p = buildContenuPrompt({
+      secteur: "Banque",
+      signauxCompte: [{ titre: "La BCEAO durcit les exigences cyber", soWhat: "obligation PASSI" }],
+      signaux: [{ titre: "Nouvelle vague de ransomware en UEMOA" }],
+    });
+    expect(p).toContain("BCEAO durcit les exigences cyber");
+    expect(p).toContain("ransomware");
+    expect(p).toContain("n'invente aucune actualité");
+    expect(p).toMatch(/LinkedIn|Tribune/);
+  });
+
+  it("buildContenuPrompt sans signaux → consigne prudente, jamais de fausse actu", async () => {
+    const { buildContenuPrompt } = await import("../domain/copilote.js");
+    const p = buildContenuPrompt({ secteur: "Assurance" });
+    expect(p).toContain("aucun signal de veille exploitable");
+  });
+
+  it("parseContenuResponse borne à 3 angles, format normalisé, hashtags coercés", async () => {
+    const { parseContenuResponse } = await import("../domain/copilote.js");
+    const out = parseContenuResponse({
+      angles: [
+        { format: "LinkedIn", titre: "Cyber-souveraineté", accroche: "Et si…", corps: "un vrai propos ici", differenciateur: "PASSI/ANSSI-CI", signalSource: "BCEAO", cta: "Échangeons", hashtags: ["cyber", "#uemoa", 42] },
+        { format: "Tribune", titre: "Transfo", accroche: "x", corps: "propos 2", hashtags: [] },
+        { format: "n'importe", titre: "t3", accroche: "y", corps: "propos 3" },
+        { format: "LinkedIn", titre: "t4", accroche: "z", corps: "propos 4 en trop" },
+      ],
+    });
+    expect(out.angles).toHaveLength(3); // borné
+    expect(out.angles[0].hashtags).toEqual(["cyber", "#uemoa"]); // le 42 (non-string) écarté
+    expect(out.angles[2].format).toBe("LinkedIn"); // format inconnu → défaut LinkedIn
+  });
+
+  it("parseContenuResponse : sans corps exploitable → null", async () => {
+    const { parseContenuResponse } = await import("../domain/copilote.js");
+    expect(parseContenuResponse({ angles: [{ titre: "vide" }] })).toBeNull();
+    expect(parseContenuResponse({})).toBeNull();
+  });
+});

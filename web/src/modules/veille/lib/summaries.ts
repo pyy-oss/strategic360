@@ -163,6 +163,63 @@ export function useSyncStatus(): { data: SyncStatus | null } {
   return { data };
 }
 
+/* ---------------------------------------------------------------------------------------------
+ * summaries/kpiHistory — historique quotidien des KPIs exécutifs (levier « waouh » : tendances)
+ * ------------------------------------------------------------------------------------------- */
+
+export interface KpiHistoryPoint {
+  date: string; // YYYY-MM-DD
+  pipelineInfluenced?: number | null;
+  menacesTotal?: number | null;
+  menacesTraitees?: number | null;
+  opportunites?: number | null;
+  winRateGlobal?: number | null;
+  okrProgress?: number | null;
+  threatsHighUnactioned?: number | null;
+}
+export interface KpiHistory { points?: KpiHistoryPoint[]; updatedAt?: Timestamp | FieldValue }
+
+/** Historique des KPIs (summaries/kpiHistory, écrit par snapshotVeilleKpis) — exec-only en lecture. */
+export function useKpiHistory(): { points: KpiHistoryPoint[] } {
+  const [points, setPoints] = useState<KpiHistoryPoint[]>([]);
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, "summaries", "kpiHistory"),
+      (snap) => setPoints(snap.exists() ? ((snap.data() as KpiHistory).points ?? []) : []),
+      () => setPoints([])
+    );
+    return unsub;
+  }, []);
+  return { points };
+}
+
+export interface KpiDelta { abs: number; pct: number | null; dir: "up" | "down" | "flat"; sinceDate: string }
+
+/**
+ * kpiDelta(points, key, days) → variation de `key` entre la valeur courante et le point le plus
+ * proche d'il y a `days` jours (repli sur le plus ancien point disponible si l'historique est plus
+ * court). Renvoie null tant qu'il n'y a pas au moins deux points comparables — pas de fausse
+ * tendance. `sinceDate` sert au libellé (« depuis le … »).
+ */
+export function kpiDelta(points: KpiHistoryPoint[], key: keyof KpiHistoryPoint, days = 7): KpiDelta | null {
+  const usable = points
+    .filter((p) => typeof p[key] === "number")
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  if (usable.length < 2) return null;
+  const latest = usable[usable.length - 1];
+  const cur = latest[key] as number;
+  const target = new Date(new Date(latest.date + "T00:00:00Z").getTime() - days * 86400000);
+  const targetStr = target.toISOString().slice(0, 10);
+  const olderOrEqual = usable.filter((p) => p.date <= targetStr && p !== latest);
+  const ref = olderOrEqual.length ? olderOrEqual[olderOrEqual.length - 1] : usable[0];
+  if (ref === latest) return null;
+  const prev = ref[key] as number;
+  const abs = cur - prev;
+  const pct = prev !== 0 ? abs / Math.abs(prev) : null;
+  const dir: "up" | "down" | "flat" = abs > 0 ? "up" : abs < 0 ? "down" : "flat";
+  return { abs, pct, dir, sinceDate: ref.date };
+}
+
 export function useVeilleExecSummary(): { data: VeilleExecSummary | null; loading: boolean; error: Error | null } {
   const [data, setData] = useState<VeilleExecSummary | null>(null);
   const [loading, setLoading] = useState(true);

@@ -1,9 +1,47 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { T, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Badge } from "../../../design/ui";
 import { useIsExec } from "../../../lib/rbac";
 import { createScenario, useScenarios } from "../lib/execution";
 import { useFramework } from "../lib/frameworks";
+import { PUBLISHED_STATUSES, useIntelItems } from "../lib/intel";
+import { matchSignposts, triggeredCount, type SignpostMatch } from "../lib/signposts";
+
+/** Radar d'alerte des signes précurseurs (levier « waouh » n°6) : chaque signpost confronté aux
+ * signaux réels — déclenché (avec signal-preuve cliquable) ou encore à guetter. */
+function SignpostRadar({ matches }: { matches: SignpostMatch[] }) {
+  const navigate = useNavigate();
+  const { n, total } = triggeredCount(matches);
+  if (total === 0) return null;
+  const alert = n >= Math.ceil(total / 2) && n > 0;
+  return (
+    <div style={{ marginTop: 8, fontSize: 11.5 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+        <b style={{ color: alert ? T.clay : T.dim }}>{alert ? "⚠️ Rupture en approche —" : "Signes précurseurs :"}</b>
+        <Badge c={alert ? T.clay : T.faint}>{n}/{total} déclenché{n > 1 ? "s" : ""}</Badge>
+      </div>
+      <ul style={{ margin: "2px 0 0", paddingLeft: 16, listStyle: "none" }}>
+        {matches.map((m, j) => (
+          <li key={j} style={{ marginBottom: 3 }}>
+            <span style={{ color: m.triggered ? T.clay : T.faint, fontWeight: 700, marginRight: 6 }}>{m.triggered ? "●" : "○"}</span>
+            <span style={{ color: T.dim }}>{m.text}</span>
+            {m.items.map((it) => (
+              <button
+                key={it.id}
+                onClick={() => navigate(`/veille/fil?ent=${encodeURIComponent(it.ent || "")}`)}
+                title={it.title}
+                style={{ border: "none", background: T.clay + "22", color: T.clay, cursor: "pointer", fontSize: 10, padding: "1px 6px", borderRadius: 6, marginLeft: 6 }}
+              >
+                preuve ↗
+              </button>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 type ScenarioWorldAI = { title: string; probability: number; narrative: string; signposts: string[]; response: string };
 type ScenariosContent = { axisX?: string; axisY?: string; worlds?: ScenarioWorldAI[] };
@@ -12,6 +50,8 @@ type ScenariosContent = { axisX?: string; axisY?: string; worlds?: ScenarioWorld
  * rend le cadre actionnable (early-warning) au lieu d'inerte. L'exécutif adopte en créant un scénario. */
 function AiScenarioSuggestions() {
   const { data: fw } = useFramework<ScenariosContent>("scenarios");
+  const { items: rawItems } = useIntelItems();
+  const items = React.useMemo(() => rawItems.filter((it) => PUBLISHED_STATUSES.has(it.status ?? "new")), [rawItems]);
   const s = fw?.content;
   if (!s || !(s.worlds && s.worlds.length)) return null;
   return (
@@ -34,10 +74,7 @@ function AiScenarioSuggestions() {
             </div>
             {w.narrative && <div style={{ fontSize: 12, color: T.dim, marginTop: 6, lineHeight: 1.5 }}>{w.narrative}</div>}
             {w.signposts.length > 0 && (
-              <div style={{ marginTop: 8, fontSize: 11.5, color: T.dim }}>
-                <b style={{ color: T.clay }}>À guetter :</b>
-                <ul style={{ margin: "2px 0 0", paddingLeft: 16 }}>{w.signposts.map((sp, j) => <li key={j}>{sp}</li>)}</ul>
-              </div>
+              <SignpostRadar matches={matchSignposts(w.signposts, items)} />
             )}
             {w.response && (
               <div style={{ marginTop: 6, fontSize: 11.5, color: T.emerald }}>

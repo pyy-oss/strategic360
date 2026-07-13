@@ -17,10 +17,19 @@ import { useEffect, useState } from "react";
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, type FieldValue, type Timestamp } from "firebase/firestore";
 import { auth, db } from "../../../lib/firebase";
 
+/** Table de correspondance des citations [n] → signal source (levier « waouh » n°3). */
+export interface FrameworkSource {
+  n: number;
+  title: string;
+  id?: string;
+  ent?: string;
+}
+
 export interface FrameworkDoc<T = unknown> {
   key: string;
   content: T;
   version: number;
+  sources?: FrameworkSource[];
   updatedBy?: string;
   updatedAt?: Timestamp | FieldValue;
 }

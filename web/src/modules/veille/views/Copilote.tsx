@@ -26,6 +26,7 @@ import {
   type PlanCompteResult,
   type PlanActionResult,
   type RedactionResult,
+  type ContenuResult,
   type CopiloteChatMessage,
   type MeddicResult,
   type BriefResult,
@@ -51,6 +52,7 @@ const AGENT_TABS: { k: string; l: string; icon: string }[] = [
   { k: "planCompte", l: "Stratégie de compte", icon: "📋" },
   { k: "planAction", l: "Plan d'action 90 j", icon: "⚡" },
   { k: "redaction", l: "Rédaction", icon: "✍️" },
+  { k: "contenu", l: "Contenu marketing", icon: "📣" },
   { k: "chat", l: "Chat", icon: "💬" },
 ];
 
@@ -362,6 +364,7 @@ export function Copilote() {
       {tab === "planCompte" && <PlanCompteTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "planAction" && <PlanActionTab accountId={accountId} disabled={!accountId} canWrite={canWrite} accountName={account?.nom} />}
       {tab === "redaction" && <RedactionTab accountId={accountId} compte={account?.nom || ""} canWrite={canWrite} />}
+      {tab === "contenu" && <ContenuTab accountId={accountId} canWrite={canWrite} />}
       {tab === "chat" && <ChatTab accountId={accountId} canWrite={canWrite} />}
     </div>
   );
@@ -1374,6 +1377,49 @@ function RedactionTab({ accountId, compte, canWrite }: { accountId: string; comp
             </div>
             {v.objet && <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, marginTop: 8 }}>Objet : {v.objet}</div>}
             <div style={{ fontSize: 12.5, color: T.dim, whiteSpace: "pre-wrap", marginTop: 6, lineHeight: 1.55 }}>{v.corps}</div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/** Contenu marketing (levier « waouh » n°2) — angles de contenu 1:N nourris par la veille. Ne
+ * requiert PAS de compte (niveau marché) ; un compte sélectionné affine le secteur d'éclairage. */
+function ContenuTab({ accountId, canWrite }: { accountId: string; canWrite: boolean }) {
+  const { data, busy, err, done, run } = useAgent<ContenuResult>("contenu", accountId);
+  return (
+    <Card>
+      <Eyebrow color={T.plum}>Contenu marketing — 3 angles nourris par la veille</Eyebrow>
+      <div style={{ fontSize: 12, color: T.dim, marginTop: 6 }}>
+        Posts LinkedIn / tribunes positionnant Neurones, ancrés sur un signal de veille RÉEL et un différenciateur RÉEL.
+        {accountId ? " Le compte sélectionné affine le secteur." : " Sélectionnez un compte pour cibler un secteur, ou générez au niveau marché."}
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <GenButton busy={busy} disabled={!canWrite} onClick={() => run()} label="Générer des angles de contenu" />
+      </div>
+      <ReadOnlyNote show={!canWrite} />
+      <ErrLine err={err} />
+      <GenSkeleton show={busy} lines={3} />
+      <EmptyLine show={done && !busy && (data?.angles ?? []).length === 0} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+        {(data?.angles ?? []).map((a, i) => (
+          <div key={i} style={{ background: T.panel2, borderRadius: 10, padding: "12px 14px", borderLeft: `3px solid ${T.plum}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                <Badge c={a.format === "Tribune" ? T.gold : T.steel}>{a.format}</Badge>
+                {a.differenciateur && <Badge c={T.emerald}>{a.differenciateur}</Badge>}
+              </div>
+              <MsgActions objet={a.titre} corps={`${a.accroche}\n\n${a.corps}\n\n${a.cta}${a.hashtags?.length ? "\n\n" + a.hashtags.map((h) => (h.startsWith("#") ? h : "#" + h)).join(" ") : ""}`} />
+            </div>
+            {a.titre && <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 700, marginTop: 8 }}>{a.titre}</div>}
+            {a.accroche && <div style={{ fontSize: 12.5, color: T.ink, marginTop: 4, fontStyle: "italic" }}>{a.accroche}</div>}
+            <div style={{ fontSize: 12.5, color: T.dim, whiteSpace: "pre-wrap", marginTop: 6, lineHeight: 1.55 }}>{a.corps}</div>
+            {a.cta && <div style={{ fontSize: 12, color: T.plum, marginTop: 8 }}>→ {a.cta}</div>}
+            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+              {a.signalSource && <span style={{ fontSize: 10.5, color: T.faint }}>📡 {a.signalSource}</span>}
+              {(a.hashtags ?? []).map((h, j) => <span key={j} style={{ fontSize: 10.5, color: T.steel }}>{h.startsWith("#") ? h : "#" + h}</span>)}
+            </div>
           </div>
         ))}
       </div>
