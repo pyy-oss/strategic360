@@ -443,7 +443,13 @@ function Money({ label, value, accent }: { label: string; value: number; accent?
 
 /* -------- Ligne opportunité : montant + jauge de probabilité (met en avant ce qui est jouable) -------- */
 function DealRow({ nom, bu, etape, montant, probability, closingDate, dealRef }: { nom: string; bu?: string; etape: string; montant: number; probability?: number | null; closingDate?: string; dealRef?: string }) {
-  const p = typeof probability === "number" ? Math.max(0, Math.min(100, probability)) : null;
+  // Echelle canonique 0-100. nt360 stocke la probabilite en fraction 0-1 (0.5 = 50 %) : sans
+  // normalisation, « 0.5 » s'affichait « 0.5% ». Defensif ici aussi (docs deja stockes en 0-1, avant
+  // resync) : une valeur <= 1 est une fraction (x100), > 1 est deja un pourcentage. Borne 0-100.
+  const p =
+    typeof probability === "number" && Number.isFinite(probability)
+      ? Math.round(Math.max(0, Math.min(100, probability <= 1 ? probability * 100 : probability)))
+      : null;
   // Le libellé (fiche projet ou « Opportunité <offre> ») peut déjà contenir l'offre → on n'affiche le
   // BU en second que s'il n'y est pas déjà, pour éviter « Opportunité ICT · ICT ».
   const showBu = bu && !nom.toLowerCase().includes(bu.toLowerCase());
