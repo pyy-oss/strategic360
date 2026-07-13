@@ -174,6 +174,18 @@ service cloud.firestore {
       allow write: if request.auth != null && (exec() || role() == 'commercial_dir');
     }
 
+    // Contenu marketing (levier « waouh » n°2 — persistance & calendrier éditorial). Les angles de
+    // contenu générés par l'IA (Copilote > Contenu marketing) sont volatiles tant qu'on ne les
+    // enregistre pas : ici on les persiste en backlog éditorial (statut idée/planifié/publié, date
+    // de programmation). Même audience que l'add-on Copilote qui les produit : rôles commerciaux +
+    // exécutifs. `createdBy` imposé à l'appelant à la création ; chacun édite/supprime les siens,
+    // les exécutifs gardent la main sur tout (revue éditoriale).
+    match /marketingContent/{id} {
+      allow read: if commercial();
+      allow create: if commercial() && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if exec() || (commercial() && resource.data.createdBy == request.auth.uid);
+    }
+
     // — Config & sécurité —
     match /config/permissions {
       allow read: if request.auth != null;

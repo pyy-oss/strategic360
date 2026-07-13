@@ -8,6 +8,14 @@ import { useCan, useClaims } from "../../../lib/rbac";
 import { useAuthClaims } from "../../../lib/AuthProvider";
 import { createAction, useActions, actionPriority, ACTION_TERMINAL, type StrategicAction } from "../lib/execution";
 import {
+  useMarketingContent,
+  saveMarketingContent,
+  updateMarketingStatus,
+  deleteMarketingContent,
+  MARKETING_STATUS_LABEL,
+  type MarketingStatus,
+} from "../lib/marketing";
+import {
   useCopiloteAccounts,
   createCopiloteAccount,
   copiloteGenerate,
@@ -1388,41 +1396,125 @@ function RedactionTab({ accountId, compte, canWrite }: { accountId: string; comp
  * requiert PAS de compte (niveau marché) ; un compte sélectionné affine le secteur d'éclairage. */
 function ContenuTab({ accountId, canWrite }: { accountId: string; canWrite: boolean }) {
   const { data, busy, err, done, run } = useAgent<ContenuResult>("contenu", accountId);
+  const toast = useToast();
+  const [savedKeys, setSavedKeys] = useState<Record<number, boolean>>({});
+  // Enregistre un angle généré dans le backlog éditorial (persistance — levier « waouh » n°2).
+  const save = async (a: ContenuResult["angles"][number], i: number) => {
+    try {
+      await saveMarketingContent({
+        format: a.format, titre: a.titre, accroche: a.accroche, corps: a.corps, cta: a.cta,
+        hashtags: a.hashtags ?? [], differenciateur: a.differenciateur, signalSource: a.signalSource,
+        accountId: accountId || null,
+      });
+      setSavedKeys((s) => ({ ...s, [i]: true }));
+      toast.success("Contenu enregistré dans le calendrier éditorial.");
+    } catch {
+      toast.error("Échec de l'enregistrement.");
+    }
+  };
   return (
-    <Card>
-      <Eyebrow color={T.plum}>Contenu marketing — 3 angles nourris par la veille</Eyebrow>
-      <div style={{ fontSize: 12, color: T.dim, marginTop: 6 }}>
-        Posts LinkedIn / tribunes positionnant Neurones, ancrés sur un signal de veille RÉEL et un différenciateur RÉEL.
-        {accountId ? " Le compte sélectionné affine le secteur." : " Sélectionnez un compte pour cibler un secteur, ou générez au niveau marché."}
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <GenButton busy={busy} disabled={!canWrite} onClick={() => run()} label="Générer des angles de contenu" />
-      </div>
-      <ReadOnlyNote show={!canWrite} />
-      <ErrLine err={err} />
-      <GenSkeleton show={busy} lines={3} />
-      <EmptyLine show={done && !busy && (data?.angles ?? []).length === 0} />
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
-        {(data?.angles ?? []).map((a, i) => (
-          <div key={i} style={{ background: T.panel2, borderRadius: 10, padding: "12px 14px", borderLeft: `3px solid ${T.plum}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                <Badge c={a.format === "Tribune" ? T.gold : T.steel}>{a.format}</Badge>
-                {a.differenciateur && <Badge c={T.emerald}>{a.differenciateur}</Badge>}
+    <>
+      <Card>
+        <Eyebrow color={T.plum}>Contenu marketing — 3 angles nourris par la veille</Eyebrow>
+        <div style={{ fontSize: 12, color: T.dim, marginTop: 6 }}>
+          Posts LinkedIn / tribunes positionnant Neurones, ancrés sur un signal de veille RÉEL et un différenciateur RÉEL.
+          {accountId ? " Le compte sélectionné affine le secteur." : " Sélectionnez un compte pour cibler un secteur, ou générez au niveau marché."}
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <GenButton busy={busy} disabled={!canWrite} onClick={() => { setSavedKeys({}); run(); }} label="Générer des angles de contenu" />
+        </div>
+        <ReadOnlyNote show={!canWrite} />
+        <ErrLine err={err} />
+        <GenSkeleton show={busy} lines={3} />
+        <EmptyLine show={done && !busy && (data?.angles ?? []).length === 0} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+          {(data?.angles ?? []).map((a, i) => (
+            <div key={i} style={{ background: T.panel2, borderRadius: 10, padding: "12px 14px", borderLeft: `3px solid ${T.plum}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  <Badge c={a.format === "Tribune" ? T.gold : T.steel}>{a.format}</Badge>
+                  {a.differenciateur && <Badge c={T.emerald}>{a.differenciateur}</Badge>}
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  <button className="pill" onClick={() => save(a, i)} disabled={!canWrite || savedKeys[i]} title="Enregistrer dans le calendrier éditorial" style={{ fontSize: 11, padding: "3px 10px" }}>
+                    {savedKeys[i] ? "✓ Enregistré" : "💾 Enregistrer"}
+                  </button>
+                  <MsgActions objet={a.titre} corps={`${a.accroche}\n\n${a.corps}\n\n${a.cta}${a.hashtags?.length ? "\n\n" + a.hashtags.map((h) => (h.startsWith("#") ? h : "#" + h)).join(" ") : ""}`} />
+                </div>
               </div>
-              <MsgActions objet={a.titre} corps={`${a.accroche}\n\n${a.corps}\n\n${a.cta}${a.hashtags?.length ? "\n\n" + a.hashtags.map((h) => (h.startsWith("#") ? h : "#" + h)).join(" ") : ""}`} />
+              {a.titre && <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 700, marginTop: 8 }}>{a.titre}</div>}
+              {a.accroche && <div style={{ fontSize: 12.5, color: T.ink, marginTop: 4, fontStyle: "italic" }}>{a.accroche}</div>}
+              <div style={{ fontSize: 12.5, color: T.dim, whiteSpace: "pre-wrap", marginTop: 6, lineHeight: 1.55 }}>{a.corps}</div>
+              {a.cta && <div style={{ fontSize: 12, color: T.plum, marginTop: 8 }}>→ {a.cta}</div>}
+              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                {a.signalSource && <span style={{ fontSize: 10.5, color: T.faint }}>📡 {a.signalSource}</span>}
+                {(a.hashtags ?? []).map((h, j) => <span key={j} style={{ fontSize: 10.5, color: T.steel }}>{h.startsWith("#") ? h : "#" + h}</span>)}
+              </div>
             </div>
-            {a.titre && <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 700, marginTop: 8 }}>{a.titre}</div>}
-            {a.accroche && <div style={{ fontSize: 12.5, color: T.ink, marginTop: 4, fontStyle: "italic" }}>{a.accroche}</div>}
-            <div style={{ fontSize: 12.5, color: T.dim, whiteSpace: "pre-wrap", marginTop: 6, lineHeight: 1.55 }}>{a.corps}</div>
-            {a.cta && <div style={{ fontSize: 12, color: T.plum, marginTop: 8 }}>→ {a.cta}</div>}
-            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-              {a.signalSource && <span style={{ fontSize: 10.5, color: T.faint }}>📡 {a.signalSource}</span>}
-              {(a.hashtags ?? []).map((h, j) => <span key={j} style={{ fontSize: 10.5, color: T.steel }}>{h.startsWith("#") ? h : "#" + h}</span>)}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
+      </Card>
+      <MarketingCalendar canWrite={canWrite} />
+    </>
+  );
+}
+
+const MARKETING_STATUS_C: Record<MarketingStatus, string> = { idee: T.steel, planifie: T.gold, publie: T.emerald };
+const MARKETING_STATUS_ORDER: MarketingStatus[] = ["idee", "planifie", "publie"];
+
+/** Calendrier éditorial (persistance marketing — levier « waouh » n°2) : backlog des contenus
+ * enregistrés, avec cycle idée → planifié → publié, date de programmation et suppression. */
+function MarketingCalendar({ canWrite }: { canWrite: boolean }) {
+  const { items, loading } = useMarketingContent();
+  const toast = useToast();
+  if (loading && items.length === 0) return null;
+  const setStatus = async (id: string, status: MarketingStatus) => {
+    try { await updateMarketingStatus(id, status); } catch { toast.error("Échec de la mise à jour."); }
+  };
+  const setDate = async (id: string, status: MarketingStatus, date: string) => {
+    try { await updateMarketingStatus(id, date ? "planifie" : status, date || null); } catch { toast.error("Échec."); }
+  };
+  const remove = async (id: string) => {
+    try { await deleteMarketingContent(id); toast.success("Contenu supprimé."); } catch { toast.error("Échec de la suppression."); }
+  };
+  return (
+    <Card style={{ marginTop: 14 }}>
+      <Eyebrow color={T.plum}>Calendrier éditorial</Eyebrow>
+      <div style={{ fontSize: 12, color: T.dim, marginTop: 6 }}>
+        Backlog des contenus enregistrés — faites-les avancer idée → planifié → publié, programmez une date.
       </div>
+      {items.length === 0 ? (
+        <div style={{ fontSize: 12, color: T.faint, marginTop: 12 }}>Aucun contenu enregistré. Générez des angles ci-dessus puis « 💾 Enregistrer ».</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+          {items.map((m) => (
+            <div key={m.id} style={{ background: T.panel2, borderRadius: 10, padding: "10px 12px", borderLeft: `3px solid ${MARKETING_STATUS_C[m.status] ?? T.steel}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  <Badge c={m.format === "Tribune" ? T.gold : T.steel}>{m.format}</Badge>
+                  <Badge c={MARKETING_STATUS_C[m.status] ?? T.steel}>{MARKETING_STATUS_LABEL[m.status]}</Badge>
+                  {m.scheduledDate && <span style={{ fontSize: 10.5, color: T.faint }}>🗓️ {m.scheduledDate}</span>}
+                </div>
+                <MsgActions objet={m.titre} corps={`${m.accroche ?? ""}\n\n${m.corps}\n\n${m.cta ?? ""}${m.hashtags?.length ? "\n\n" + m.hashtags.map((h) => (h.startsWith("#") ? h : "#" + h)).join(" ") : ""}`} />
+              </div>
+              {m.titre && <div style={{ fontSize: 13, color: T.ink, fontWeight: 700, marginTop: 6 }}>{m.titre}</div>}
+              {m.accroche && <div style={{ fontSize: 12, color: T.dim, marginTop: 3, fontStyle: "italic" }}>{m.accroche}</div>}
+              {canWrite && (
+                <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  {MARKETING_STATUS_ORDER.map((s) => (
+                    <button key={s} className={m.status === s ? "pill on" : "pill"} onClick={() => setStatus(m.id, s)} style={{ fontSize: 10.5, padding: "2px 8px" }}>
+                      {MARKETING_STATUS_LABEL[s]}
+                    </button>
+                  ))}
+                  <input type="date" value={m.scheduledDate ?? ""} onChange={(e) => setDate(m.id, m.status, e.target.value)}
+                    style={{ fontSize: 11, padding: "2px 6px", background: T.panel, border: `1px solid ${T.line}`, borderRadius: 6, color: T.ink }} />
+                  <button className="pill" onClick={() => remove(m.id)} title="Supprimer" style={{ fontSize: 10.5, padding: "2px 8px", color: T.clay }}>Supprimer</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </Card>
   );
 }
