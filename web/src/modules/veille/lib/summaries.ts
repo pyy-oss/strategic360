@@ -12,7 +12,8 @@
  */
 import { useEffect, useState } from "react";
 import { doc, onSnapshot, type FieldValue, type Timestamp } from "firebase/firestore";
-import { db } from "../../../lib/firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "../../../lib/firebase";
 
 /* ---------------------------------------------------------------------------------------------
  * Types (BUILD_KIT.md §6)
@@ -176,8 +177,22 @@ export interface KpiHistoryPoint {
   winRateGlobal?: number | null;
   okrProgress?: number | null;
   threatsHighUnactioned?: number | null;
+  backfilled?: boolean; // point RECONSTRUIT depuis intelItems.createdAt (menaces/opps cumulés) — pas un vrai instantané figé le jour même.
 }
 export interface KpiHistory { points?: KpiHistoryPoint[]; updatedAt?: Timestamp | FieldValue }
+
+export interface BackfillKpiResult { ok: boolean; total: number; reconstructed: number; todaySnapshot: boolean }
+
+/**
+ * Reconstruit l'historique KPI (callable exec `backfillKpiHistory`) : au lancement, l'historique est
+ * vide → aucune tendance ↑/↓ avant plusieurs jours. Ce seed recrée honnêtement le cumul
+ * menaces/opportunités depuis les dates de création des signaux, puis fige le point du jour.
+ */
+export async function backfillKpiHistory(days?: number): Promise<BackfillKpiResult> {
+  const call = httpsCallable<{ days?: number }, BackfillKpiResult>(functions, "backfillKpiHistory", { timeout: 540_000 });
+  const { data } = await call(days ? { days } : {});
+  return data;
+}
 
 /** Historique des KPIs (summaries/kpiHistory, écrit par snapshotVeilleKpis) — exec-only en lecture. */
 export function useKpiHistory(): { points: KpiHistoryPoint[] } {

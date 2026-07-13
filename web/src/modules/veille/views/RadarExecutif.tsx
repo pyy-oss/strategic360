@@ -7,7 +7,8 @@ import { Toggle } from "../../../design/fields";
 import { useActions, useDecisions } from "../lib/execution";
 import { BUSINESS_SUBTYPES, PUBLISHED_STATUSES, useBizOpportunities, useIntelItems, useWatchlist } from "../lib/intel";
 import { isPastDue } from "../lib/freshness";
-import { useVeilleExecSummary, useAiHealth, useKpiHistory, kpiDelta, type KpiDelta } from "../lib/summaries";
+import { useVeilleExecSummary, useAiHealth, useKpiHistory, kpiDelta, backfillKpiHistory, type KpiDelta } from "../lib/summaries";
+import { useIsExec } from "../../../lib/rbac";
 import { computeVeilleAttribution } from "../lib/attribution";
 import { useLatestBriefing } from "../lib/briefings";
 
@@ -166,6 +167,22 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   const { data: exec } = useVeilleExecSummary();
   const { data: aiHealth } = useAiHealth();
   const { points: kpiHistory } = useKpiHistory();
+  const isExec = useIsExec();
+  // Seed d'historique (levier « waouh » n°1) : au lancement l'historique est trop court pour une
+  // tendance (kpiDelta exige ≥ 2 points). On propose aux exec de le reconstruire depuis les dates
+  // de création des signaux (cumul menaces/opportunités) — sinon aucune flèche avant plusieurs jours.
+  const [seedBusy, setSeedBusy] = React.useState(false);
+  const [seedMsg, setSeedMsg] = React.useState<string | null>(null);
+  const historyThin = kpiHistory.length < 2;
+  const runSeed = async () => {
+    setSeedBusy(true); setSeedMsg(null);
+    try {
+      const r = await backfillKpiHistory();
+      setSeedMsg(`Historique reconstruit : ${r.total} point(s), tendances menaces/opportunités disponibles.`);
+    } catch (e) {
+      setSeedMsg(e instanceof Error ? e.message : "Échec de la reconstruction.");
+    } finally { setSeedBusy(false); }
+  };
   // Bandeau « Décision du jour » : ingrédients déjà produits ailleurs, fusionnés ici.
   const { opportunities } = useBizOpportunities();
   const { actions } = useActions();
@@ -283,6 +300,15 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
           />
         </KpiCard>
       </div>
+      {isExec && historyThin && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12, color: T.dim, background: T.panel, border: `1px dashed ${T.line}`, borderRadius: 8, padding: "8px 12px", marginBottom: 14 }}>
+          <span>📈 Les flèches de tendance (semaine sur semaine) apparaissent dès que l'historique compte au moins 2 jours.</span>
+          <button className="pill" onClick={runSeed} disabled={seedBusy} style={{ fontSize: 11, padding: "3px 10px" }}>
+            {seedBusy ? "Reconstruction…" : "Reconstituer l'historique"}
+          </button>
+          {seedMsg && <span style={{ color: T.emerald }}>{seedMsg}</span>}
+        </div>
+      )}
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 14, marginBottom: 14 }}>
         <Card>
           <Eyebrow color={T.gold}>Top signaux prioritaires</Eyebrow>

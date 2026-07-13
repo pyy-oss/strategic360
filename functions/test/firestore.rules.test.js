@@ -249,3 +249,44 @@ describe("salesTargets — managers only", () => {
     await assertFails(db.doc("salesTargets/current").set({ targets: { "a@x.com": 1000 } }));
   });
 });
+
+// Levier « waouh » n°2 — persistance marketing : lecture/écriture pour les rôles commerciaux +
+// exécutifs (même audience que l'add-on Copilote). createdBy imposé ; chacun édite/supprime les
+// siens, les exec gardent la main sur tout.
+describe("marketingContent — commercial/exec, createdBy imposé", () => {
+  const COMMERCIAL = ["commercial", "commercial_dir", "direction", "strategie", "innovation"];
+  const NON_COMMERCIAL = ["pmo", "achats", "lecture"];
+
+  it.each(COMMERCIAL)("read allowed for role=%s", async (role) => {
+    await assertSucceeds(ctxFor(role).firestore().doc("marketingContent/m1").get());
+  });
+  it.each(NON_COMMERCIAL)("read rejected for role=%s", async (role) => {
+    await assertFails(ctxFor(role).firestore().doc("marketingContent/m1").get());
+  });
+
+  it.each(COMMERCIAL)("create allowed for role=%s with own createdBy", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertSucceeds(db.doc(`marketingContent/c-${role}`).set({ titre: "T", corps: "x", createdBy: `user-${role}` }));
+  });
+  it("create rejected when createdBy is not the caller", async () => {
+    const db = ctxFor("commercial").firestore();
+    await assertFails(db.doc("marketingContent/spoof").set({ titre: "T", corps: "x", createdBy: "someone-else" }));
+  });
+  it.each(NON_COMMERCIAL)("create rejected for role=%s", async (role) => {
+    const db = ctxFor(role).firestore();
+    await assertFails(db.doc(`marketingContent/c-${role}`).set({ titre: "T", corps: "x", createdBy: `user-${role}` }));
+  });
+
+  it("owner can update/delete their own; a peer commercial cannot", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc("marketingContent/owned").set({ titre: "T", corps: "x", status: "idee", createdBy: "user-commercial" });
+    });
+    const owner = ctxFor("commercial").firestore(); // uid = user-commercial
+    await assertSucceeds(owner.doc("marketingContent/owned").update({ status: "planifie" }));
+    const peer = testEnv.authenticatedContext("user-other", { role: "commercial" }).firestore();
+    await assertFails(peer.doc("marketingContent/owned").update({ status: "publie" }));
+    await assertFails(peer.doc("marketingContent/owned").delete());
+    // Un exécutif garde la main sur tout (revue éditoriale).
+    await assertSucceeds(ctxFor("direction").firestore().doc("marketingContent/owned").update({ status: "publie" }));
+  });
+});

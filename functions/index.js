@@ -44,6 +44,7 @@ const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefin
 const { buildBriefingPdf } = require("./domain/pdf");
 const { generateJson, DEFAULT_MODEL } = require("./domain/vertex");
 const { AGENTS: COPILOTE_AGENTS, buildChatPrompt, parseChatResponse } = require("./domain/copilote");
+const { DEFAULT_BACKFILL_DAYS, dayRangeUTC, computeKpiBackfillPoints, mergeHistoryPoints } = require("./domain/kpiBackfill");
 const PDFDocument = require("pdfkit");
 const { v1: firestoreAdminV1 } = require("@google-cloud/firestore");
 
@@ -1704,41 +1705,113 @@ async function computeVeilleExecSummary(db) {
  * jour est remplacé (pas de doublon si le cron rejoue). Best-effort : n'échoue jamais bruyamment.
  */
 const KPI_HISTORY_CAP = 90;
+
+/** buildTodayKpiPoint(execData, day) → point AUTHENTIQUE (backfilled:false) du jour depuis
+ * summaries/veille_exec. PUR (pas d'I/O). Partagé par le cron et le callable de backfill. */
+function buildTodayKpiPoint(s, day) {
+  const bk = (s && s.boardKpis) || {};
+  return {
+    date: day,
+    pipelineInfluenced: typeof s.pipelineInfluenced === "number" ? s.pipelineInfluenced : null,
+    menacesTotal: bk.menacesTotal ?? null,
+    menacesTraitees: bk.menacesTraitees ?? null,
+    opportunites: bk.opportunites ?? null,
+    winRateGlobal: bk.winRateGlobal ?? null,
+    okrProgress: typeof s.okrProgress === "number" ? s.okrProgress : null,
+    threatsHighUnactioned: s.threatsHighUnactionedCount ?? null,
+    backfilled: false,
+  };
+}
+
+/** writeTodayKpiSnapshot(db) → fige le point du jour dans summaries/kpiHistory (idempotent : un
+ * point du même jour est remplacé). Renvoie le point écrit, ou null si veille_exec est absent.
+ * Partagé par snapshotVeilleKpis (cron) et backfillKpiHistory (callable). */
+async function writeTodayKpiSnapshot(db) {
+  const execSnap = await db.doc("summaries/veille_exec").get();
+  if (!execSnap.exists) return null;
+  const day = new Date().toISOString().slice(0, 10);
+  const point = buildTodayKpiPoint(execSnap.data() || {}, day);
+  const ref = db.doc("summaries/kpiHistory");
+  await db.runTransaction(async (tx) => {
+    const cur = await tx.get(ref);
+    const points = (cur.exists && Array.isArray(cur.data().points) ? cur.data().points : []).filter((p) => p && p.date !== day);
+    points.push(point);
+    points.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    tx.set(ref, { points: points.slice(-KPI_HISTORY_CAP), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  });
+  return point;
+}
+
 exports.snapshotVeilleKpis = onSchedule(
   { schedule: "7 1 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1" },
   async () => {
     try {
       const db = firestoreDb();
-      const execSnap = await db.doc("summaries/veille_exec").get();
-      if (!execSnap.exists) { logger.info("snapshotVeilleKpis: summaries/veille_exec absent — rien à figer"); return; }
-      const s = execSnap.data() || {};
-      const bk = s.boardKpis || {};
-      const day = new Date().toISOString().slice(0, 10);
-      const point = {
-        date: day,
-        pipelineInfluenced: typeof s.pipelineInfluenced === "number" ? s.pipelineInfluenced : null,
-        menacesTotal: bk.menacesTotal ?? null,
-        menacesTraitees: bk.menacesTraitees ?? null,
-        opportunites: bk.opportunites ?? null,
-        winRateGlobal: bk.winRateGlobal ?? null,
-        okrProgress: typeof s.okrProgress === "number" ? s.okrProgress : null,
-        threatsHighUnactioned: s.threatsHighUnactionedCount ?? null,
-      };
-      const ref = db.doc("summaries/kpiHistory");
-      await db.runTransaction(async (tx) => {
-        const cur = await tx.get(ref);
-        const points = (cur.exists && Array.isArray(cur.data().points) ? cur.data().points : []).filter((p) => p && p.date !== day);
-        points.push(point);
-        points.sort((a, b) => String(a.date).localeCompare(String(b.date)));
-        const trimmed = points.slice(-KPI_HISTORY_CAP);
-        tx.set(ref, { points: trimmed, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-      });
-      logger.info(`snapshotVeilleKpis: point ${day} figé (pipeline=${point.pipelineInfluenced}).`);
+      const point = await writeTodayKpiSnapshot(db);
+      if (!point) { logger.info("snapshotVeilleKpis: summaries/veille_exec absent — rien à figer"); return; }
+      logger.info(`snapshotVeilleKpis: point ${point.date} figé (pipeline=${point.pipelineInfluenced}).`);
     } catch (err) {
       logger.error(`snapshotVeilleKpis: FAILED — ${err.message}`, { err });
     }
   }
 );
+
+/** toMillis(v) → ms epoch depuis un champ Firestore Timestamp | Date | number, sinon null. */
+function toMillis(v) {
+  if (v == null) return null;
+  if (typeof v.toMillis === "function") return v.toMillis();
+  if (typeof v._seconds === "number") return v._seconds * 1000;
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  return null;
+}
+
+/**
+ * backfillKpiHistory — SEED de l'historique KPI (levier « waouh » n°1). Exec-only, sur demande.
+ * Reconstruit HONNÊTEMENT les métriques dérivables de la donnée immuable `intelItems.createdAt`
+ * (cumul menaces/opportunités par jour, marqué backfilled:true) sur `days` jours, SANS jamais
+ * écraser un vrai snapshot déjà figé, puis capture le point authentique du jour. Idempotent :
+ * rejouable sans doublon (un point reconstruit remplace un précédent reconstruit ; un vrai snapshot
+ * est préservé). Les métriques à état mutable (traitées, high non traitées, win-rate, OKR, pipeline)
+ * restent null sur les points reconstruits — ne PAS inventer d'historique.
+ */
+exports.backfillKpiHistory = onCall(async (request) => {
+  requireExecCaller(request, "reconstruire l'historique des KPIs");
+  const db = firestoreDb();
+  const days = Math.min(Math.max(Number(request.data?.days) || DEFAULT_BACKFILL_DAYS, 1), KPI_HISTORY_CAP);
+
+  const snap = await db.collection("intelItems").get();
+  const items = snap.docs.map((d) => {
+    const it = d.data() || {};
+    return {
+      createdMs: toMillis(it.createdAt),
+      stance: it.stance,
+      published: PUBLISHED_STATUSES.has(it.status || "new"),
+    };
+  });
+
+  const today = new Date().toISOString().slice(0, 10);
+  const backfill = computeKpiBackfillPoints({ items, days: dayRangeUTC(today, days) });
+
+  const ref = db.doc("summaries/kpiHistory");
+  const result = await db.runTransaction(async (tx) => {
+    const cur = await tx.get(ref);
+    const existing = cur.exists && Array.isArray(cur.data().points) ? cur.data().points : [];
+    // Fusion honnête (jamais d'écrasement d'un vrai snapshot), puis point authentique du jour.
+    let merged = mergeHistoryPoints(existing, backfill, KPI_HISTORY_CAP);
+    const execSnap = await tx.get(db.doc("summaries/veille_exec"));
+    let todayPoint = null;
+    if (execSnap.exists) {
+      todayPoint = buildTodayKpiPoint(execSnap.data() || {}, today);
+      merged = mergeHistoryPoints(merged.filter((p) => p.date !== today), [todayPoint], KPI_HISTORY_CAP);
+    }
+    tx.set(ref, { points: merged, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    return { total: merged.length, reconstructed: backfill.length, todaySnapshot: !!todayPoint };
+  });
+
+  logger.info(`backfillKpiHistory: ${result.reconstructed} points reconstruits, historique = ${result.total} points.`);
+  return { ok: true, ...result };
+});
 
 /**
  * aggregateVeilleExec — planifié (toutes les 60 min)
