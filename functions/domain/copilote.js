@@ -340,6 +340,17 @@ function roleOf(c) {
 }
 
 /**
+ * differenciateursOf(c) — différenciateurs de marque à injecter dans la CVP / les angles marketing :
+ * ceux du PROFIL CLIENT (`ctx.differenciateurs`, produits par l'onboarding depuis le site du client)
+ * s'ils sont fournis, sinon le défaut Neurones (`NT_DIFFERENCIATEURS`). MÊME patron que roleOf —
+ * rend les générateurs tenant-agnostiques (un client onboardé s'appuie sur SES différenciateurs, plus
+ * sur ceux de Neurones codés en dur). Non-régression : sans surcharge, identique pour Neurones.
+ */
+function differenciateursOf(c) {
+  return c && typeof c.differenciateurs === "string" && c.differenciateurs.trim() ? c.differenciateurs : NT_DIFFERENCIATEURS;
+}
+
+/**
  * buildSystemRole(p) — GÉNÈRE un rôle système à partir d'un profil client (companyName/legalName/
  * sector/geographies/homonyms). Utilisé par l'onboarding / l'auteur d'une config `config/profile`
  * pour produire `profile.systemRole`. PUR. (Ne reproduit pas NT_ROLE mot pour mot : NT garde son
@@ -446,14 +457,14 @@ ${factBase(c)}
 ${valueModelBlock(c)}
 Quand tu proposes d'ouvrir une offre, CHIFFRE-la au panier de référence réel ci-dessus (jamais un montant inventé ; « à chiffrer » si absent).
 
-Différenciateurs NT mobilisables (source unique — à relier chacun à UN enjeu/whitespace/deal NOMMÉ de ce compte, jamais en vrac ; Neurones Academy est un levier de cross-sell/ancrage à ne pas oublier) :
-${NT_DIFFERENCIATEURS}.
+Différenciateurs mobilisables (source unique — à relier chacun à UN enjeu/whitespace/deal NOMMÉ de ce compte, jamais en vrac) :
+${differenciateursOf(c)}.
 ADAPTATION AU COMPTE (impératif — anti-fixation) : choisis les différenciateurs qui répondent au SECTEUR
 et au besoin RÉEL de CE compte, étayés par ses faits/signaux/whitespace. NE mets PAS en avant par défaut
-un même partenaire ou produit (ex. une solution PAM / WALLIX) si l'enjeu du compte ne l'appelle pas
-explicitement : une expertise éditeur n'a sa place que si un besoin nommé la justifie. Varie les angles
-selon les comptes ; à défaut de besoin technique nommé, appuie-toi sur les différenciateurs transverses
-(proximité/souveraineté, modèle managé OPEX, Neurones Academy, références, proximité régulateurs).
+un même partenaire ou produit mono-éditeur si l'enjeu du compte ne l'appelle pas explicitement : une
+expertise éditeur n'a sa place que si un besoin nommé la justifie. Varie les angles selon les comptes ;
+à défaut de besoin technique nommé, appuie-toi sur les différenciateurs transverses (proximité,
+souveraineté de la donnée, modèle managé/récurrent, formation certifiante, références, proximité régulateurs).
 ANGLE MÉTIER (lentille innovation) : quand le secteur du compte et son whitespace/ses signaux le permettent, formule la valeur au niveau de la TRANSFORMATION MÉTIER du client (data/IA, RPA, open banking/mobile money & fintech, e-gov/GovTech, IoT/edge, verticaux insurtech/agritech…) et positionne cloud/souveraineté/cybersécurité comme ENABLERS, pas comme finalité — sans inventer de besoin non étayé par les faits.
 Preuves / références NT : ${list(c.preuves)}.${pestel ? `\nAngle de marché (à n'utiliser QUE s'il éclaire un besoin concret de ce compte) : ${pestel}` : ""}
 
@@ -858,8 +869,8 @@ promesses non étayées, chiffres inventés.
 Secteur d'éclairage : ${coerceStr(c.secteur, "IT/cyber/cloud, tous secteurs")}.
 Signaux de veille (matière — n'invente aucune actualité au-delà de cette liste) :
 ${marketSignalsBlock(c)}
-Différenciateurs NT mobilisables (relier chaque angle à UN d'entre eux) :
-${NT_DIFFERENCIATEURS}.
+Différenciateurs mobilisables (relier chaque angle à UN d'entre eux) :
+${differenciateursOf(c)}.
 ${pestel ? `Toile de fond marché (optionnel) : ${pestel}.` : ""}
 
 Réponds UNIQUEMENT avec un objet JSON valide :

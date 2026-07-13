@@ -2767,6 +2767,10 @@ async function assembleCopiloteContext(db, accountId) {
     // Rôle système du profil client (Phase 0 produit) : injecté dans les prompts copilote via roleOf(c).
     // Absent/défaut → NT_ROLE (comportement identique pour Neurones).
     systemRole: clientProfile.profile && clientProfile.profile.systemRole,
+    // Différenciateurs de marque du profil client (onboarding) : injectés dans la CVP / les angles
+    // marketing via differenciateursOf(c). Absent/défaut → NT_DIFFERENCIATEURS (identique pour Neurones).
+    // Rend les générateurs client-facing tenant-agnostiques (fin du contexte Neurones codé en dur).
+    differenciateurs: clientProfile.profile && clientProfile.profile.differentiators,
     account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte, eventOffers, battlecards, battlecardsMarket, winStats, valueModel, today: new Date().toISOString().slice(0, 10) },
   };
 }
