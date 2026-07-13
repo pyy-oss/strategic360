@@ -271,6 +271,18 @@ describe("Copilote — CVP : différenciateurs source unique + angle métier (au
     expect(p).toContain("anti-fixation");
     expect(p).toMatch(/ne mets pas en avant par défaut/i);
   });
+
+  it("buildCvpPrompt est TENANT-AGNOSTIQUE : un profil client fournit SES différenciateurs (fin du contexte NT en dur)", async () => {
+    const { buildCvpPrompt } = await import("../domain/copilote.js");
+    // Client onboardé avec ses propres différenciateurs → ils remplacent ceux de Neurones.
+    const p = buildCvpPrompt({ compte: "ACME", secteur: "Retail", differenciateurs: "réseau logistique panafricain ; plateforme e-commerce propriétaire ; label RSE" });
+    expect(p).toContain("réseau logistique panafricain");
+    expect(p).toContain("plateforme e-commerce propriétaire");
+    expect(p).not.toContain("WALLIX"); // plus de différenciateur Neurones codé en dur
+    // Sans surcharge : repli sur les différenciateurs Neurones (non-régression).
+    const pNt = buildCvpPrompt({ compte: "SGCI" });
+    expect(pNt).toContain("WALLIX Premier");
+  });
 });
 
 describe("Copilote — profondeur : données réelles branchées + nouveaux agents (audit 2026-07)", () => {
