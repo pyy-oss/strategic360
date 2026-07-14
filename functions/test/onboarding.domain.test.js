@@ -194,4 +194,22 @@ describe("onboarding — buildConfigDocsFromDraft (mapping P4, pur)", () => {
     expect(buildConfigDocsFromDraft({ profile: {}, ecosystem: {}, plan: {} })).toBeNull();
     expect(buildConfigDocsFromDraft(null)).toBeNull();
   });
+
+  it("génère profileDoc.systemRole depuis le profil client (audit multi-tenant B1) — aucune trace Neurones", () => {
+    const out = buildConfigDocsFromDraft(draft);
+    expect(typeof out.profileDoc.systemRole).toBe("string");
+    expect(out.profileDoc.systemRole).toContain("ACME Legal");
+    expect(out.profileDoc.systemRole).not.toContain("Neurones");
+  });
+
+  it("ne réécrit pas un systemRole déjà fourni (édition manuelle préservée)", () => {
+    const d = { ...draft, profile: { ...draft.profile, systemRole: "Rôle sur mesure édité à la main." } };
+    expect(buildConfigDocsFromDraft(d).profileDoc.systemRole).toBe("Rôle sur mesure édité à la main.");
+  });
+
+  it("écrit contextMarkers pour NEUTRALISER le défaut Neurones (C2) : CONCURRENTS si concurrents, sinon []", () => {
+    expect(buildConfigDocsFromDraft(draft).taxonomyDoc.contextMarkers).toEqual(["CONCURRENTS"]);
+    const sansConc = { ...draft, ecosystem: { ...draft.ecosystem, entities: [{ name: "Client X", type: "client" }] } };
+    expect(buildConfigDocsFromDraft(sansConc).taxonomyDoc.contextMarkers).toEqual([]);
+  });
 });

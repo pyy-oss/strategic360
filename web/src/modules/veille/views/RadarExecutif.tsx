@@ -165,6 +165,17 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   // compteur « signaux actifs ».
   // Porte de qualité : le radar exécutif ne compte que les signaux PUBLIÉS (exclut pending/rejected/archived).
   const items = React.useMemo(() => rawItems.filter((s) => PUBLISHED_STATUSES.has(s.status ?? "new")), [rawItems]);
+  // Nombre de signaux PUBLIÉS rattachés à chaque entité de la watchlist (via le champ `ent`, la même
+  // clé que le lien « Voir les signaux »). Clé normalisée (trim + minuscule) pour être robuste à la casse.
+  const signalCountByEnt = React.useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of items) {
+      const e = (s.ent ?? "").trim().toLowerCase();
+      if (!e) continue;
+      m.set(e, (m.get(e) ?? 0) + 1);
+    }
+    return m;
+  }, [items]);
   const { data: exec } = useVeilleExecSummary();
   const { data: aiHealth } = useAiHealth();
   const { points: kpiHistory } = useKpiHistory();
@@ -432,7 +443,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
           ))}
         </div>
       </Card>
-      <WatchlistPanel entries={watchlist} loading={watchLoading} />
+      <WatchlistPanel entries={watchlist} loading={watchLoading} signalCounts={signalCountByEnt} />
     </div>
   );
 }
@@ -447,7 +458,7 @@ const prioRank = (p: string) => (p === "Haute" ? 0 : p === "Moyenne" ? 1 : 2);
  * par TYPE (concurrents, régulateurs, clients…), et grille dense de puces compactes où la priorité
  * est portée par la barre de gauche colorée (plus de badge répété par ligne).
  */
-function WatchlistPanel({ entries, loading }: { entries: import("../lib/intel").IntelWatchlistEntry[]; loading: boolean }) {
+function WatchlistPanel({ entries, loading, signalCounts }: { entries: import("../lib/intel").IntelWatchlistEntry[]; loading: boolean; signalCounts: Map<string, number> }) {
   const navigate = useNavigate();
   const [q, setQ] = React.useState("");
   const [prio, setPrio] = React.useState("all");
@@ -520,11 +531,13 @@ function WatchlistPanel({ entries, loading }: { entries: import("../lib/intel").
                 <Badge c={T.faint}>{list.length}</Badge>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 8 }}>
-                {list.map((w) => (
+                {list.map((w) => {
+                  const nSignals = signalCounts.get(w.name.trim().toLowerCase()) ?? 0;
+                  return (
                   <button
                     key={w.id}
                     onClick={() => navigate(`/veille/fil?ent=${encodeURIComponent(w.name)}`)}
-                    title={`Voir les signaux de « ${w.name} » · ${w.priority}${w.geo ? ` · ${w.geo}` : ""}`}
+                    title={`${nSignals} signal${nSignals > 1 ? "aux" : ""} rattaché${nSignals > 1 ? "s" : ""} — voir les signaux de « ${w.name} » · ${w.priority}${w.geo ? ` · ${w.geo}` : ""}`}
                     style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, padding: "8px 11px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${prioColor(w.priority)}`, opacity: w.active ? 1 : 0.55, border: "none", cursor: "pointer", textAlign: "left", width: "100%" }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -535,8 +548,15 @@ function WatchlistPanel({ entries, loading }: { entries: import("../lib/intel").
                         {!w.active ? " · inactive" : ""}
                       </div>
                     </div>
+                    {/* Compteur de signaux rattachés (champ `ent`) — 0 grisé, >0 en accent plum. */}
+                    <span
+                      style={{ flexShrink: 0, minWidth: 22, textAlign: "center", fontSize: 11, fontWeight: 700, color: nSignals > 0 ? T.plum : T.faint, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 999, padding: "2px 7px" }}
+                    >
+                      {nSignals}
+                    </span>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}

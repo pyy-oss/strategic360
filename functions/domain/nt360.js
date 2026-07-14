@@ -61,6 +61,13 @@ function num(v) {
  * en 0-100 (barre DealRow, seuil « point mort » < 20). Heuristique robuste aux deux echelles : une
  * valeur <= 1 est une fraction (x100), une valeur > 1 est deja un pourcentage (laissee telle quelle).
  * Bornee 0-100.
+ *
+ * CONTRAT / LIMITE (audit integral 2026-07, m23) : le point d'ambiguite est n === 1. La source nt360
+ * etant CONTRACTUELLEMENT en fraction 0-1 (cf. mapDeals), EXACTEMENT 1 est TOUJOURS traite comme
+ * 100 % (deal quasi signe) — c'est le comportement VOULU et teste. Une source qui emettrait la
+ * probabilite deja en pourcentage entier « 1 » (= 1 %) serait donc mal lue : ne PAS reutiliser cette
+ * heuristique sur une source dont l'echelle n'est pas garantie fractionnaire ; gater alors sur l'unite
+ * connue du champ source plutot que sur la magnitude.
  */
 function normalizePct(v) {
   const n = Number(v);

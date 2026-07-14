@@ -33,6 +33,10 @@ const TRENDS = ["↑", "→", "↓"];
 // (audit 2026-07): domain/companyContext.js — re-exported below for backward compatibility with
 // existing consumers of `require("./enrich").COMPANY_CONTEXT`.
 const { COMPANY_CONTEXT } = require("./companyContext");
+// Validateur de date calendaire RÉELLE (rejette 2024-13-45 / 2024-02-30) — source unique
+// partagée avec classify.js (audit 2026-07, m11 étendu aux battlecards/opportunités). Pas de cycle :
+// classify.js ne dépend pas d'enrich.js.
+const { isValidCalendarDate } = require("./classify");
 
 const VALID_HORIZONS = ["imminent", "court", "moyen", "horizon"];
 const VALID_PROBABILITIES = ["high", "medium", "low"];
@@ -278,6 +282,18 @@ function coerceStringArray(value) {
 }
 
 /**
+ * coerceDeclarativeDeadline(v) — normalise une échéance déclarative libre. Accepte le texte tel quel
+ * ("juillet 2026", "T2 2026") mais rejette (→ null) une valeur d'ALLURE ISO (YYYY-MM-DD) qui n'est
+ * PAS une date calendaire réelle (2024-02-30), pour ne jamais afficher une échéance fictive. PUR.
+ */
+function coerceDeclarativeDeadline(v) {
+  if (typeof v !== "string" || !v.trim()) return null;
+  const s = v.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s) && !isValidCalendarDate(s)) return null;
+  return s;
+}
+
+/**
  * Validates/coerces the SWOT+PESTEL JSON response. Guarantees: exactly the 4 SWOT keys (missing
  * quadrant → []), arrays of non-empty strings; `pestel.factors` entries only carry valid factor
  * names, `imp` clamped to [0,1], `tr` coerced to ↑/→/↓ (default "→"), `d` a string; invalid
@@ -351,11 +367,11 @@ Consignes impératives :
 - Entre 5 et 12 blips, chacun distinct.
 - Chaque blip doit être justifié par un signal fourni (rationale citant son numéro) ou par le
   contexte entreprise ; n'invente pas une technologie qu'aucun signal n'évoque.
-- "ring" reflète la posture GO-TO-MARKET de NT en tant qu'INTÉGRATEUR (pas l'adoption IT interne) :
+- "ring" reflète la posture GO-TO-MARKET de l'entreprise en tant qu'INTÉGRATEUR (pas l'adoption IT interne) :
   adopter = POUSSER commercialement (offre mûre, à vendre activement aux clients) ;
   essayer = PILOTER (monter un POC/pilote client, offre en amorçage) ;
   evaluer = QUALIFIER (surveiller le marché, cadrer la demande avant d'investir) ;
-  suspendre = ÉVITER (hors trajectoire ou non rentable en zone UEMOA).
+  suspendre = ÉVITER (hors trajectoire ou non rentable sur ses marchés).
 
 VISION ÉLARGIE DE L'INNOVATION (impératif — ne PAS réduire la tech à cyber+cloud) : l'innovation
 qui crée de la DEMANDE chez les clients de NT dépasse largement l'infrastructure. Couvre les forces
@@ -488,8 +504,10 @@ function parseBattlecardMovesResponse(raw) {
     const competitor = typeof entry.competitor === "string" ? entry.competitor.trim() : "";
     const move = typeof entry.move === "string" ? entry.move.trim() : "";
     if (!competitor || !move) continue;
+    // Date calendaire RÉELLE exigée (audit 2026-07) : une date impossible (2024-02-30) ne doit pas
+    // s'afficher comme date d'un mouvement concurrent — repli sur aujourd'hui.
     const date =
-      typeof entry.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry.date.trim())
+      typeof entry.date === "string" && isValidCalendarDate(entry.date)
         ? entry.date.trim()
         : today;
     moves.push({ competitor, move, date });
@@ -510,7 +528,10 @@ function parseBattlecardMovesResponse(raw) {
  * @param {Array<object>} items Lightweight signals from `pickSignalsForEnrichment`.
  * @returns {string}
  */
-function buildOpportunitiesPrompt(items, companyContext = COMPANY_CONTEXT) {
+function buildOpportunitiesPrompt(items, companyContext = COMPANY_CONTEXT, businessUnits) {
+  // Business units du profil client (audit multi-tenant 2026-07, C5) — défaut Neurones ICT/FORMATION.
+  const buList = Array.isArray(businessUnits) && businessUnits.length ? businessUnits.filter((b) => typeof b === "string" && b.trim()) : VALID_OPP_BUS;
+  const buEnum = buList.map((b) => `"${b}"`).join(" | ");
   return `Tu es un directeur du développement commercial travaillant pour l'entreprise suivante :
 ${companyContext}
 
@@ -523,10 +544,10 @@ texte hors JSON) respectant STRICTEMENT ce schéma :
 {
   "opportunities": [
     {
-      "name": string,               // ex: "Audit conformité SI AMF-UMOA — BRVM"
+      "name": string,               // ex: "Audit de conformité réglementaire — grand compte du secteur"
       "client": string,             // compte cible nommé
-      "bu": "ICT" | "FORMATION",
-      "offering": string,           // offre NT, TOUS domaines (pas seulement cyber) : ex "scoring crédit IA", "plateforme data/BI", "intégration open banking/API", "IoT logistique", "SOC managé", "refresh réseau", "Academy — parcours certifiant"
+      "bu": ${buEnum},
+      "offering": string,           // offre de l'entreprise, TOUS domaines (pas seulement cyber) : ex "scoring crédit IA", "plateforme data/BI", "intégration open banking/API", "IoT logistique", "SOC managé", "refresh réseau", "parcours de formation certifiant"
       "estAmount": string | null,   // UNIQUEMENT si un chiffre figure dans un signal
       "deadline": string | null,
       "horizon": "imminent" | "court" | "moyen" | "horizon",
@@ -568,9 +589,12 @@ Réponds avec le JSON uniquement.`;
  * @param {unknown} raw
  * @returns {{opportunities: Array<object>} | null}
  */
-function parseOpportunitiesResponse(raw) {
+function parseOpportunitiesResponse(raw, businessUnits) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const oppsRaw = Array.isArray(raw.opportunities) ? raw.opportunities : [];
+  // BU autorisées : celles du profil client (audit multi-tenant 2026-07, C5), défaut Neurones. La
+  // valeur par défaut d'une BU non reconnue est la 1re de la liste.
+  const buList = Array.isArray(businessUnits) && businessUnits.length ? businessUnits.filter((b) => typeof b === "string" && b.trim()) : VALID_OPP_BUS;
 
   const opportunities = [];
   for (const entry of oppsRaw) {
@@ -585,11 +609,13 @@ function parseOpportunitiesResponse(raw) {
     opportunities.push({
       name,
       client,
-      bu: VALID_OPP_BUS.includes(entry.bu) ? entry.bu : "ICT",
+      bu: buList.includes(entry.bu) ? entry.bu : buList[0],
       offering: typeof entry.offering === "string" ? entry.offering.trim() : "",
       // Montants/échéances déclaratifs : null (pas undefined) quand absents ou non-string.
       estAmount: typeof entry.estAmount === "string" && entry.estAmount.trim() ? entry.estAmount.trim() : null,
-      deadline: typeof entry.deadline === "string" && entry.deadline.trim() ? entry.deadline.trim() : null,
+      // Échéance textuelle libre ("juillet 2026", "T2 2026") acceptée telle quelle, MAIS une date
+      // d'allure ISO impossible (2024-02-30) est rejetée pour ne pas afficher une échéance fictive.
+      deadline: coerceDeclarativeDeadline(entry.deadline),
       horizon: VALID_HORIZONS.includes(entry.horizon) ? entry.horizon : "moyen",
       probability: VALID_PROBABILITIES.includes(entry.probability) ? entry.probability : "medium",
       nextAction,
@@ -980,9 +1006,16 @@ const CONTEXT_REQUIRED_MARKERS = ["BUSINESS UNITS", "CONCURRENTS", "HOMONYMIE", 
  * @param {Array<object>} items Lightweight signals from `pickSignalsForEnrichment`.
  * @returns {string}
  */
-function buildContextRefreshPrompt(currentContext, items) {
+function buildContextRefreshPrompt(currentContext, items, identity) {
+  // Généricisation multi-tenant (audit intégral 2026-07) : le nom d'entreprise et la liste des
+  // sections attendues viennent du PROFIL CLIENT quand fournis ; défaut = Neurones (byte-identique).
+  const id = identity && typeof identity === "object" ? identity : {};
+  const companyName = (typeof id.companyName === "string" && id.companyName.trim()) ? id.companyName.trim() : "Neurones Technologies";
+  const sections = (Array.isArray(id.contextMarkers) && id.contextMarkers.length)
+    ? id.contextMarkers.join(", ")
+    : "BUSINESS UNITS, MODÈLE ÉCONOMIQUE, PARTENARIATS, CONTEXTE PARTENAIRE, CLIENTS, CONCURRENTS, LEVIERS RÉGLEMENTAIRES, GRILLE DE LECTURE, OBJECTIF COMMERCIAL, ATTENTION HOMONYMIE";
   return `Tu maintiens le CONTEXTE ENTREPRISE de référence utilisé par tous les agents d'analyse
-de Neurones Technologies. Voici sa version actuelle :
+de ${companyName}. Voici sa version actuelle :
 
 """
 ${currentContext}
@@ -992,9 +1025,7 @@ ${currentContext}
 Réponds UNIQUEMENT avec un objet JSON valide : { "context": string, "changes": string[] }.
 
 Règles impératives :
-- CONSERVE la structure et TOUTES les sections existantes (BUSINESS UNITS, MODÈLE ÉCONOMIQUE,
-  PARTENARIATS, CONTEXTE PARTENAIRE, CLIENTS, CONCURRENTS, LEVIERS RÉGLEMENTAIRES, GRILLE DE
-  LECTURE, OBJECTIF COMMERCIAL, ATTENTION HOMONYMIE).
+- CONSERVE la structure et TOUTES les sections existantes (${sections}).
 - Mets à jour UNIQUEMENT ce que les signaux justifient factuellement : dates de programmes
   partenaires passées/nouvelles, nouveaux concurrents ou mouvements notables, nouvelles
   obligations réglementaires, EOL/pénuries. N'invente RIEN ; ne supprime pas d'informations
@@ -1014,17 +1045,33 @@ Réponds avec le JSON uniquement.`;
  * parseContextRefreshResponse(raw, currentContext) -> {text, changes} | null
  * Garde-fous : contexte non vide, longueur ≥ 60% de l'actuel (une réécriture qui raccourcit
  * brutalement a probablement perdu des sections), tous les CONTEXT_REQUIRED_MARKERS présents.
- * Retourne null (aucune écriture) si la réponse ne passe pas — le contexte courant reste en place.
+ * ANCRAGE (audit intégral 2026-07) : le contexte nourrit TOUS les prompts aval comme vérité-terrain ;
+ * une réécriture non justifiée pouvait donc empoisonner silencieusement la chaîne. On applique donc
+ * le contrat du prompt de façon déterministe : seules les modifications CITANT un signal ("[signal N]"
+ * ou "signal N") sont retenues, et une réécriture qui CHANGE réellement le texte SANS aucune
+ * modification sourcée est REJETÉE (le contexte courant reste en place). PUR.
+ * Retourne null (aucune écriture) si la réponse ne passe pas.
  */
-function parseContextRefreshResponse(raw, currentContext) {
+const CHANGE_CITES_SIGNAL = /signal\s*n?\s*\d+/i;
+function normalizeContextForCompare(s) {
+  return String(s || "").replace(/\s+/g, " ").trim();
+}
+function parseContextRefreshResponse(raw, currentContext, requiredMarkers) {
   if (!raw || typeof raw !== "object" || typeof raw.context !== "string") return null;
   const text = raw.context.trim();
   const current = typeof currentContext === "string" ? currentContext : "";
   if (!text || (current && text.length < current.length * 0.6)) return null;
-  for (const marker of CONTEXT_REQUIRED_MARKERS) {
+  // Marqueurs de section EXIGÉS : ceux du profil client quand fournis (audit multi-tenant 2026-07),
+  // sinon les 4 marqueurs Neurones par défaut. Un client tiers n'est plus jugé sur le gabarit Neurones.
+  const markers = Array.isArray(requiredMarkers) ? requiredMarkers : CONTEXT_REQUIRED_MARKERS;
+  for (const marker of markers) {
     if (!text.includes(marker)) return null;
   }
-  const changes = coerceStringArray(raw.changes);
+  // Ne garder que les modifications tracées à un signal (le prompt l'exige déjà ; on l'impose).
+  const changes = coerceStringArray(raw.changes).filter((c) => CHANGE_CITES_SIGNAL.test(c));
+  // Réécriture matérielle SANS justification sourcée → rejet (anti-empoisonnement du contexte).
+  const changedMaterially = current && normalizeContextForCompare(text) !== normalizeContextForCompare(current);
+  if (changedMaterially && changes.length === 0) return null;
   return { text, changes };
 }
 
@@ -1052,7 +1099,7 @@ function buildInnovationBetsPrompt(items, companyContext = COMPANY_CONTEXT) {
 ${companyContext}
 
 Propose des PARIS D'INNOVATION (nouvelles offres/capacités à explorer) dérivés des signaux réels
-ci-dessous, chiffrés selon RICE et RENDUS ACTIONNABLES (secteur métier → offre NT → comptes cibles).
+ci-dessous, chiffrés selon RICE et RENDUS ACTIONNABLES (secteur métier → offre de l'entreprise → comptes cibles).
 NE RÉDUIS PAS l'innovation au cloud/cyber : couvre aussi IA & automatisation, data/BI, plateformes &
 fintech (open banking, mobile money), IoT/edge, e-gov/GovTech, verticaux (insurtech, agritech, healthtech).
 Réponds UNIQUEMENT avec un objet JSON valide :
@@ -1063,7 +1110,7 @@ Réponds UNIQUEMENT avec un objet JSON valide :
       "title": string,        // intitulé court du pari (ex: "Scoring crédit IA pour banques de détail")
       "sector": string,       // secteur métier client concerné (ex: "Banque de détail", "Assurance", "Secteur public")
       "offre": string,        // l'offre/capacité NT qui adresse ce pari (intégration, data/IA, sécurité, formation…)
-      "comptesCibles": [string], // 1-3 comptes ou profils cibles : raison sociale UNIQUEMENT si citée dans les signaux, sinon un profil (ex: "Banques de détail UEMOA >200 agences")
+      "comptesCibles": [string], // 1-3 comptes ou profils cibles : raison sociale UNIQUEMENT si citée dans les signaux, sinon un profil (ex: "Banques de détail régionales >200 agences")
       "reach": number,        // 1-10 : combien de clients/segments touchés
       "impact": number,       // 1-10 : impact business si succès
       "confidence": number,   // 0-1 : confiance dans les estimations
@@ -1077,7 +1124,7 @@ Réponds UNIQUEMENT avec un objet JSON valide :
 }
 
 Contraintes : 3 à 6 paris, chacun justifiable par un signal/fait fourni (réglementation, EOL,
-financement, tendance techno monétisable en CI/UEMOA) ; estimations honnêtes et différenciées ;
+financement, tendance techno monétisable sur ses marchés) ; estimations honnêtes et différenciées ;
 DIVERSIFIE les secteurs et les domaines d'innovation (pas seulement cloud/cyber). Règle anti-invention :
 ne NOMME une entreprise dans "comptesCibles" que si elle apparaît dans les signaux ; sinon décris un profil.
 
@@ -1168,7 +1215,7 @@ Contraintes :
   un signal ou une note, jamais sur une certitude inventée.
 - Pas de généralités interchangeables ("bon service client", "prix compétitifs" sans contexte).
 - Les axes de victoire doivent s'appuyer sur NOS atouts réels (partenariats, certifications,
-  proximité, Academy, références) face aux faiblesses de CE concurrent précis.
+  proximité, offre de formation, références) face aux faiblesses de CE concurrent précis.
 - Tout en français.
 
 Concurrents à traiter :
@@ -1245,10 +1292,10 @@ function buildVrioPrompt(items, companyContext = COMPANY_CONTEXT) {
   return `Tu es consultant en stratégie (analyse VRIO des ressources et capacités) pour l'entreprise suivante :
 ${companyContext}
 
-Évalue les ressources/capacités DISTINCTIVES de l'entreprise. Les libellés « agrément PASSI, statut
-WALLIX Premier, Neurones Academy, références bancaires, proximité régulateurs » ne sont donnés qu'à
-TITRE D'EXEMPLE de types de ressources : ne les reprends QUE si le contexte entreprise ou un signal
-les étaie — sinon ne les invente pas. Pour chaque ressource, indique si elle est Valorisable, Rare,
+Évalue les ressources/capacités DISTINCTIVES de l'entreprise. Les TYPES de ressources « agréments /
+certifications, statut partenaire (éditeur/constructeur), offre de formation, références sectorielles,
+proximité régulateurs » ne sont donnés qu'à TITRE D'EXEMPLE de catégories : ne cite une ressource
+nommée QUE si le contexte entreprise ou un signal l'étaie — sinon ne l'invente pas. Pour chaque ressource, indique si elle est Valorisable, Rare,
 Inimitable et si l'entreprise est Organisée pour l'exploiter, puis un verdict d'avantage (reste sur
 « parité concurrentielle » à défaut de preuve). Réponds UNIQUEMENT avec un objet JSON valide :
 
@@ -1359,7 +1406,7 @@ seule) :
   répètent le même thème central.
 
 {
-  "axisX": string,   // 1re incertitude structurante (ex: "Rythme d'application des obligations PASSI")
+  "axisX": string,   // 1re incertitude structurante (ex: "Rythme d'application d'une obligation réglementaire clé")
   "axisY": string,   // 2e incertitude structurante et INDÉPENDANTE (ex: "Arrivée directe des hyperscalers")
   "worlds": [
     {

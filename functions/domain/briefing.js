@@ -95,7 +95,7 @@ respectant exactement ce schéma :
   "recommendations": [                // 3 à 5, orientées DÉCISION
     { "action": string, "owner": string, "deadline": string, "expectedValue": string | null }
   ],
-  "decisionsRequested": [ string ]    // 1 à 3 décisions explicites demandées au comité (go/no-go AO, budget certification Cisco 360 avant expiration CPI juillet 2026, agrément PASSI)
+  "decisionsRequested": [ string ]    // 1 à 3 décisions explicites demandées au comité (ex. go/no-go sur un AO, arbitrage budgétaire, décision de conformité/certification) — issues des signaux, pas d'exemple générique
 }
 
 Consigne impérative : chaque recommandation doit nommer un compte, un AO, un programme partenaire

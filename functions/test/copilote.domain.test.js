@@ -204,6 +204,31 @@ describe("Copilote — plan d'action réellement daté & NO_GENERIC déterminist
     expect(out.message).toContain("45 000 000 XOF");
     expect(out.message).toMatch(/900 000 000 XOF \(chiffre à vérifier\)/);
   });
+
+  it("parseCvpResponse : un vrai montant de DEAL (hors valueModel) n'est PAS faux-positivé", async () => {
+    const { parseCvpResponse } = await import("../domain/copilote.js");
+    // Le montant 250 000 000 vient d'un deal réel injecté dans le prompt, pas du valueModel.
+    const ctx = { valueModel: { casTotal: 120000000, whitespaceValue: [] }, deals: [{ nom: "Refonte SI", montant: 250000000 }] };
+    const out = parseCvpResponse(
+      { message: "L'opportunité Refonte SI à 250 000 000 XOF mérite un cadrage.", differenciateurs: [] },
+      ctx
+    );
+    expect(out.message).toContain("250 000 000 XOF");
+    expect(out.message).not.toMatch(/250 000 000 XOF \(chiffre à vérifier\)/);
+  });
+
+  it("parseCvpResponse : montant ABRÉGÉ (45 M FCFA) reconnu via l'échelle, halluciné (99 M) annoté", async () => {
+    const { parseCvpResponse } = await import("../domain/copilote.js");
+    const ctx = { valueModel: { nextOffer: { montant: 45000000 }, whitespaceValue: [] } };
+    const out = parseCvpResponse(
+      { message: "Offre à 45 M FCFA, avec un potentiel additionnel de 99 millions.", differenciateurs: [] },
+      ctx
+    );
+    // 45 M FCFA = 45 000 000 ∈ allowed → intact.
+    expect(out.message).toMatch(/45 M FCFA(?! \(chiffre)/);
+    // 99 millions ∉ allowed, contexte monétaire → annoté même sans devise.
+    expect(out.message).toMatch(/99 millions \(chiffre à vérifier\)/);
+  });
 });
 
 describe("Copilote — agent planAction (plan d'action daté 90 j)", () => {
@@ -530,5 +555,34 @@ describe("Levier waouh n°2 — agent Contenu marketing", () => {
     const { parseContenuResponse } = await import("../domain/copilote.js");
     expect(parseContenuResponse({ angles: [{ titre: "vide" }] })).toBeNull();
     expect(parseContenuResponse({})).toBeNull();
+  });
+});
+
+describe("Lot 3 — étanchéité multi-tenant (chat, devise, corps de prompts)", () => {
+  it("buildChatPrompt : identité dérivée du companyName client, plus de « Neurones » ni « UEMOA/CEMAC » codés en dur", async () => {
+    const { buildChatPrompt } = await import("../domain/copilote.js");
+    const def = buildChatPrompt({ ecran: "Copilote" });
+    expect(def).toContain("copilote commercial de Neurones Technologies"); // défaut inchangé
+    const client = buildChatPrompt({ ecran: "Copilote", companyName: "ACME Legal" });
+    expect(client).toContain("copilote commercial de ACME Legal");
+    expect(client).not.toContain("Neurones");
+    expect(client).not.toContain("UEMOA/CEMAC");
+  });
+
+  it("xof via ctx.currency : montants d'un compte formatés dans la devise du client (défaut XOF)", async () => {
+    const { buildCvpPrompt } = await import("../domain/copilote.js");
+    const xofCtx = buildCvpPrompt({ compte: "SGCI", casTotal: 120000000 });
+    expect(xofCtx).toMatch(/120[\s.]000[\s.]000 XOF/);
+    const eurCtx = buildCvpPrompt({ compte: "ACME", companyName: "ACME", currency: "EUR", casTotal: 120000000 });
+    expect(eurCtx).toMatch(/120[\s.]000[\s.]000 EUR/);
+    expect(eurCtx).not.toMatch(/120[\s.]000[\s.]000 XOF/);
+  });
+
+  it("prospection : marché dérivé de geographies, « NT » remplacé par le nom du client", async () => {
+    const { buildProspectionPrompt } = await import("../domain/copilote.js");
+    const client = buildProspectionPrompt({ secteur: "assurance", companyName: "ACME", geographies: ["France", "Bénélux"] });
+    expect(client).toContain("France / Bénélux");
+    expect(client).toContain("Différenciation ACME");
+    expect(client).not.toContain("Côte d'Ivoire / Afrique de l'Ouest");
   });
 });

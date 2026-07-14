@@ -95,15 +95,31 @@ function coerceEnum(v, allowed, fallback) {
 function list(arr) {
   return Array.isArray(arr) && arr.length ? arr.join(", ") : "aucun";
 }
-function xof(n) {
-  return Number.isFinite(Number(n)) && Number(n) > 0 ? `${new Intl.NumberFormat("fr-FR").format(Math.round(Number(n)))} XOF` : "n.c.";
+// Formatage d'un montant avec la DEVISE du client (audit multi-tenant 2026-07, B10). Défaut « XOF »
+// (identique pour Neurones) ; un client onboardé en EUR/USD/… voit ses montants dans SA devise.
+function xof(n, currency = "XOF") {
+  return Number.isFinite(Number(n)) && Number(n) > 0 ? `${new Intl.NumberFormat("fr-FR").format(Math.round(Number(n)))} ${currency}` : "n.c.";
+}
+/** Devise à utiliser pour formater les montants d'un contexte compte (ctx.currency, défaut XOF). */
+function currencyOf(c) {
+  return c && typeof c.currency === "string" && c.currency.trim() ? c.currency.trim() : "XOF";
+}
+/**
+ * marketOf(c) — libellé lisible du MARCHÉ géographique du client, injecté dans le corps des prompts
+ * (prospection/contenu) au lieu d'une géo Neurones codée en dur (audit multi-tenant 2026-07, B3).
+ * ctx.geographies (profil onboardé) joint, sinon défaut « Côte d'Ivoire / UEMOA ». PUR.
+ */
+function marketOf(c) {
+  const g = c && Array.isArray(c.geographies) ? c.geographies.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()) : [];
+  return g.length ? g.join(" / ") : "Côte d'Ivoire / UEMOA";
 }
 /** Bloc d'empreinte chiffrée réelle (nt360) — matière NON inventable à citer par les agents compte. */
 function empreinteChiffree(c) {
+  const cur = currencyOf(c);
   return (
     `Empreinte chiffrée réelle (pipeline nt360, à citer telle quelle, ne jamais arrondir ni inventer) : ` +
-    `CA total déjà réalisé avec ce compte : ${xof(c.casTotal)} ; ` +
-    `pipeline pondéré en cours : ${xof(c.pipelinePondere)} ; ` +
+    `CA total déjà réalisé avec ce compte : ${xof(c.casTotal, cur)} ; ` +
+    `pipeline pondéré en cours : ${xof(c.pipelinePondere, cur)} ; ` +
     `affaires déjà gagnées : ${Number(c.wins) > 0 ? c.wins : "n.c."}.`
   );
 }
@@ -114,11 +130,12 @@ function empreinteChiffree(c) {
  * RÉELLES du compte (pas les leads de veille génériques).
  */
 function factBase(c) {
+  const cur = currencyOf(c);
   // Historique EXPLOITABLE : chaque offre vendue avec son CAS réalisé et sa plage d'années (récence).
   const vendues = (Array.isArray(c.historique) ? c.historique : [])
     .filter((h) => h && h.offre)
     .map((h) => {
-      const cas = Number(h.cas) > 0 ? ` — ${xof(h.cas)} réalisés` : "";
+      const cas = Number(h.cas) > 0 ? ` — ${xof(h.cas, cur)} réalisés` : "";
       const yrs = h.firstYear ? ` [${h.firstYear === h.lastYear ? h.firstYear : `${h.firstYear}–${h.lastYear}`}]` : "";
       return `${coerceStr(h.offre)}${cas}${yrs}`;
     });
@@ -134,7 +151,7 @@ function factBase(c) {
     .map((d) => {
       if (d.nom) {
         const parts = [coerceStr(d.nom)];
-        if (Number(d.montant) > 0) parts.push(xof(d.montant));
+        if (Number(d.montant) > 0) parts.push(xof(d.montant, cur));
         if (d.etape) parts.push(`stade ${coerceStr(d.etape)}`);
         if (Number(d.probability) > 0) parts.push(`prob. ${Math.round(Number(d.probability) * (Number(d.probability) <= 1 ? 100 : 1))}%`);
         if (d.closingDate) parts.push(`closing ${coerceStr(d.closingDate)}`);
@@ -144,7 +161,7 @@ function factBase(c) {
     }).filter(Boolean).slice(0, 6);
   const rec = c.recommendation || {};
   const montant = Number(rec.montantEstime) > 0
-    ? ` ; panier de référence de cette offre ≈ ${xof(rec.montantEstime)} (montant d'ancrage à viser${rec.anchorCapped ? `, plafonné à l'échelle de ce compte — médiane portefeuille brute ${xof(rec.montantReference)}, à ne pas afficher tel quel` : ""})`
+    ? ` ; panier de référence de cette offre ≈ ${xof(rec.montantEstime, cur)} (montant d'ancrage à viser${rec.anchorCapped ? `, plafonné à l'échelle de ce compte — médiane portefeuille brute ${xof(rec.montantReference, cur)}, à ne pas afficher tel quel` : ""})`
     : "";
   // Cold start (audit 2026-07) : quand l'affinité de cross-sell ne fonde PAS l'offre (csPct=0, ex.
   // compte sans historique ou portefeuille sans co-occurrence), on ne prétend plus « data-driven / à
@@ -195,7 +212,7 @@ function targetDealLine(c) {
   if (!deals.length) return "";
   const top = deals.slice().sort((a, b) => (Number(b.montant) || 0) - (Number(a.montant) || 0))[0];
   const parts = [coerceStr(top.nom)];
-  if (Number(top.montant) > 0) parts.push(xof(top.montant));
+  if (Number(top.montant) > 0) parts.push(xof(top.montant, currencyOf(c)));
   if (top.etape) parts.push(`stade ${coerceStr(top.etape)}`);
   if (top.closingDate) parts.push(`closing ${coerceStr(top.closingDate)}`);
   return `DEAL CIBLE (l'opportunité en cours la plus importante — c'est ELLE que tu analyses/qualifies, sauf faits contraires explicites) : ${parts.join(" · ")}.`;
@@ -254,10 +271,11 @@ function winStatsBlock(c) {
 function valueModelBlock(c) {
   const v = c.valueModel;
   if (!v) return "";
-  const parts = [`CA déjà réalisé : ${xof(v.casTotal)} ; pipeline pondéré : ${xof(v.pipelinePondere)}.`];
-  if (v.nextOffer && v.nextOffer.montant > 0) parts.push(`Next best offer « ${coerceStr(v.nextOffer.offre)} » ≈ ${xof(v.nextOffer.montant)} (panier de référence réel).`);
+  const cur = currencyOf(c);
+  const parts = [`CA déjà réalisé : ${xof(v.casTotal, cur)} ; pipeline pondéré : ${xof(v.pipelinePondere, cur)}.`];
+  if (v.nextOffer && v.nextOffer.montant > 0) parts.push(`Next best offer « ${coerceStr(v.nextOffer.offre)} » ≈ ${xof(v.nextOffer.montant, cur)} (panier de référence réel).`);
   if (Array.isArray(v.whitespaceValue) && v.whitespaceValue.length) {
-    parts.push(`Potentiel cross-sell chiffré (panier de référence par offre) : ${v.whitespaceValue.map((x) => `${coerceStr(x.offre)} ≈ ${xof(x.montant)}`).join(" ; ")} → potentiel total ≈ ${xof(v.whitespacePotential)}.`);
+    parts.push(`Potentiel cross-sell chiffré (panier de référence par offre) : ${v.whitespaceValue.map((x) => `${coerceStr(x.offre)} ≈ ${xof(x.montant, cur)}`).join(" ; ")} → potentiel total ≈ ${xof(v.whitespacePotential, cur)}.`);
   }
   return `MODÈLE DE VALEUR CHIFFRÉ (montants RÉELS calculés en amont — À CITER TELS QUELS, ne jamais inventer d'autres montants) :\n${parts.join(" ")}`;
 }
@@ -318,14 +336,15 @@ function computeAnalytics(c) {
 /** Bloc DIAGNOSTIC pré-calculé injecté dans les agents stratégiques (socle d'analyse à dépasser). */
 function analyticsBlock(c) {
   const a = computeAnalytics(c);
+  const cur = currencyOf(c);
   const lines = [];
   if (a.concentration != null && a.concentration >= 55) {
     lines.push(`• Concentration : ${a.concentration}% du CA sur « ${a.topOffre} »${a.monoOffre ? " (compte mono-offre)" : ""} → dépendance à interpréter (risque si churn, mais tête de pont pour cross-seller).`);
   }
   if (a.dormantes.length) lines.push(`• Offres DORMANTES (aucun réachat ≥ 2 ans) : ${list(a.dormantes)} → churn silencieux ou fenêtre de relance.`);
-  if (a.expositionPct != null && a.exposition > 0) lines.push(`• Exposition pipeline en cours : ${xof(a.exposition)} = ${a.expositionPct}% du CA réalisé → CALIBRE la gravité là-dessus (ne dramatise pas une part < 5%).`);
+  if (a.expositionPct != null && a.exposition > 0) lines.push(`• Exposition pipeline en cours : ${xof(a.exposition, cur)} = ${a.expositionPct}% du CA réalisé → CALIBRE la gravité là-dessus (ne dramatise pas une part < 5%).`);
   if (a.deals.length) lines.push(`• Santé des deals : ${a.deals.join(" ; ")}.`);
-  if (a.reserve > 0) lines.push(`• Réserve de valeur non adressée (cross-sell chiffré) : ${xof(a.reserve)}.`);
+  if (a.reserve > 0) lines.push(`• Réserve de valeur non adressée (cross-sell chiffré) : ${xof(a.reserve, cur)}.`);
   if (!lines.length) return "";
   return `DIAGNOSTIC PRÉ-CALCULÉ (données DÉJÀ interprétées — sers-t'en comme socle, va PLUS LOIN, ne le répète pas mot pour mot) :\n${lines.join("\n")}`;
 }
@@ -398,10 +417,10 @@ function buildProspectionPrompt(ctx) {
     : "";
   return `${roleOf(c)}
 ${anchor}
-Propose une liste priorisée de comptes cibles pour le secteur "${coerceStr(c.secteur, "non précisé")}" en Côte d'Ivoire / Afrique de l'Ouest.
+Propose une liste priorisée de comptes cibles pour le secteur "${coerceStr(c.secteur, "non précisé")}" sur le marché : ${marketOf(c)}.
 Tendances d'achat : ${list(c.tendances)}.
 Réglementation : ${coerceStr(c.reglementation, "non précisée")}.
-Différenciation NT / concurrence : ${coerceStr(c.concurrence, "non précisée")}.
+Différenciation ${companyNameOf(c)} / concurrence : ${coerceStr(c.concurrence, "non précisée")}.
 Signaux de veille exploitables : ${list((c.signaux || []).map((s) => s.titre))}.
 
 Règle anti-invention STRICTE : ne NOMME une entreprise (raison sociale) que si elle est explicitement
@@ -417,9 +436,9 @@ Réponds UNIQUEMENT avec un objet JSON valide :
   ]
 }
 "source" = le signal exact qui justifie cette cible, ou "profil-type (non nommé)" si aucune source ;
-"nom" = raison sociale UNIQUEMENT si sourcée, sinon un libellé de profil (ex. « Banque de détail UEMOA, >200 agences ») ;
+"nom" = raison sociale UNIQUEMENT si sourcée, sinon un libellé de profil (ex. « Banque de détail régionale, >200 agences ») ;
 "angle" = pourquoi maintenant / sur quel besoin ; "accroche" = valeur chiffrable si possible ;
-"offre" = l'offre NT à mettre en avant (issue de ce qui marche sur le compte de référence si fourni) ;
+"offre" = l'offre ${companyNameOf(c)} à mettre en avant (issue de ce qui marche sur le compte de référence si fourni) ;
 "chaleur" = Chaud seulement si un signal/historique le justifie, sinon Tiède/Froid. JSON uniquement.`;
 }
 
@@ -477,45 +496,82 @@ expertise éditeur n'a sa place que si un besoin nommé la justifie. Varie les a
 à défaut de besoin technique nommé, appuie-toi sur les différenciateurs transverses (proximité,
 souveraineté de la donnée, modèle managé/récurrent, formation certifiante, références, proximité régulateurs).
 ANGLE MÉTIER (lentille innovation) : quand le secteur du compte et son whitespace/ses signaux le permettent, formule la valeur au niveau de la TRANSFORMATION MÉTIER du client (data/IA, RPA, open banking/mobile money & fintech, e-gov/GovTech, IoT/edge, verticaux insurtech/agritech…) et positionne cloud/souveraineté/cybersécurité comme ENABLERS, pas comme finalité — sans inventer de besoin non étayé par les faits.
-Preuves / références NT : ${list(c.preuves)}.${pestel ? `\nAngle de marché (à n'utiliser QUE s'il éclaire un besoin concret de ce compte) : ${pestel}` : ""}
+Preuves / références ${companyNameOf(c)} : ${list(c.preuves)}.${pestel ? `\nAngle de marché (à n'utiliser QUE s'il éclaire un besoin concret de ce compte) : ${pestel}` : ""}
 
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
-  "message": string,                       // 2 phrases ADRESSÉES AU CLIENT : le bénéfice métier concret que NT lui apporte, avec un angle qui prouve qu'on connaît son contexte (une offre déjà livrée, un enjeu réel) — SANS parler de notre pipeline. Ni slogan creux, ni diagnostic interne.
-  "differenciateurs": [string],            // 3 : chacun = un différenciateur NT ADAPTÉ AU BESOIN DE CE COMPTE (p. ex. modèle managé OPEX, Neurones Academy, cloud souverain, PASSI/ANSSI-CI, ou une expertise éditeur — Cisco, Fortinet, PAM… — UNIQUEMENT si l'enjeu du compte l'appelle) traduit en BÉNÉFICE pour le client sur un besoin PRÉCIS, chiffré au panier réel si une offre est visée. Formulé côté valeur client. Ne répète pas le même partenaire par défaut d'un compte à l'autre.
+  "message": string,                       // 2 phrases ADRESSÉES AU CLIENT : le bénéfice métier concret que ${companyNameOf(c)} lui apporte, avec un angle qui prouve qu'on connaît son contexte (une offre déjà livrée, un enjeu réel) — SANS parler de notre pipeline. Ni slogan creux, ni diagnostic interne.
+  "differenciateurs": [string],            // 3 : chacun = un différenciateur ADAPTÉ AU BESOIN DE CE COMPTE, CHOISI dans la liste « Différenciateurs mobilisables » ci-dessus (une expertise éditeur/technique UNIQUEMENT si l'enjeu du compte l'appelle), traduit en BÉNÉFICE pour le client sur un besoin PRÉCIS, chiffré au panier réel si une offre est visée. Formulé côté valeur client. Ne répète pas le même partenaire par défaut d'un compte à l'autre.
   "prochaineEtape": string                 // LA prochaine action commerciale concrète pour matérialiser cette valeur (RDV de cadrage, chiffrage d'une offre nommée, atelier…) — courte, actionnable.
 }
 JSON uniquement.`;
 }
 
-// NO_GENERIC déterministe sur les MONTANTS (audit pertinence 2026-07) : l'anti-invention des chiffres
-// XOF ne reposait que sur le texte du prompt. Ici on extrait les montants cités et on ANNOTE ceux qui
-// ne correspondent à aucune valeur du modèle de valeur chiffré (valueModel) — un montant halluciné est
-// marqué « (chiffre à vérifier) » au lieu de passer pour un fait. PUR, conservateur (tolérance ±2 %).
-function allowedAmountSet(valueModel) {
+// NO_GENERIC déterministe sur les MONTANTS (audit pertinence 2026-07, étendu audit intégral) :
+// l'anti-invention des chiffres XOF ne reposait que sur le texte du prompt. Ici on extrait les
+// montants cités et on ANNOTE ceux qui ne correspondent à AUCUN montant réel injecté dans le prompt
+// — un montant halluciné est marqué « (chiffre à vérifier) ». L'ensemble autorisé couvre TOUS les
+// chiffres réellement placés dans la matière (valueModel MAIS AUSSI deals, historique, recommandation),
+// pour ne pas faux-positiver un vrai montant de deal cité. PUR, conservateur (tolérance ±2 %).
+function allowedAmountSet(ctx) {
   const s = new Set();
   const add = (n) => { const v = Math.round(Number(n) || 0); if (v > 0) s.add(v); };
-  const v = valueModel || {};
+  const c = ctx || {};
+  // Empreinte chiffrée directe du compte (injectée par empreinteChiffree/factBase).
+  add(c.casTotal); add(c.pipelinePondere);
+  // Modèle de valeur chiffré (business case / triennal).
+  const v = c.valueModel || {};
   add(v.casTotal); add(v.pipelinePondere); add(v.whitespacePotential);
   if (v.nextOffer) add(v.nextOffer.montant);
   for (const w of Array.isArray(v.whitespaceValue) ? v.whitespaceValue : []) add(w.montant);
+  // Deals réels nommés avec leur montant exact (factBase les demande « avec leur montant exact »).
+  for (const d of Array.isArray(c.deals) ? c.deals : []) if (d && typeof d === "object") add(d.montant);
+  // Historique : CAS réalisés par offre vendue.
+  for (const h of Array.isArray(c.historique) ? c.historique : []) if (h && typeof h === "object") add(h.cas);
+  // Recommandation : panier de référence + médiane portefeuille brute.
+  const rec = c.recommendation || {};
+  add(rec.montantEstime); add(rec.montantReference);
   return s;
+}
+// Multiplicateurs textuels d'échelle (« 45 M », « 250 millions », « 1,2 Md ») pour dériver la valeur
+// réelle d'un montant abrégé et le comparer à l'ensemble autorisé (audit intégral 2026-07).
+const AMOUNT_SCALE = [
+  { re: /^(?:milliards?|md|mds)$/i, mult: 1e9 },
+  { re: /^(?:millions?|m)$/i, mult: 1e6 },
+  { re: /^(?:k)$/i, mult: 1e3 },
+];
+function scaleOf(unitWord) {
+  const u = String(unitWord || "").trim();
+  const hit = AMOUNT_SCALE.find((x) => x.re.test(u));
+  return hit ? hit.mult : 1;
 }
 function annotateStrayAmounts(text, allowed) {
   if (typeof text !== "string" || !text || !allowed || !allowed.size) return text;
-  // Nombre (groupé par espaces/points/insécables) SUIVI d'un marqueur monétaire (XOF / FCFA / F CFA).
-  return text.replace(/(\d[\d .  ]*\d|\d)(\s*(?:XOF|FCFA|F\s?CFA))/gi, (m, num, unit) => {
+  const inAllowed = (val) => [...allowed].some((a) => Math.abs(a - val) <= Math.max(1, a * 0.02));
+  // 1) Nombre + multiplicateur d'échelle optionnel (M / millions / Md / k) + marqueur monétaire
+  //    (XOF / FCFA / F CFA / €/EUR / $/USD). Ex. « 45 M FCFA », « 60 000 € », « 250 millions XOF ».
+  let out = text.replace(/(\d[\d .  ]*\d|\d)\s*(milliards?|mds?|millions?|m|k)?\s*(?:XOF|FCFA|F\s?CFA|€|EUR|\$|USD)/gi, (m, num, scaleWord) => {
     if (/à vérifier/i.test(m)) return m;
     const val = Number(String(num).replace(/[ .  ]/g, ""));
     if (!Number.isFinite(val) || val <= 0) return m;
-    const ok = [...allowed].some((a) => Math.abs(a - val) <= Math.max(1, a * 0.02));
-    return ok ? m : `${num}${unit} (chiffre à vérifier)`;
+    const scaled = val * scaleOf(scaleWord);
+    return inAllowed(scaled) ? m : `${m} (chiffre à vérifier)`;
   });
+  // 2) Nombre + mot d'échelle monétaire (millions/milliards) SANS symbole de devise (« un potentiel de
+  //    250 millions ») : contexte fortement monétaire — on flague s'il ne correspond à aucun montant réel.
+  out = out.replace(/(\d[\d., ]*\d|\d)\s*(milliards?|mds?|millions?)\b(?!\s*(?:XOF|FCFA|F\s?CFA|€|EUR|\$|USD))/gi, (mm, num2, scaleWord2) => {
+    if (/à vérifier/i.test(mm)) return mm;
+    const base2 = Number(String(num2).replace(/[ .,]/g, ""));
+    if (!Number.isFinite(base2) || base2 <= 0) return mm;
+    const scaled2 = base2 * scaleOf(scaleWord2);
+    return inAllowed(scaled2) ? mm : `${mm} (chiffre à vérifier)`;
+  });
+  return out;
 }
 
 function parseCvpResponse(raw, ctx) {
   if (!raw || typeof raw !== "object") return null;
-  const allowed = allowedAmountSet(ctx && ctx.valueModel);
+  const allowed = allowedAmountSet(ctx);
   const message = annotateStrayAmounts(coerceStr(raw.message), allowed);
   const differenciateurs = coerceStrArray(raw.differenciateurs).map((d) => annotateStrayAmounts(d, allowed));
   const prochaineEtape = annotateStrayAmounts(coerceStr(raw.prochaineEtape), allowed);
@@ -723,7 +779,9 @@ function parsePlanActionResponse(raw, ctx) {
 function buildChatSystem(ctx) {
   const c = ctx || {};
   const base =
-    "Tu es le copilote commercial de Neurones Technologies (intégrateur IT/télécom/cyber, zone UEMOA/CEMAC). " +
+    // Identité dérivée du profil client (audit multi-tenant 2026-07, B2) — plus de « Neurones/UEMOA/CEMAC »
+    // codé en dur : companyNameOf lit ctx.companyName (onboarding), défaut « Neurones Technologies ».
+    `Tu es le copilote commercial de ${companyNameOf(c)}. ` +
     "Tu es un STRATÈGE de vente et de développement de compte : tu n'égrènes pas les données (le commercial les a), " +
     "tu les INTERPRÈTES — schéma, anomalie, risque caché — tu poses une thèse, tu tranches et tu donnes le prochain coup. " +
     "Zéro théorie, zéro banalité, zéro remplissage : si une phrase ne contient pas une déduction propre à CE compte, ne l'écris pas. " +
@@ -734,8 +792,8 @@ function buildChatSystem(ctx) {
     "contexte ci-dessous : si elle manque, dis-le explicitement au lieu de l'estimer. " +
     "Ancre tes réponses sur les FAITS RÉELS du compte ci-dessous (montants, offres vendues, whitespace, deals, " +
     "concurrents, taux de victoire) : cite-les. Pas de généralités macro ni de copier-coller de veille. " +
-    "GARDE-FOUS (impératifs) : (1) n'invente AUCUNE référence/partenariat/proximité institutionnelle (BCEAO, " +
-    "régulateurs…) absente du contexte ; (2) calibre la gravité à l'échelle — exprime une exposition en % du CA, " +
+    "GARDE-FOUS (impératifs) : (1) n'invente AUCUNE référence/partenariat/proximité institutionnelle " +
+    "(régulateurs, institutions financières…) absente du contexte ; (2) calibre la gravité à l'échelle — exprime une exposition en % du CA, " +
     "ne dramatise pas une part < 5%, pas de métaphores ; (3) ne recommande jamais une offre fourre-tout (AUTRE, " +
     "DIVERS) : nomme une offre réelle. " +
     `Contexte : écran « ${coerceStr(c.ecran, "Copilote")} ». `;
@@ -786,7 +844,7 @@ function parseChatResponse(raw) {
  * §G — RÉDACTION (email / whatsapp / linkedin, 2 variantes)
  * ------------------------------------------------------------------------------------------- */
 const CANAL = {
-  email: "E-mail : objet obligatoire, structure claire, 120-180 mots ; en PREMIER contact, signe avec la raison sociale complète « Neurones Technologies S.A. » et l'ancrage géographique (Abidjan, Côte d'Ivoire / UEMOA) pour lever toute confusion avec les homonymes.",
+  email: "E-mail : objet obligatoire, structure claire, 120-180 mots ; en PREMIER contact, signe avec la raison sociale complète de l'entreprise (celle du rôle système ci-dessus) et son ancrage géographique pour lever toute confusion avec d'éventuels homonymes.",
   whatsapp: "WhatsApp : très bref (40-70 mots), 1 idée, appel à l'action simple, pas d'objet.",
   linkedin: "LinkedIn : accroche personnalisée (60-100 mots), ton professionnel, pas d'objet.",
 };
@@ -872,7 +930,7 @@ ${ANTI_VERBIAGE}
 ${NO_GENERIC}
 
 OBJECTIF : proposer 3 ANGLES DE CONTENU (post LinkedIn ou tribune) qui positionnent ${companyNameOf(c)}
-en référence sur son marché (Côte d'Ivoire / UEMOA), CHACUN ancré sur (a) un SIGNAL DE
+en référence sur son marché (${marketOf(c)}), CHACUN ancré sur (a) un SIGNAL DE
 VEILLE réel ci-dessous et (b) UN différenciateur réel. Ton expert, utile, non promotionnel : on
 éduque le marché, on ne vend pas frontalement. Interdits : superlatifs creux, « leader incontesté »,
 promesses non étayées, chiffres inventés.
@@ -892,7 +950,7 @@ Réponds UNIQUEMENT avec un objet JSON valide :
       "titre": string,               // accroche / titre éditorial percutant
       "accroche": string,            // 1re phrase qui arrête le scroll (le "hook")
       "corps": string,               // 4-8 lignes : le propos, l'insight, la valeur — ancré sur le signal + le différenciateur, jamais un argumentaire de vente
-      "differenciateur": string,     // LE différenciateur NT mis en avant, adapté au signal et au secteur (p. ex. modèle managé OPEX, Neurones Academy, PASSI/ANSSI-CI, cloud souverain, ou une expertise éditeur pertinente — Cisco, Fortinet, PAM… — pas un partenaire par défaut)
+      "differenciateur": string,     // LE différenciateur mis en avant, CHOISI dans la liste « Différenciateurs mobilisables » ci-dessus, adapté au signal et au secteur (une expertise éditeur/technique seulement si le signal l'appelle — pas un partenaire par défaut)
       "signalSource": string,        // le signal de veille sur lequel l'angle s'appuie (repris de la liste)
       "cta": string,                 // appel à l'action doux et non commercial (« échangeons », « notre point de vue en commentaire »…)
       "hashtags": [string]           // 3-5 hashtags pertinents
@@ -1117,7 +1175,7 @@ JSON uniquement.`;
 }
 function parseBusinessCaseResponse(raw, ctx) {
   if (!raw || typeof raw !== "object") return null;
-  const allowed = allowedAmountSet(ctx && ctx.valueModel);
+  const allowed = allowedAmountSet(ctx);
   const gains = (Array.isArray(raw.gains) ? raw.gains : [])
     .filter((x) => x && typeof x === "object" && coerceStr(x.levier))
     .map((x) => ({ levier: coerceStr(x.levier), montant: annotateStrayAmounts(coerceStr(x.montant), allowed), base: coerceStr(x.base) })).slice(0, 5);

@@ -35,15 +35,18 @@ const DEFAULT_PROFILE = {
     sector: "Intégrateur IT/Télécoms & ESN",
     geographies: ["ci", "uemoa", "cemac"],
     currency: "XOF",
-    timezone: "Africa/Abidjan",
-    internalDataEnabled: true, // NT dispose de l'app sœur nt360 (données internes)
+    // RÉSERVÉ (audit intégral 2026-07) — champs déclarés mais PAS ENCORE consommés par un prompt/
+    // scorer. Documentés ici pour ne pas laisser croire qu'ils font autorité : la période de briefing
+    // reste en UTC, et le pilotage des données internes se fait via `internalData.mode` (source unique
+    // ci-dessous). Ne PAS s'y fier tant que le câblage n'est pas fait.
+    timezone: "Africa/Abidjan", // réservé : le briefing horodate en UTC, ce champ n'est pas lu
+    regulators: ["ANSSI-CI", "ARTCI", "AMF-UMOA", "BCEAO"], // réservé : non réinjecté dans les prompts
     homonyms: [
       "groupe français coté NEURONES (neurones.net)",
       "Neurones Technologies SA de Genève",
       "Neurones IT Asia",
     ],
     differentiators: NT_DIFFERENCIATEURS,
-    regulators: ["ANSSI-CI", "ARTCI", "AMF-UMOA", "BCEAO"],
     systemRole: NT_ROLE, // gabarit copilote (interpolation {{…}} viendra en PR D)
   },
   contextText: COMPANY_CONTEXT, // = frameworks/companyContext.text quand présent
@@ -82,7 +85,8 @@ const DEFAULT_PROFILE = {
     ratings: { official: "A2", reputable: "B2", aggregator: "D3" },
   },
   internalData: {
-    mode: "nt360", // "nt360" | "fileImport" | "none" — pilote internalDataEnabled côté produit
+    mode: "nt360", // "nt360" | "fileImport" | "none" — SOURCE UNIQUE de l'état des données internes
+    //               (l'ancien doublon profile.internalDataEnabled a été retiré, audit intégral 2026-07)
   },
 };
 

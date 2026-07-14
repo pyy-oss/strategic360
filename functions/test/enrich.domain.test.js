@@ -205,6 +205,18 @@ describe("parseBattlecardMovesResponse", () => {
     expect(parseBattlecardMovesResponse(null)).toBeNull();
     expect(parseBattlecardMovesResponse("moves")).toBeNull();
   });
+
+  it("rejette une date d'allure ISO mais impossible (2026-02-30 / 2026-13-01) → repli aujourd'hui", () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const parsed = parseBattlecardMovesResponse({
+      moves: [
+        { competitor: "Orange CI", move: "Contrat", date: "2026-02-30" },
+        { competitor: "SNDI", move: "Move", date: "2026-13-01" },
+        { competitor: "Inova", move: "Réel", date: "2026-06-15" },
+      ],
+    });
+    expect(parsed.moves.map((m) => m.date)).toEqual([today, today, "2026-06-15"]);
+  });
 });
 
 describe("buildOpportunitiesPrompt", () => {
@@ -527,13 +539,28 @@ describe("contexte entreprise dynamique", () => {
     expect(buildOpportunitiesPrompt([], custom)).toContain(custom);
   });
 
-  it("parseContextRefreshResponse accepte une mise à jour valide et retourne text+changes", async () => {
+  it("parseContextRefreshResponse accepte une mise à jour valide dont les changements citent un signal", async () => {
     const { parseContextRefreshResponse, COMPANY_CONTEXT } = await import("../domain/enrich.js");
     const updated = COMPANY_CONTEXT.replace("OBJECTIF COMMERCIAL", "OBJECTIF COMMERCIAL (révisé)");
-    const parsed = parseContextRefreshResponse({ context: updated, changes: ["révision objectif"] }, COMPANY_CONTEXT);
+    const parsed = parseContextRefreshResponse({ context: updated, changes: ["révision objectif [signal 3]"] }, COMPANY_CONTEXT);
     expect(parsed).not.toBeNull();
     expect(parsed.text).toContain("HOMONYMIE");
-    expect(parsed.changes).toEqual(["révision objectif"]);
+    expect(parsed.changes).toEqual(["révision objectif [signal 3]"]);
+  });
+
+  it("contexte inchangé + changes vides : accepté (no-op), pas de rejet", async () => {
+    const { parseContextRefreshResponse, COMPANY_CONTEXT } = await import("../domain/enrich.js");
+    const parsed = parseContextRefreshResponse({ context: COMPANY_CONTEXT, changes: [] }, COMPANY_CONTEXT);
+    expect(parsed).not.toBeNull();
+    expect(parsed.changes).toEqual([]);
+  });
+
+  it("anti-empoisonnement : réécriture matérielle SANS modification sourcée → rejet", async () => {
+    const { parseContextRefreshResponse, COMPANY_CONTEXT } = await import("../domain/enrich.js");
+    const inventé = COMPANY_CONTEXT.replace("CONCURRENTS", "CONCURRENTS\n- FauxConcurrent SA (inventé)\nCONCURRENTS");
+    // changement réel du texte mais aucune justification citant un signal → doit être rejeté
+    expect(parseContextRefreshResponse({ context: inventé, changes: ["ajout FauxConcurrent"] }, COMPANY_CONTEXT)).toBeNull();
+    expect(parseContextRefreshResponse({ context: inventé, changes: [] }, COMPANY_CONTEXT)).toBeNull();
   });
 
   it("rejette une réécriture qui perd les sections critiques ou raccourcit brutalement", async () => {
