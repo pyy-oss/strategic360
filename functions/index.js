@@ -935,8 +935,9 @@ async function classifyRawText(rawText, watchlistEntities, context, profile) {
   });
   // Sémaphore global (M6) : borne la concurrence Vertex réelle à AI_CONCURRENCY, y compris quand
   // plusieurs sources classifient leurs items en parallèle.
-  // Extraction : température 0 (déterministe, ne rien inventer — c'est de la classification factuelle).
-  const response = await vertexLimit(() => generateJson(prompt, { temperature: 0 }));
+  // Extraction : température 0 (déterministe) + modèle d'extraction configurable (coûts) — GEMINI_MODEL_EXTRACTION
+  // permet un flash-lite moins cher pour ce gros volume ; non défini → modèle par défaut (inchangé).
+  const response = await vertexLimit(() => generateJson(prompt, { temperature: 0, model: process.env.GEMINI_MODEL_EXTRACTION }));
   // La taxonomie du profil sert AUSSI à valider/normaliser la sortie (axes/subtypes custom). La
   // watchlist est passée pour contraindre `ent` aux entités connues (anti faux-rattachement).
   return parseClassificationResponse(response, {
@@ -1353,8 +1354,9 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
   try {
   await runInBatches(items, AI_CONCURRENCY, async (it) => {
     try {
-      // Jugement de pertinence : température 0 (verdict reproductible, non aléatoire d'une passe à l'autre).
-      const parsed = parseEvaluateResponse(await generateJson(buildEvaluatePrompt(it, companyContext), { temperature: 0 }));
+      // Jugement de pertinence : température 0 (verdict reproductible) + modèle d'extraction configurable
+      // (GEMINI_MODEL_EXTRACTION, coûts) — non défini → modèle par défaut (inchangé).
+      const parsed = parseEvaluateResponse(await generateJson(buildEvaluatePrompt(it, companyContext), { temperature: 0, model: process.env.GEMINI_MODEL_EXTRACTION }));
       if (parsed && parsed.publier === false) {
         await db.doc(`intelItems/${it.id}`).update({ status: "rejected", evalScore: parsed.pertinence, evalReason: parsed.raison || "écarté par l'évaluateur", evalFailed: false, updatedAt: stamp() });
         rejected += 1;
@@ -1930,6 +1932,8 @@ async function runGenerateBriefing(db, generatedBy) {
     period,
     generatedBy,
     kpis: veilleExecSummary?.boardKpis ?? null,
+    // Nombre de signaux numérotés [1..N] fournis au prompt → borne de vérification des citations.
+    citationsMax: topItems.length,
   });
   if (!briefing) return null;
 
@@ -2771,6 +2775,9 @@ async function assembleCopiloteContext(db, accountId) {
     // marketing via differenciateursOf(c). Absent/défaut → NT_DIFFERENCIATEURS (identique pour Neurones).
     // Rend les générateurs client-facing tenant-agnostiques (fin du contexte Neurones codé en dur).
     differenciateurs: clientProfile.profile && clientProfile.profile.differentiators,
+    // Nom de l'entreprise (profil onboardé) écrit dans le corps des prompts CVP/marketing via
+    // companyNameOf(c). Absent/défaut → « Neurones Technologies ». Dernier reliquat du nom en dur.
+    companyName: clientProfile.profile && clientProfile.profile.companyName,
     account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte, eventOffers, battlecards, battlecardsMarket, winStats, valueModel, today: new Date().toISOString().slice(0, 10) },
   };
 }

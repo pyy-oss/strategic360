@@ -275,13 +275,17 @@ describe("Copilote — CVP : différenciateurs source unique + angle métier (au
   it("buildCvpPrompt est TENANT-AGNOSTIQUE : un profil client fournit SES différenciateurs (fin du contexte NT en dur)", async () => {
     const { buildCvpPrompt } = await import("../domain/copilote.js");
     // Client onboardé avec ses propres différenciateurs → ils remplacent ceux de Neurones.
-    const p = buildCvpPrompt({ compte: "ACME", secteur: "Retail", differenciateurs: "réseau logistique panafricain ; plateforme e-commerce propriétaire ; label RSE" });
+    const p = buildCvpPrompt({ compte: "ACME", secteur: "Retail", companyName: "ACME Solutions", differenciateurs: "réseau logistique panafricain ; plateforme e-commerce propriétaire ; label RSE" });
     expect(p).toContain("réseau logistique panafricain");
     expect(p).toContain("plateforme e-commerce propriétaire");
     expect(p).not.toContain("WALLIX"); // plus de différenciateur Neurones codé en dur
-    // Sans surcharge : repli sur les différenciateurs Neurones (non-régression).
+    // Nom de l'entreprise = celui du profil (plus « Neurones Technologies » dans le corps du prompt).
+    expect(p).toContain("PROPOSITION DE VALEUR de ACME Solutions");
+    expect(p).not.toContain("de Neurones Technologies POUR CE CLIENT");
+    // Sans surcharge : repli sur les différenciateurs + nom Neurones (non-régression).
     const pNt = buildCvpPrompt({ compte: "SGCI" });
     expect(pNt).toContain("WALLIX Premier");
+    expect(pNt).toContain("PROPOSITION DE VALEUR de Neurones Technologies");
   });
 });
 
