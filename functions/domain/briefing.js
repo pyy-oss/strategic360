@@ -18,6 +18,7 @@
  */
 
 const { COMPANY_CONTEXT } = require("./companyContext");
+const { stripInvalidCitations } = require("./citations");
 
 const VALID_AXES = ["1. La demande est là", "2. Nous pouvons gagner", "3. Il faut agir vite"];
 
@@ -174,16 +175,23 @@ function parseBriefingResponse(rawJsonResponse, context) {
   const r = rawJsonResponse;
   const ctx = context || {};
 
-  const governingThought = coerceString(r.governingThought, "Analyse en cours — idée directrice non disponible.");
-  const args = coerceArgumentTriple(r.arguments);
+  // Vérification des citations (fiabilité 2026-07) : le prompt numérote les signaux [1..citationsMax].
+  // On retire toute citation hors plage (hallucinée) des textes rédigés, pour ne jamais afficher une
+  // « preuve » [n] qui ne pointe sur aucun signal. `citationsMax` absent → 0 → toutes retirées.
+  const maxCite = Number.isFinite(Number(ctx.citationsMax)) ? Number(ctx.citationsMax) : 0;
+  const cite = (s) => stripInvalidCitations(s, maxCite);
+
+  const governingThought = cite(coerceString(r.governingThought, "Analyse en cours — idée directrice non disponible."));
+  const args = coerceArgumentTriple(r.arguments).map((a) => ({ title: a.title, body: cite(a.body) }));
   const topOpportunities = coerceTopList(r.topOpportunities);
   const topThreats = coerceTopList(r.topThreats);
-  const narrative = coerceString(r.narrative, "");
-  const recommendations = Array.isArray(r.recommendations)
+  const narrative = cite(coerceString(r.narrative, ""));
+  const recommendations = (Array.isArray(r.recommendations)
     ? r.recommendations.map(coerceRecommendation).filter(Boolean)
-    : [];
+    : []
+  ).map((rec) => ({ ...rec, action: cite(rec.action) }));
   const decisionsRequested = Array.isArray(r.decisionsRequested)
-    ? r.decisionsRequested.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim())
+    ? r.decisionsRequested.filter((x) => typeof x === "string" && x.trim()).map((x) => cite(x.trim()))
     : [];
 
   return {

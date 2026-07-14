@@ -351,6 +351,17 @@ function differenciateursOf(c) {
 }
 
 /**
+ * companyNameOf(c) — nom de l'entreprise à écrire dans le CORPS des prompts client-facing (CVP,
+ * marketing) : celui du profil client (`ctx.companyName`, onboarding) s'il est fourni, sinon
+ * « Neurones Technologies ». MÊME patron que roleOf/differenciateursOf — dernier reliquat du nom en
+ * dur, pour qu'un client onboardé n'ait AUCUNE trace de Neurones dans ses livrables. Le rôle système
+ * (identité complète + homonymes) reste géré par roleOf(systemRole).
+ */
+function companyNameOf(c) {
+  return c && typeof c.companyName === "string" && c.companyName.trim() ? c.companyName.trim() : "Neurones Technologies";
+}
+
+/**
  * buildSystemRole(p) — GÉNÈRE un rôle système à partir d'un profil client (companyName/legalName/
  * sector/geographies/homonyms). Utilisé par l'onboarding / l'auteur d'une config `config/profile`
  * pour produire `profile.systemRole`. PUR. (Ne reproduit pas NT_ROLE mot pour mot : NT garde son
@@ -449,7 +460,7 @@ ${ANTI_VERBIAGE}
 ${NO_GENERIC}
 ${HISTO_DIRECTIVE}
 
-Rédige la PROPOSITION DE VALEUR de Neurones Technologies POUR CE CLIENT — un texte destiné à être PRÉSENTÉ AU CLIENT (${coerceStr(c.compte, "le compte")}), pas un mémo interne.
+Rédige la PROPOSITION DE VALEUR de ${companyNameOf(c)} POUR CE CLIENT — un texte destiné à être PRÉSENTÉ AU CLIENT (${coerceStr(c.compte, "le compte")}), pas un mémo interne.
 POINT DE VUE CLIENT (impératif) : parle du BÉNÉFICE MÉTIER pour le client, jamais de NOTRE pipeline / NOTRE hygiène commerciale.
 INTERDIT dans le message : « notre CA », « notre pipe/pipeline », « deals en souffrance », « dossiers fantômes », « solder/assainir/nettoyer », « diversifier nos points d'ancrage », « urgence absolue », « tarissement », « critique ». Ce sont des considérations INTERNES — elles n'ont pas leur place dans une proposition de valeur.
 Les faits réels ci-dessous NOURRISSENT ton angle (ils prouvent que tu connais le client), mais le message reste tourné vers CE QUE TU APPORTES au client :
@@ -855,14 +866,14 @@ function buildContenuPrompt(ctx) {
   const pestel = (c.pestel || []).filter((p) => p && (p.axe || p.texte)).slice(0, 2)
     .map((p) => `${coerceStr(p.axe, "?")} : ${coerceStr(p.texte)}`).join(" · ");
   return `${roleOf(c)}
-Tu es aussi le bras droit du MARKETING de Neurones Technologies. Tu produis du CONTENU de marque à
+Tu es aussi le bras droit du MARKETING de ${companyNameOf(c)}. Tu produis du CONTENU de marque à
 diffusion large (1:N), pas un message de vente à un client précis.
 ${ANTI_VERBIAGE}
 ${NO_GENERIC}
 
-OBJECTIF : proposer 3 ANGLES DE CONTENU (post LinkedIn ou tribune) qui positionnent Neurones
-Technologies en référence sur son marché (Côte d'Ivoire / UEMOA), CHACUN ancré sur (a) un SIGNAL DE
-VEILLE réel ci-dessous et (b) UN différenciateur NT réel. Ton expert, utile, non promotionnel : on
+OBJECTIF : proposer 3 ANGLES DE CONTENU (post LinkedIn ou tribune) qui positionnent ${companyNameOf(c)}
+en référence sur son marché (Côte d'Ivoire / UEMOA), CHACUN ancré sur (a) un SIGNAL DE
+VEILLE réel ci-dessous et (b) UN différenciateur réel. Ton expert, utile, non promotionnel : on
 éduque le marché, on ne vend pas frontalement. Interdits : superlatifs creux, « leader incontesté »,
 promesses non étayées, chiffres inventés.
 

@@ -80,6 +80,8 @@ function getClient() {
  *     inventer), ~0.2 (défaut) pour l'analyse, plus haut pour le créatif (scénarios, contenu).
  *   - `opts.schema` {object} : JSON Schema passé en `config.responseSchema` (sortie structurée).
  *   - `opts.maxOutputTokens` {number} : budget de sortie (défaut 8192).
+ *   - `opts.model` {string} : modèle à utiliser (ex. un flash-lite moins cher pour l'extraction). Défaut
+ *     `GEMINI_MODEL` (env) puis `DEFAULT_MODEL`.
  *   Rétro-compat : historiquement le 2ᵉ argument était un `schema` — un objet ressemblant à un
  *   schéma (présence de `type`/`properties`, sans clés d'options) est encore accepté comme tel.
  * @returns {Promise<any>} Parsed JSON response body.
@@ -96,7 +98,11 @@ async function generateJson(prompt, opts) {
   if (looksLikeSchema) o = { schema: o };
 
   const ai = getClient();
-  const modelName = process.env.GEMINI_MODEL || DEFAULT_MODEL;
+  // Modèle paramétrable par appel (maîtrise des coûts 2026-07) : l'EXTRACTION/le JUGEMENT (classify,
+  // evaluate — gros volume, tâche simple) peuvent viser un modèle moins cher via opts.model, tandis que
+  // le raisonnement (briefing, scénarios, copilote) garde le modèle par défaut. Priorité : opts.model >
+  // GEMINI_MODEL (env global) > DEFAULT_MODEL.
+  const modelName = (o.model && String(o.model).trim()) || process.env.GEMINI_MODEL || DEFAULT_MODEL;
 
   // Ancrage temporel (anti-obsolescence, 2026-07) : AUCUN prompt ne recevait la date du jour, si
   // bien qu'un événement passé (ex. une élection d'il y a un an) pouvait être présenté comme
