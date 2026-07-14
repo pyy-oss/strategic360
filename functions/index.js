@@ -3099,6 +3099,11 @@ exports.applyOnboardingDraft = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   const batch = db.batch();
   batch.set(db.doc("config/profile"), built.profileDoc, { merge: true });
   if (Object.keys(built.taxonomyDoc).length) batch.set(db.doc("config/veilleTaxonomy"), built.taxonomyDoc, { merge: true });
+  // Scoring & source authority dérivés du profil (Lot 4 multi-tenant) — écrits seulement si dérivés
+  // (docs partiels ; mergeProfile conserve les autres défauts). Un client hors UEMOA obtient ainsi le
+  // bonus géographique sur SES zones et l'autorité de SES régulateurs, au lieu des défauts CI.
+  if (built.scoringDoc && Object.keys(built.scoringDoc).length) batch.set(db.doc("config/scoring"), built.scoringDoc, { merge: true });
+  if (built.sourceAuthorityDoc && Object.keys(built.sourceAuthorityDoc).length) batch.set(db.doc("config/sourceAuthority"), built.sourceAuthorityDoc, { merge: true });
   if (built.contextText) {
     batch.set(db.doc("frameworks/companyContext"), { content: { text: built.contextText }, source: "onboarding", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   }

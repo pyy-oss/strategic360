@@ -354,7 +354,35 @@ function buildConfigDocsFromDraft(draft) {
   // roleOf() retombe sur NT_ROLE (identité/géo/homonymes Neurones) dans les 13 agents copilote. On ne
   // l'écrase pas s'il est déjà fourni (édition manuelle possible).
   const profileDoc = coerceStr(profile.systemRole) ? { ...profile } : { ...profile, systemRole: buildSystemRole(profile) };
-  return { profileDoc, taxonomyDoc, contextText: assembleContextTextFromDraft(draft), sources, watchlist };
+
+  // SCORING & SOURCE AUTHORITY (audit multi-tenant 2026-07, « Lot 4 ») : ces docs restaient aux défauts
+  // CI/Neurones (bonus géo « ci/uemoa », domaines bceao.int/afdb…), ce qui MIS-SCORAIT un client hors
+  // UEMOA (aucun bonus sur SES géographies, décote d'ancrage local à tort). On DÉRIVE le dérivable :
+  //  - marqueurs géographiques de scoring ← geographies du profil ;
+  //  - domaines officiels ← régulateurs du profil (+ marqueurs gouvernementaux génériques).
+  // Docs PARTIELS : mergeProfile conserve le reste des défauts (pondérations par sous-type, etc.).
+  // (config/offerMapping n'est PAS dérivé : la taxonomie d'offres du client n'est pas déductible d'un site.)
+  const geoTokens = (Array.isArray(profile.geographies) ? profile.geographies : [])
+    .map((g) => coerceStr(g).toLowerCase()).filter(Boolean);
+  const scoringDoc = {};
+  if (geoTokens.length) {
+    scoringDoc.localGeoMarkers = [{ markers: geoTokens, bonus: 0.15 }];
+    scoringDoc.anchorGeoMarkers = geoTokens;
+  }
+  // Régulateurs → jetons de domaine (ex. « ANSSI-CI » → « anssi », « ci » ; « AMF-UMOA » → « amf », « umoa »).
+  const regTokens = [];
+  for (const r of Array.isArray(profile.regulators) ? profile.regulators : []) {
+    for (const tok of coerceStr(r).toLowerCase().split(/[^a-z0-9]+/)) {
+      if (tok.length >= 3 && !regTokens.includes(tok)) regTokens.push(tok);
+    }
+  }
+  const sourceAuthorityDoc = {};
+  if (regTokens.length) {
+    // Marqueurs gouvernementaux génériques (valables tous pays) + régulateurs du client.
+    sourceAuthorityDoc.officialDomains = [".gov", "gouv", "worldbank.org", ...regTokens.filter((t) => !["gov", "gouv"].includes(t))];
+  }
+
+  return { profileDoc, taxonomyDoc, scoringDoc, sourceAuthorityDoc, contextText: assembleContextTextFromDraft(draft), sources, watchlist };
 }
 
 module.exports = {
