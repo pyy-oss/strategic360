@@ -32,11 +32,37 @@ export interface MfaBannerProps {
  * enrolled second factors. "Non-blocking" per the task brief: it nudges, it does not lock the
  * user out of the app (Security Rules/claims remain the actual authority on access).
  */
+/** Mise en veille du rappel MFA : 30 jours (c'est un nudge de sécurité, pas un message jetable — on
+ * le ré-affiche après ce délai plutôt que de le supprimer définitivement). Persisté par utilisateur. */
+const MFA_SNOOZE_DAYS = 30;
+const mfaSnoozeKey = (uid: string) => `mfaNudgeSnoozeUntil:${uid}`;
+function readMfaSnoozeUntil(uid: string): number {
+  try {
+    const v = Number(localStorage.getItem(mfaSnoozeKey(uid)));
+    return Number.isFinite(v) ? v : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function MfaBanner({ user }: MfaBannerProps) {
   const [open, setOpen] = useState(false);
+  const [snoozedUntil, setSnoozedUntil] = useState<number>(() => readMfaSnoozeUntil(user.uid));
   const enrolledFactors = multiFactor(user).enrolledFactors;
 
   if (enrolledFactors.length > 0) return null;
+  // Masqué par l'utilisateur et pas encore expiré → on n'affiche pas (ré-apparaît après MFA_SNOOZE_DAYS).
+  if (snoozedUntil > Date.now()) return null;
+
+  const masquer = () => {
+    const until = Date.now() + MFA_SNOOZE_DAYS * 864e5;
+    try {
+      localStorage.setItem(mfaSnoozeKey(user.uid), String(until));
+    } catch {
+      /* stockage indisponible : on masque au moins pour la session */
+    }
+    setSnoozedUntil(until);
+  };
 
   return (
     <Card style={{ marginBottom: 14, borderColor: T.gold }}>
@@ -53,13 +79,20 @@ export function MfaBanner({ user }: MfaBannerProps) {
             Google Authenticator, Authy, etc.) pour protéger votre compte.
           </div>
         </div>
-        <button
-          className="pill"
-          style={{ background: T.gold, borderColor: T.gold, color: "#0E1613" }}
-          onClick={() => setOpen((o) => !o)}
-        >
-          {open ? "Fermer" : "Configurer la MFA"}
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {!open && (
+            <button className="pill" onClick={masquer} title={`Masquer ce rappel pendant ${MFA_SNOOZE_DAYS} jours`}>
+              Masquer
+            </button>
+          )}
+          <button
+            className="pill"
+            style={{ background: T.gold, borderColor: T.gold, color: "#0E1613" }}
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? "Fermer" : "Configurer la MFA"}
+          </button>
+        </div>
       </div>
       {open && <TotpEnrollmentForm user={user} onDone={() => setOpen(false)} />}
     </Card>
