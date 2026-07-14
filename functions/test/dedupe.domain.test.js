@@ -91,6 +91,14 @@ describe("dedupe — similarité de titres", () => {
     expect(clusterNearDuplicates([{ id: "x", title: "Sujet unique", axis: "tech" }])).toEqual([]);
   });
 
+  it("clusterNearDuplicates : deux AO PUREMENT génériques (jetons d'AO seuls) ne fusionnent pas trans-axes (audit 2026-07)", () => {
+    const items = [
+      { id: "g1", title: "Fourniture de matériel informatique", axis: "clients_prospects" },
+      { id: "g2", title: "Acquisition de matériel informatique", axis: "tech" },
+    ];
+    // Seuls des jetons génériques d'AO sont partagés → pas de discriminant fort → aucune fusion.
+    expect(clusterNearDuplicates(items)).toEqual([]);
+  });
   it("isStrongDuplicate : un simple mot commun trans-axes ne suffit PAS à fusionner (≥3 jetons + 0.75)", () => {
     const items = [
       { id: "c1", title: "Cisco lance une nouvelle gamme de switches", axis: "tech" },

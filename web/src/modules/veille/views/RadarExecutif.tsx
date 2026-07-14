@@ -6,7 +6,7 @@ import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { Toggle } from "../../../design/fields";
 import { useActions, useDecisions } from "../lib/execution";
 import { BUSINESS_SUBTYPES, PUBLISHED_STATUSES, useBizOpportunities, useIntelItems, useWatchlist } from "../lib/intel";
-import { isPastDue } from "../lib/freshness";
+import { isPastDue, effectiveProx } from "../lib/freshness";
 import { rankByLens, lensAdjustedScore, diversifyTopN } from "../lib/ranking";
 import { useVeilleExecSummary, useAiHealth, useKpiHistory, kpiDelta, backfillKpiHistory, type KpiDelta } from "../lib/summaries";
 import { useIsExec } from "../../../lib/rbac";
@@ -209,7 +209,12 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   const bizImminent = diversifyTopN(
     sorted
       .filter((s) => !isPastDue(s, nowMs))
-      .filter((s) => s.prox === "imminent" || s.prox === "court" || BUSINESS_SUBTYPES.has(s.subtype ?? "")),
+      // Imminence EFFECTIVE (dérivée des vraies dates) et non le label IA brut (audit 2026-07) : un
+      // « imminent » vieux d'un an sans échéance future ne doit pas trôner dans « Business imminent ».
+      .filter((s) => {
+        const ep = effectiveProx(s, nowMs) ?? s.prox;
+        return ep === "imminent" || ep === "court" || BUSINESS_SUBTYPES.has(s.subtype ?? "");
+      }),
     6,
     (s) => s.ent
   );

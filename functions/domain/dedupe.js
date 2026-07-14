@@ -53,19 +53,34 @@ function isNearDuplicate(a, b, threshold = 0.6) {
 }
 
 /**
- * isStrongDuplicate(a, b) — quasi-doublon À FORT RECOUVREMENT : au moins 3 jetons significatifs
- * partagés ET coefficient de recouvrement ≥ 0.75. Assez robuste pour affirmer « même événement »
- * MÊME si les deux signaux ont été classés sur des axes différents (une levée de fonds fintech vue
- * `tech` par un média et `clients_prospects` par un autre). Sert à lever la contrainte d'axe
- * identique du dédoublonnage (audit pertinence 2026-07). PUR.
+ * Jetons GÉNÉRIQUES d'appels d'offres/marchés publics — présents dans quantité d'AO DISTINCTS
+ * (« fourniture de matériel informatique » de deux ministères ≠ doublon). Exclus du comptage de
+ * recouvrement fort pour éviter les fusions cross-axe abusives (audit dedup 2026-07).
+ */
+const GENERIC_TOKENS = new Set([
+  "fourniture", "fournitures", "materiel", "materiels", "equipement", "equipements", "informatique",
+  "acquisition", "marche", "marches", "appel", "offre", "offres", "public", "publics", "projet",
+  "projets", "prestation", "prestations", "service", "services", "maintenance", "installation",
+  "livraison", "achat", "achats", "lot", "lots", "avis", "renforcement", "mise", "place", "systeme",
+]);
+
+/**
+ * isStrongDuplicate(a, b) — quasi-doublon À FORT RECOUVREMENT, robuste au point d'affirmer « même
+ * événement » MÊME sur des axes différents (une levée de fonds vue `tech` et `clients_prospects`).
+ * ≥ 3 jetons partagés et recouvrement ≥ 0.75. DURCI (audit 2026-07) : on exige EN PLUS au moins 2
+ * jetons partagés NON GÉNÉRIQUES (hors GENERIC_TOKENS d'AO) — un vrai discriminant d'événement doit
+ * être présent. Ainsi deux AO PUREMENT génériques (« fourniture de matériel informatique » de deux
+ * acheteurs, aucun jeton fort partagé) ne fusionnent plus, tandis qu'un vrai même-événement
+ * (« BRVM refonte SI ») partage « brvm »+« refonte » et fusionne toujours. PUR.
  */
 function isStrongDuplicate(a, b) {
   const A = titleTokens(a);
   const B = titleTokens(b);
   if (!A.size || !B.size) return false;
   let inter = 0;
-  for (const t of A) if (B.has(t)) inter++;
-  if (inter < 3) return false;
+  let interStrong = 0;
+  for (const t of A) if (B.has(t)) { inter++; if (!GENERIC_TOKENS.has(t)) interStrong++; }
+  if (inter < 3 || interStrong < 2) return false;
   return inter / Math.min(A.size, B.size) >= 0.75;
 }
 
