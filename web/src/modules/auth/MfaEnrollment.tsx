@@ -141,7 +141,7 @@ function TotpEnrollmentForm({ user, onDone }: { user: User; onDone: () => void }
           <img
             alt="QR code TOTP"
             src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
-              secret.generateQrCodeUrl(user.email ?? undefined, "Veille Stratégique NT-CI")
+              secret.generateQrCodeUrl(user.email ?? undefined, "Sentinel NT-CI")
             )}`}
             style={{ width: 180, maxWidth: "100%", height: 180, borderRadius: 8, background: "#fff", padding: 8 }}
           />
