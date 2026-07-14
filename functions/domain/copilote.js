@@ -488,34 +488,71 @@ Réponds UNIQUEMENT avec un objet JSON valide :
 JSON uniquement.`;
 }
 
-// NO_GENERIC déterministe sur les MONTANTS (audit pertinence 2026-07) : l'anti-invention des chiffres
-// XOF ne reposait que sur le texte du prompt. Ici on extrait les montants cités et on ANNOTE ceux qui
-// ne correspondent à aucune valeur du modèle de valeur chiffré (valueModel) — un montant halluciné est
-// marqué « (chiffre à vérifier) » au lieu de passer pour un fait. PUR, conservateur (tolérance ±2 %).
-function allowedAmountSet(valueModel) {
+// NO_GENERIC déterministe sur les MONTANTS (audit pertinence 2026-07, étendu audit intégral) :
+// l'anti-invention des chiffres XOF ne reposait que sur le texte du prompt. Ici on extrait les
+// montants cités et on ANNOTE ceux qui ne correspondent à AUCUN montant réel injecté dans le prompt
+// — un montant halluciné est marqué « (chiffre à vérifier) ». L'ensemble autorisé couvre TOUS les
+// chiffres réellement placés dans la matière (valueModel MAIS AUSSI deals, historique, recommandation),
+// pour ne pas faux-positiver un vrai montant de deal cité. PUR, conservateur (tolérance ±2 %).
+function allowedAmountSet(ctx) {
   const s = new Set();
   const add = (n) => { const v = Math.round(Number(n) || 0); if (v > 0) s.add(v); };
-  const v = valueModel || {};
+  const c = ctx || {};
+  // Empreinte chiffrée directe du compte (injectée par empreinteChiffree/factBase).
+  add(c.casTotal); add(c.pipelinePondere);
+  // Modèle de valeur chiffré (business case / triennal).
+  const v = c.valueModel || {};
   add(v.casTotal); add(v.pipelinePondere); add(v.whitespacePotential);
   if (v.nextOffer) add(v.nextOffer.montant);
   for (const w of Array.isArray(v.whitespaceValue) ? v.whitespaceValue : []) add(w.montant);
+  // Deals réels nommés avec leur montant exact (factBase les demande « avec leur montant exact »).
+  for (const d of Array.isArray(c.deals) ? c.deals : []) if (d && typeof d === "object") add(d.montant);
+  // Historique : CAS réalisés par offre vendue.
+  for (const h of Array.isArray(c.historique) ? c.historique : []) if (h && typeof h === "object") add(h.cas);
+  // Recommandation : panier de référence + médiane portefeuille brute.
+  const rec = c.recommendation || {};
+  add(rec.montantEstime); add(rec.montantReference);
   return s;
+}
+// Multiplicateurs textuels d'échelle (« 45 M », « 250 millions », « 1,2 Md ») pour dériver la valeur
+// réelle d'un montant abrégé et le comparer à l'ensemble autorisé (audit intégral 2026-07).
+const AMOUNT_SCALE = [
+  { re: /^(?:milliards?|md|mds)$/i, mult: 1e9 },
+  { re: /^(?:millions?|m)$/i, mult: 1e6 },
+  { re: /^(?:k)$/i, mult: 1e3 },
+];
+function scaleOf(unitWord) {
+  const u = String(unitWord || "").trim();
+  const hit = AMOUNT_SCALE.find((x) => x.re.test(u));
+  return hit ? hit.mult : 1;
 }
 function annotateStrayAmounts(text, allowed) {
   if (typeof text !== "string" || !text || !allowed || !allowed.size) return text;
-  // Nombre (groupé par espaces/points/insécables) SUIVI d'un marqueur monétaire (XOF / FCFA / F CFA).
-  return text.replace(/(\d[\d .  ]*\d|\d)(\s*(?:XOF|FCFA|F\s?CFA))/gi, (m, num, unit) => {
+  const inAllowed = (val) => [...allowed].some((a) => Math.abs(a - val) <= Math.max(1, a * 0.02));
+  // 1) Nombre + multiplicateur d'échelle optionnel (M / millions / Md / k) + marqueur monétaire
+  //    (XOF / FCFA / F CFA / €/EUR / $/USD). Ex. « 45 M FCFA », « 60 000 € », « 250 millions XOF ».
+  let out = text.replace(/(\d[\d .  ]*\d|\d)\s*(milliards?|mds?|millions?|m|k)?\s*(?:XOF|FCFA|F\s?CFA|€|EUR|\$|USD)/gi, (m, num, scaleWord) => {
     if (/à vérifier/i.test(m)) return m;
     const val = Number(String(num).replace(/[ .  ]/g, ""));
     if (!Number.isFinite(val) || val <= 0) return m;
-    const ok = [...allowed].some((a) => Math.abs(a - val) <= Math.max(1, a * 0.02));
-    return ok ? m : `${num}${unit} (chiffre à vérifier)`;
+    const scaled = val * scaleOf(scaleWord);
+    return inAllowed(scaled) ? m : `${m} (chiffre à vérifier)`;
   });
+  // 2) Nombre + mot d'échelle monétaire (millions/milliards) SANS symbole de devise (« un potentiel de
+  //    250 millions ») : contexte fortement monétaire — on flague s'il ne correspond à aucun montant réel.
+  out = out.replace(/(\d[\d., ]*\d|\d)\s*(milliards?|mds?|millions?)\b(?!\s*(?:XOF|FCFA|F\s?CFA|€|EUR|\$|USD))/gi, (mm, num2, scaleWord2) => {
+    if (/à vérifier/i.test(mm)) return mm;
+    const base2 = Number(String(num2).replace(/[ .,]/g, ""));
+    if (!Number.isFinite(base2) || base2 <= 0) return mm;
+    const scaled2 = base2 * scaleOf(scaleWord2);
+    return inAllowed(scaled2) ? mm : `${mm} (chiffre à vérifier)`;
+  });
+  return out;
 }
 
 function parseCvpResponse(raw, ctx) {
   if (!raw || typeof raw !== "object") return null;
-  const allowed = allowedAmountSet(ctx && ctx.valueModel);
+  const allowed = allowedAmountSet(ctx);
   const message = annotateStrayAmounts(coerceStr(raw.message), allowed);
   const differenciateurs = coerceStrArray(raw.differenciateurs).map((d) => annotateStrayAmounts(d, allowed));
   const prochaineEtape = annotateStrayAmounts(coerceStr(raw.prochaineEtape), allowed);
@@ -1117,7 +1154,7 @@ JSON uniquement.`;
 }
 function parseBusinessCaseResponse(raw, ctx) {
   if (!raw || typeof raw !== "object") return null;
-  const allowed = allowedAmountSet(ctx && ctx.valueModel);
+  const allowed = allowedAmountSet(ctx);
   const gains = (Array.isArray(raw.gains) ? raw.gains : [])
     .filter((x) => x && typeof x === "object" && coerceStr(x.levier))
     .map((x) => ({ levier: coerceStr(x.levier), montant: annotateStrayAmounts(coerceStr(x.montant), allowed), base: coerceStr(x.base) })).slice(0, 5);

@@ -94,15 +94,26 @@ export default function VeilleApp() {
   const isExec = useIsExec();
   const perms = usePermissions();
 
-  // Visibilité d'une vue selon le RBAC : onboarding = exec ; reglages = Direction ; sinon lecture
-  // du module associé (VIEW_MODULE). Pendant le chargement de la matrice, on n'occulte pas les vues
-  // à module (optimiste) pour éviter un flash de nav vide / une redirection intempestive.
-  const canSeeView = (k: string): boolean => {
+  // GARDE DE ROUTE (redirection) — optimiste pendant le chargement de la matrice : on ne bounce PAS
+  // un deep-link légitime (ex. un profil stratégie arrivant sur /veille/cadres) avant résolution.
+  const canAccessView = (k: string): boolean => {
     if (EXEC_ONLY_VIEWS.has(k)) return isExec;
     if (DIRECTION_ONLY_VIEWS.has(k)) return role === "direction";
     const m = VIEW_MODULE[k];
     if (!m) return true;
     return perms.loading ? true : perms.canRead(m);
+  };
+  // VISIBILITÉ NAV — NON optimiste pendant le chargement (audit intégral 2026-07, m25) : on n'affiche
+  // que le module `veille` (déjà garanti par le garde de route RequireCan de VeilleApp) tant que la
+  // matrice charge, pour éviter le FLASH d'onglets d'autres modules qu'un profil restreint ne doit
+  // pas voir. Les vues exec/Direction restent gatées sur les claims (résolues indépendamment).
+  const canSeeView = (k: string): boolean => {
+    if (EXEC_ONLY_VIEWS.has(k)) return isExec;
+    if (DIRECTION_ONLY_VIEWS.has(k)) return role === "direction";
+    const m = VIEW_MODULE[k];
+    if (!m) return true;
+    if (perms.loading) return m === "veille";
+    return perms.canRead(m);
   };
 
   const visibleGroups = useMemo(
@@ -113,7 +124,7 @@ export default function VeilleApp() {
     [isExec, role, perms.loading, perms.matrix]
   );
 
-  if (!view || !VIEW_KEYS.includes(view) || !canSeeView(view)) {
+  if (!view || !VIEW_KEYS.includes(view) || !canAccessView(view)) {
     return <Navigate to="/veille/radar" replace />;
   }
   const setView = (v: string) => navigate(`/veille/${v}`);

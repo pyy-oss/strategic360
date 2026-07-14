@@ -177,36 +177,73 @@ export interface CanResult {
 }
 
 /**
- * Reads `config/permissions` (matrix) via a live listener and combines it with the current
+ * Abonnement PARTAGÉ à config/permissions (audit intégral 2026-07, m24) — un SEUL `onSnapshot` sur
+ * le doc de matrice pour toute l'app, quel que soit le nombre de composants qui appellent
+ * `useCan`/`usePermissions`. Auparavant chaque consommateur ouvrait son propre listener sur le même
+ * doc quasi-immuable. Même schéma singleton que la source auth : le listener s'ouvre au 1er abonné
+ * (quand un user est présent, via la source claims partagée) et se ferme quand il n'en reste aucun.
+ */
+type MatrixState = { matrix: PermMatrix | null; loading: boolean };
+let matrixState: MatrixState = { matrix: null, loading: true };
+const matrixSubscribers = new Set<(s: MatrixState) => void>();
+let matrixDocUnsub: (() => void) | null = null;
+let matrixClaimsUnsub: (() => void) | null = null;
+
+function emitMatrix(next: MatrixState) {
+  matrixState = next;
+  for (const fn of matrixSubscribers) fn(next);
+}
+
+function startMatrixSource() {
+  if (matrixClaimsUnsub) return;
+  // S'appuie sur la source auth partagée pour (r)ouvrir le listener doc quand un user est présent.
+  const onClaims = (c: Claims) => {
+    if (c.user) {
+      if (!matrixDocUnsub) {
+        emitMatrix({ matrix: matrixState.matrix, loading: true });
+        matrixDocUnsub = onSnapshot(
+          doc(db, "config/permissions"),
+          (snap) => emitMatrix({ matrix: (snap.data()?.matrix as PermMatrix | undefined) ?? null, loading: false }),
+          () => emitMatrix({ matrix: null, loading: false })
+        );
+      }
+    } else {
+      if (matrixDocUnsub) { matrixDocUnsub(); matrixDocUnsub = null; }
+      emitMatrix({ matrix: null, loading: c.loading });
+    }
+  };
+  claimsSubscribers.add(onClaims);
+  startClaimsSource();
+  onClaims(claimsState); // synchronise sur l'état auth courant
+  matrixClaimsUnsub = () => { claimsSubscribers.delete(onClaims); };
+}
+
+/** Souscrit à la source de matrice partagée (config/permissions). */
+function useSharedMatrix(): MatrixState {
+  const [state, setState] = useState<MatrixState>(matrixState);
+  useEffect(() => {
+    matrixSubscribers.add(setState);
+    startMatrixSource();
+    setState(matrixState);
+    return () => {
+      matrixSubscribers.delete(setState);
+      if (matrixSubscribers.size === 0) {
+        if (matrixDocUnsub) { matrixDocUnsub(); matrixDocUnsub = null; }
+        if (matrixClaimsUnsub) { matrixClaimsUnsub(); matrixClaimsUnsub = null; }
+      }
+    };
+  }, []);
+  return state;
+}
+
+/**
+ * Reads `config/permissions` (matrix) via the SHARED live listener and combines it with the current
  * role to mirror the server-side `canRead()`/`canWrite()` rules functions.
  */
 export function useCan(moduleName: string, claims?: Claims): CanResult {
   const ownClaims = useClaims();
-  const { user, role, loading: claimsLoading } = claims ?? ownClaims;
-  const [matrix, setMatrix] = useState<PermMatrix | null>(null);
-  const [matrixLoading, setMatrixLoading] = useState(true);
-
-  useEffect(() => {
-    if (!user) {
-      setMatrix(null);
-      setMatrixLoading(false);
-      return;
-    }
-    setMatrixLoading(true);
-    const unsub = onSnapshot(
-      doc(db, "config/permissions"),
-      (snap) => {
-        setMatrix((snap.data()?.matrix as PermMatrix | undefined) ?? null);
-        setMatrixLoading(false);
-      },
-      () => {
-        setMatrix(null);
-        setMatrixLoading(false);
-      }
-    );
-    return unsub;
-  }, [user]);
-
+  const { role, loading: claimsLoading } = claims ?? ownClaims;
+  const { matrix, loading: matrixLoading } = useSharedMatrix();
   const loading = claimsLoading || matrixLoading;
   const level = levelFor(role, matrix, moduleName);
   return {
@@ -235,19 +272,8 @@ export function usePermissions(): {
   canRead: (m: string) => boolean;
   canWrite: (m: string) => boolean;
 } {
-  const { role, user, loading: claimsLoading } = useClaims();
-  const [matrix, setMatrix] = useState<PermMatrix | null>(null);
-  const [matrixLoading, setMatrixLoading] = useState(true);
-  useEffect(() => {
-    if (!user) { setMatrix(null); setMatrixLoading(false); return; }
-    setMatrixLoading(true);
-    const unsub = onSnapshot(
-      doc(db, "config/permissions"),
-      (snap) => { setMatrix((snap.data()?.matrix as PermMatrix | undefined) ?? null); setMatrixLoading(false); },
-      () => { setMatrix(null); setMatrixLoading(false); }
-    );
-    return unsub;
-  }, [user]);
+  const { role, loading: claimsLoading } = useClaims();
+  const { matrix, loading: matrixLoading } = useSharedMatrix();
   const canRead = (m: string) => { const l = levelFor(role, matrix, m); return l === "read" || l === "write"; };
   const canWrite = (m: string) => levelFor(role, matrix, m) === "write";
   return { role, matrix, loading: claimsLoading || matrixLoading, canRead, canWrite };

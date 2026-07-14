@@ -1374,6 +1374,9 @@ async function handleEvalUnusable(db, it, stamp, reason) {
  */
 async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
   const companyContext = await getCompanyContext();
+  // Identité/marché du juge dérivés du PROFIL CLIENT (généricisation multi-tenant, audit intégral) —
+  // défaut = Neurones. Best-effort : une lecture ratée retombe sur DEFAULT_PROFILE (comportement NT).
+  const evalIdentity = (await loadClientProfile(db)).profile;
   const snap = await db.collection("intelItems").where("status", "==", "pending").limit(limit).get();
   const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   if (!items.length) return { evaluated: 0, published: 0, rejected: 0 };
@@ -1392,7 +1395,7 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
     try {
       // Jugement de pertinence : température 0 (verdict reproductible) + modèle d'extraction configurable
       // (GEMINI_MODEL_EXTRACTION, coûts) — non défini → modèle par défaut (inchangé).
-      const parsed = parseEvaluateResponse(await generateJson(buildEvaluatePrompt(it, companyContext), { temperature: 0, model: process.env.GEMINI_MODEL_EXTRACTION }));
+      const parsed = parseEvaluateResponse(await generateJson(buildEvaluatePrompt(it, companyContext, evalIdentity), { temperature: 0, model: process.env.GEMINI_MODEL_EXTRACTION }));
       if (parsed && parsed.publier === false) {
         await db.doc(`intelItems/${it.id}`).update({ status: "rejected", evalScore: parsed.pertinence, evalReason: parsed.raison || "écarté par l'évaluateur", evalFailed: false, updatedAt: stamp() });
         rejected += 1;
@@ -2186,9 +2189,13 @@ async function runEnrichment(db) {
   // qu'elles utilisent la version à jour. writeFrameworkDoc applique la garde humaine : un
   // contexte édité par la Direction n'est jamais réécrit par l'IA.
   let companyContext = await getCompanyContext();
+  // Identité/sections attendues du contexte dérivées du PROFIL CLIENT (généricisation multi-tenant,
+  // audit intégral) — défaut = Neurones. Best-effort (lecture ratée → DEFAULT_PROFILE).
+  const enrichProfile = await loadClientProfile(db);
+  const refreshIdentity = { ...enrichProfile.profile, contextMarkers: enrichProfile.taxonomy && enrichProfile.taxonomy.contextMarkers };
   try {
     const parsed = parseContextRefreshResponse(
-      await generateJson(buildContextRefreshPrompt(companyContext, signals)),
+      await generateJson(buildContextRefreshPrompt(companyContext, signals, refreshIdentity)),
       companyContext
     );
     if (!parsed) {
@@ -3738,6 +3745,56 @@ exports.purgeAuditLog = onSchedule(
       if (deleted) logger.info(`purgeAuditLog: ${deleted} entrées auditLog > ${AUDITLOG_RETENTION_DAYS} j supprimées.`);
     } catch (err) {
       logger.error(`purgeAuditLog: FAILED — ${err.message}`, { err });
+    }
+  }
+);
+
+/**
+ * purgeArchivedIntelItems — RÉTENTION des signaux ARCHIVÉS (audit intégral 2026-07, m11). Les items
+ * dédoublonnés/écartés passent en `status:"archived"` mais restent physiquement en base : chaque
+ * lecture full-collection (index anti-doublon, agrégats) les relit, si bien que le coût/latence de
+ * lecture croît indéfiniment avec l'historique cumulé. Cette purge hebdomadaire supprime les archivés
+ * plus vieux que `INTELITEMS_ARCHIVE_RETENTION_DAYS`.
+ *
+ * SÉCURITÉ : DÉSACTIVÉE PAR DÉFAUT (flag à 0 = aucune suppression, comportement inchangé). L'opérateur
+ * doit poser explicitement INTELITEMS_ARCHIVE_RETENTION_DAYS (>0, ex. 365) pour activer la purge —
+ * suppression de données volontairement opt-in. Requête sur le seul champ `status` (index simple par
+ * défaut, aucun index composite à déployer) ; filtrage de l'ancienneté en mémoire ; bornée par lots.
+ * Ne touche QUE les `archived` (jamais un signal encore `new`/`pending`/`published`).
+ */
+const INTELITEMS_ARCHIVE_RETENTION_DAYS = Number(process.env.INTELITEMS_ARCHIVE_RETENTION_DAYS) || 0;
+exports.purgeArchivedIntelItems = onSchedule(
+  { schedule: "30 3 * * 0", timeZone: TENANT_TIMEZONE, region: "europe-west1" },
+  async () => {
+    if (!(INTELITEMS_ARCHIVE_RETENTION_DAYS > 0)) {
+      logger.info("purgeArchivedIntelItems: rétention désactivée (INTELITEMS_ARCHIVE_RETENTION_DAYS non défini) — aucune suppression.");
+      return;
+    }
+    try {
+      const db = firestoreDb();
+      const cutoffMs = Date.now() - INTELITEMS_ARCHIVE_RETENTION_DAYS * 24 * 3600 * 1000;
+      const toMs = (ts) => (ts && typeof ts.toMillis === "function" ? ts.toMillis() : (ts instanceof Date ? ts.getTime() : (typeof ts === "number" ? ts : null)));
+      let deleted = 0;
+      // Boucle bornée : jusqu'à 20 lots de 400 archivés. On filtre l'ancienneté en mémoire (updatedAt
+      // sinon createdAt) pour ne pas exiger d'index composite status+updatedAt.
+      for (let i = 0; i < 20; i++) {
+        const snap = await db.collection("intelItems").where("status", "==", "archived").limit(400).get();
+        if (snap.empty) break;
+        const stale = snap.docs.filter((d) => {
+          const data = d.data() || {};
+          const ms = toMs(data.updatedAt) ?? toMs(data.createdAt);
+          return ms != null && ms < cutoffMs;
+        });
+        if (!stale.length) break; // aucun archivé assez vieux dans ce lot → rien à purger
+        const batch = db.batch();
+        stale.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        deleted += stale.length;
+        if (snap.size < 400) break;
+      }
+      if (deleted) logger.info(`purgeArchivedIntelItems: ${deleted} intelItems archivés > ${INTELITEMS_ARCHIVE_RETENTION_DAYS} j supprimés.`);
+    } catch (err) {
+      logger.error(`purgeArchivedIntelItems: FAILED — ${err.message}`, { err });
     }
   }
 );

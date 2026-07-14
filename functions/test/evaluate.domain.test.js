@@ -42,6 +42,21 @@ describe("evaluate — porte de pertinence des signaux de veille", () => {
     expect(p).toMatch(/GÉNÉRIQUE/); // consigne de pénalisation du générique
   });
 
+  it("généricisation : sans identité → défaut Neurones ; avec profil client → identité/marché du client", () => {
+    // Défaut (aucune identité) = comportement Neurones verbatim.
+    const def = buildEvaluatePrompt({ title: "x" }, "");
+    expect(def).toContain("NEURONES TECHNOLOGIES CI");
+    expect(def).toContain("Côte d'Ivoire, UEMOA et Afrique de l'Ouest");
+    expect(def).toContain("POUR NT");
+    // Profil client → l'identité et le marché suivent le profil, plus aucune mention « NEURONES ».
+    const acme = buildEvaluatePrompt({ title: "x" }, "", { companyName: "Acme Retail", sector: "distributeur omnicanal", geographies: ["France", "Bénélux"] });
+    expect(acme).toContain("Acme Retail");
+    expect(acme).toContain("distributeur omnicanal");
+    expect(acme).toContain("France, Bénélux");
+    expect(acme).toContain("POUR Acme Retail");
+    expect(acme).not.toContain("NEURONES");
+  });
+
   it("parseEvaluateResponse : borne le score 0-100, garde la raison", () => {
     expect(parseEvaluateResponse({ pertinence: 82, publier: true, raison: "AO imminent" })).toEqual({ pertinence: 82, publier: true, raison: "AO imminent" });
     expect(parseEvaluateResponse({ pertinence: 150, publier: false, raison: "hors sujet" }).pertinence).toBe(100);

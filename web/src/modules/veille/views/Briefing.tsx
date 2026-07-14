@@ -102,7 +102,7 @@ export function Briefing() {
           <div>
             <Eyebrow color={T.gold}>Briefing exécutif — {briefing.period}</Eyebrow>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-              <span style={{ fontSize: 11, color: T.faint }}>Généré par IA · revue humaine obligatoire · exportable en board pack PDF</span>
+              <span style={{ fontSize: 11, color: T.faint }}>Généré par IA · revue humaine obligatoire · exportable en board pack PDF · les repères [n] renvoient au signal source (provenance), ils n'attestent pas la véracité de l'affirmation</span>
               <Badge c={T.emerald}>Généré (statut : {briefing.status})</Badge>
               {briefing.status === "draft" && <Badge c={T.gold}>Brouillon — en attente de revue</Badge>}
             </div>
@@ -134,7 +134,7 @@ export function Briefing() {
                 <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.7, color: T.dim, fontSize: 12.5 }}>
                   {opportunities.map((o, i) => (
                     <li key={i}>
-                      {o.title} <span style={{ color: T.faint }}>({o.score})</span>
+                      {o.title} <span style={{ color: T.faint }} title="score de priorité estimé par l'IA (non calculé) — à valider en revue">(est. IA {o.score})</span>
                     </li>
                   ))}
                 </ul>
@@ -148,7 +148,7 @@ export function Briefing() {
                 <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.7, color: T.dim, fontSize: 12.5 }}>
                   {threats.map((o, i) => (
                     <li key={i}>
-                      {o.title} <span style={{ color: T.faint }}>({o.score})</span>
+                      {o.title} <span style={{ color: T.faint }} title="score de priorité estimé par l'IA (non calculé) — à valider en revue">(est. IA {o.score})</span>
                     </li>
                   ))}
                 </ul>

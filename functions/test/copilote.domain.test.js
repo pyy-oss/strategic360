@@ -204,6 +204,31 @@ describe("Copilote — plan d'action réellement daté & NO_GENERIC déterminist
     expect(out.message).toContain("45 000 000 XOF");
     expect(out.message).toMatch(/900 000 000 XOF \(chiffre à vérifier\)/);
   });
+
+  it("parseCvpResponse : un vrai montant de DEAL (hors valueModel) n'est PAS faux-positivé", async () => {
+    const { parseCvpResponse } = await import("../domain/copilote.js");
+    // Le montant 250 000 000 vient d'un deal réel injecté dans le prompt, pas du valueModel.
+    const ctx = { valueModel: { casTotal: 120000000, whitespaceValue: [] }, deals: [{ nom: "Refonte SI", montant: 250000000 }] };
+    const out = parseCvpResponse(
+      { message: "L'opportunité Refonte SI à 250 000 000 XOF mérite un cadrage.", differenciateurs: [] },
+      ctx
+    );
+    expect(out.message).toContain("250 000 000 XOF");
+    expect(out.message).not.toMatch(/250 000 000 XOF \(chiffre à vérifier\)/);
+  });
+
+  it("parseCvpResponse : montant ABRÉGÉ (45 M FCFA) reconnu via l'échelle, halluciné (99 M) annoté", async () => {
+    const { parseCvpResponse } = await import("../domain/copilote.js");
+    const ctx = { valueModel: { nextOffer: { montant: 45000000 }, whitespaceValue: [] } };
+    const out = parseCvpResponse(
+      { message: "Offre à 45 M FCFA, avec un potentiel additionnel de 99 millions.", differenciateurs: [] },
+      ctx
+    );
+    // 45 M FCFA = 45 000 000 ∈ allowed → intact.
+    expect(out.message).toMatch(/45 M FCFA(?! \(chiffre)/);
+    // 99 millions ∉ allowed, contexte monétaire → annoté même sans devise.
+    expect(out.message).toMatch(/99 millions \(chiffre à vérifier\)/);
+  });
 });
 
 describe("Copilote — agent planAction (plan d'action daté 90 j)", () => {

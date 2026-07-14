@@ -33,6 +33,10 @@ const TRENDS = ["↑", "→", "↓"];
 // (audit 2026-07): domain/companyContext.js — re-exported below for backward compatibility with
 // existing consumers of `require("./enrich").COMPANY_CONTEXT`.
 const { COMPANY_CONTEXT } = require("./companyContext");
+// Validateur de date calendaire RÉELLE (rejette 2024-13-45 / 2024-02-30) — source unique
+// partagée avec classify.js (audit 2026-07, m11 étendu aux battlecards/opportunités). Pas de cycle :
+// classify.js ne dépend pas d'enrich.js.
+const { isValidCalendarDate } = require("./classify");
 
 const VALID_HORIZONS = ["imminent", "court", "moyen", "horizon"];
 const VALID_PROBABILITIES = ["high", "medium", "low"];
@@ -278,6 +282,18 @@ function coerceStringArray(value) {
 }
 
 /**
+ * coerceDeclarativeDeadline(v) — normalise une échéance déclarative libre. Accepte le texte tel quel
+ * ("juillet 2026", "T2 2026") mais rejette (→ null) une valeur d'ALLURE ISO (YYYY-MM-DD) qui n'est
+ * PAS une date calendaire réelle (2024-02-30), pour ne jamais afficher une échéance fictive. PUR.
+ */
+function coerceDeclarativeDeadline(v) {
+  if (typeof v !== "string" || !v.trim()) return null;
+  const s = v.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s) && !isValidCalendarDate(s)) return null;
+  return s;
+}
+
+/**
  * Validates/coerces the SWOT+PESTEL JSON response. Guarantees: exactly the 4 SWOT keys (missing
  * quadrant → []), arrays of non-empty strings; `pestel.factors` entries only carry valid factor
  * names, `imp` clamped to [0,1], `tr` coerced to ↑/→/↓ (default "→"), `d` a string; invalid
@@ -488,8 +504,10 @@ function parseBattlecardMovesResponse(raw) {
     const competitor = typeof entry.competitor === "string" ? entry.competitor.trim() : "";
     const move = typeof entry.move === "string" ? entry.move.trim() : "";
     if (!competitor || !move) continue;
+    // Date calendaire RÉELLE exigée (audit 2026-07) : une date impossible (2024-02-30) ne doit pas
+    // s'afficher comme date d'un mouvement concurrent — repli sur aujourd'hui.
     const date =
-      typeof entry.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry.date.trim())
+      typeof entry.date === "string" && isValidCalendarDate(entry.date)
         ? entry.date.trim()
         : today;
     moves.push({ competitor, move, date });
@@ -589,7 +607,9 @@ function parseOpportunitiesResponse(raw) {
       offering: typeof entry.offering === "string" ? entry.offering.trim() : "",
       // Montants/échéances déclaratifs : null (pas undefined) quand absents ou non-string.
       estAmount: typeof entry.estAmount === "string" && entry.estAmount.trim() ? entry.estAmount.trim() : null,
-      deadline: typeof entry.deadline === "string" && entry.deadline.trim() ? entry.deadline.trim() : null,
+      // Échéance textuelle libre ("juillet 2026", "T2 2026") acceptée telle quelle, MAIS une date
+      // d'allure ISO impossible (2024-02-30) est rejetée pour ne pas afficher une échéance fictive.
+      deadline: coerceDeclarativeDeadline(entry.deadline),
       horizon: VALID_HORIZONS.includes(entry.horizon) ? entry.horizon : "moyen",
       probability: VALID_PROBABILITIES.includes(entry.probability) ? entry.probability : "medium",
       nextAction,
@@ -980,9 +1000,16 @@ const CONTEXT_REQUIRED_MARKERS = ["BUSINESS UNITS", "CONCURRENTS", "HOMONYMIE", 
  * @param {Array<object>} items Lightweight signals from `pickSignalsForEnrichment`.
  * @returns {string}
  */
-function buildContextRefreshPrompt(currentContext, items) {
+function buildContextRefreshPrompt(currentContext, items, identity) {
+  // Généricisation multi-tenant (audit intégral 2026-07) : le nom d'entreprise et la liste des
+  // sections attendues viennent du PROFIL CLIENT quand fournis ; défaut = Neurones (byte-identique).
+  const id = identity && typeof identity === "object" ? identity : {};
+  const companyName = (typeof id.companyName === "string" && id.companyName.trim()) ? id.companyName.trim() : "Neurones Technologies";
+  const sections = (Array.isArray(id.contextMarkers) && id.contextMarkers.length)
+    ? id.contextMarkers.join(", ")
+    : "BUSINESS UNITS, MODÈLE ÉCONOMIQUE, PARTENARIATS, CONTEXTE PARTENAIRE, CLIENTS, CONCURRENTS, LEVIERS RÉGLEMENTAIRES, GRILLE DE LECTURE, OBJECTIF COMMERCIAL, ATTENTION HOMONYMIE";
   return `Tu maintiens le CONTEXTE ENTREPRISE de référence utilisé par tous les agents d'analyse
-de Neurones Technologies. Voici sa version actuelle :
+de ${companyName}. Voici sa version actuelle :
 
 """
 ${currentContext}
@@ -992,9 +1019,7 @@ ${currentContext}
 Réponds UNIQUEMENT avec un objet JSON valide : { "context": string, "changes": string[] }.
 
 Règles impératives :
-- CONSERVE la structure et TOUTES les sections existantes (BUSINESS UNITS, MODÈLE ÉCONOMIQUE,
-  PARTENARIATS, CONTEXTE PARTENAIRE, CLIENTS, CONCURRENTS, LEVIERS RÉGLEMENTAIRES, GRILLE DE
-  LECTURE, OBJECTIF COMMERCIAL, ATTENTION HOMONYMIE).
+- CONSERVE la structure et TOUTES les sections existantes (${sections}).
 - Mets à jour UNIQUEMENT ce que les signaux justifient factuellement : dates de programmes
   partenaires passées/nouvelles, nouveaux concurrents ou mouvements notables, nouvelles
   obligations réglementaires, EOL/pénuries. N'invente RIEN ; ne supprime pas d'informations
@@ -1014,8 +1039,17 @@ Réponds avec le JSON uniquement.`;
  * parseContextRefreshResponse(raw, currentContext) -> {text, changes} | null
  * Garde-fous : contexte non vide, longueur ≥ 60% de l'actuel (une réécriture qui raccourcit
  * brutalement a probablement perdu des sections), tous les CONTEXT_REQUIRED_MARKERS présents.
- * Retourne null (aucune écriture) si la réponse ne passe pas — le contexte courant reste en place.
+ * ANCRAGE (audit intégral 2026-07) : le contexte nourrit TOUS les prompts aval comme vérité-terrain ;
+ * une réécriture non justifiée pouvait donc empoisonner silencieusement la chaîne. On applique donc
+ * le contrat du prompt de façon déterministe : seules les modifications CITANT un signal ("[signal N]"
+ * ou "signal N") sont retenues, et une réécriture qui CHANGE réellement le texte SANS aucune
+ * modification sourcée est REJETÉE (le contexte courant reste en place). PUR.
+ * Retourne null (aucune écriture) si la réponse ne passe pas.
  */
+const CHANGE_CITES_SIGNAL = /signal\s*n?\s*\d+/i;
+function normalizeContextForCompare(s) {
+  return String(s || "").replace(/\s+/g, " ").trim();
+}
 function parseContextRefreshResponse(raw, currentContext) {
   if (!raw || typeof raw !== "object" || typeof raw.context !== "string") return null;
   const text = raw.context.trim();
@@ -1024,7 +1058,11 @@ function parseContextRefreshResponse(raw, currentContext) {
   for (const marker of CONTEXT_REQUIRED_MARKERS) {
     if (!text.includes(marker)) return null;
   }
-  const changes = coerceStringArray(raw.changes);
+  // Ne garder que les modifications tracées à un signal (le prompt l'exige déjà ; on l'impose).
+  const changes = coerceStringArray(raw.changes).filter((c) => CHANGE_CITES_SIGNAL.test(c));
+  // Réécriture matérielle SANS justification sourcée → rejet (anti-empoisonnement du contexte).
+  const changedMaterially = current && normalizeContextForCompare(text) !== normalizeContextForCompare(current);
+  if (changedMaterially && changes.length === 0) return null;
   return { text, changes };
 }
 
