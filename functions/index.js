@@ -198,8 +198,9 @@ async function assertSafePublicUrl(urlString) {
 }
 
 /**
- * fetchSource(url) — récupère une source avec robustesse : UA navigateur, timeout dur (12 s) pour
- * ne pas bloquer un lot, et 1 nouvelle tentative sur erreur réseau transitoire. Lève une erreur
+ * fetchSource(url) — récupère une source avec robustesse : UA navigateur, timeout dur (20 s) pour
+ * ne pas bloquer un lot tout en laissant répondre les sites lents (gov/AO régionaux), et 1 nouvelle
+ * tentative sur erreur réseau transitoire. Lève une erreur
  * explicite sur statut HTTP non-2xx (comptée comme échec de santé). Les redirections sont suivies
  * MANUELLEMENT (max 5) pour re-passer chaque saut par la garde anti-SSRF — un site public qui
  * répond 302 vers une adresse interne est refusé.
@@ -210,7 +211,7 @@ async function fetchSource(url) {
     for (let hop = 0; hop < 5; hop++) {
       await assertSafePublicUrl(current);
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 12000);
+      const timer = setTimeout(() => controller.abort(), 20000);
       try {
         const res = await fetch(current, { headers: SOURCE_FETCH_HEADERS, redirect: "manual", signal: controller.signal });
         if (res.status >= 300 && res.status < 400) {
@@ -1110,6 +1111,7 @@ async function runSyncSources(db) {
       const context = { sourceName: source.name, defaultSourceRating: source.sourceRating || deriveSourceRatingFromUrl(source.url, clientProfile.sourceAuthority) };
       let created = 0;
       let degraded = false;
+      let kindUpgrade = null; // "web-js" si une source `web` s'est avérée anti-bot/JS (mémorisé après succès)
 
       if (source.kind === "rss" || source.kind === "newsletter" || source.kind === "portal") {
         const xml = await fetchSource(source.url);
@@ -1137,11 +1139,35 @@ async function runSyncSources(db) {
         created = settled.filter((s) => s.status === "fulfilled" && s.value).length;
       } else if (source.kind === "web" || source.kind === "web-js") {
         // kind "web-js" : portail à défi anti-bot / rendu JavaScript → rendu headless (Chromium).
-        // kind "web" : fetch HTTP simple. Même extraction multi-items ensuite.
-        const html = source.kind === "web-js" ? await fetchRendered(source.url) : await fetchSource(source.url);
+        // kind "web" : fetch HTTP simple, AVEC repli headless automatique (audit sources 2026-07) : une
+        // source `web` bloquée (403 anti-bot / échec réseau) ou renvoyant une coquille JS est retentée
+        // UNE fois en rendu Chromium avant d'être marquée en échec/dégradée ; le passage en "web-js" est
+        // ensuite MÉMORISÉ (kindUpgrade) pour éviter le double fetch aux runs suivants.
+        const cap = source.axis === "tech" ? 2 : 8;
+        let usedRender = source.kind === "web-js";
+        let html;
+        try {
+          html = usedRender ? await fetchRendered(source.url) : await fetchSource(source.url);
+        } catch (fetchErr) {
+          if (source.kind !== "web") throw fetchErr;
+          html = await fetchRendered(source.url); // si le rendu échoue aussi, l'erreur remonte au catch global
+          usedRender = true;
+        }
         // C5 : extraction MULTI-ITEMS — chaque avis/actualité devient un intelItem à ID distinct
         // (lien de l'item, sinon titre+date), au lieu d'UN doc figé sur l'URL du portail.
-        const webItems = extractWebItems(html, source.url, source.axis === "tech" ? 2 : 8);
+        let webItems = extractWebItems(html, source.url, cap);
+        // Repli JS : page `web` sans items ET coquille (SPA) → on retente en rendu headless avant de conclure.
+        if (!webItems.length && source.kind === "web" && !usedRender && isDegradedWebPage(extractWebText(html))) {
+          try {
+            const renderedHtml = await fetchRendered(source.url);
+            const renderedItems = extractWebItems(renderedHtml, source.url, cap);
+            const renderedText = extractWebText(renderedHtml);
+            if (renderedItems.length || (renderedText && !isDegradedWebPage(renderedText))) {
+              html = renderedHtml; webItems = renderedItems; usedRender = true;
+            }
+          } catch { /* rendu indisponible → on garde la page d'origine (marquée dégradée plus bas) */ }
+        }
+        if (usedRender && source.kind === "web") kindUpgrade = "web-js";
         if (webItems.length) {
           const settled = await Promise.allSettled(
             webItems.map(async (wi) => {
@@ -1180,6 +1206,9 @@ async function runSyncSources(db) {
         lastFetch: FieldValue.serverTimestamp(),
         lastStatus: degraded ? "degraded: contenu insuffisant (page probablement JS)" : "ok",
         consecutiveFailures: 0,
+        // Mémorise le passage réussi en rendu headless : une source `web` anti-bot/JS devient "web-js"
+        // (les runs suivants rendent directement, sans repayer un 403/coquille).
+        ...(kindUpgrade ? { kind: kindUpgrade } : {}),
       });
       return created;
     } catch (err) {
