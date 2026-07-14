@@ -41,7 +41,7 @@ const {
 } = require("./domain/onboarding");
 const { buildEvaluatePrompt, parseEvaluateResponse } = require("./domain/evaluate");
 const { pickRelevant } = require("./domain/retrieve");
-const { buildBriefingPrompt, parseBriefingResponse } = require("./domain/briefing");
+const { buildBriefingPrompt, buildBriefingCritiquePrompt, parseBriefingResponse } = require("./domain/briefing");
 const { buildBriefingPdf } = require("./domain/pdf");
 const { generateJson, DEFAULT_MODEL } = require("./domain/vertex");
 const { AGENTS: COPILOTE_AGENTS, buildChatPrompt, parseChatResponse } = require("./domain/copilote");
@@ -1926,16 +1926,35 @@ async function runGenerateBriefing(db, generatedBy) {
   const period = `semaine du ${now.toISOString().slice(0, 10)}`;
 
   const companyContext = await getCompanyContext();
-  const prompt = buildBriefingPrompt({ veilleSummary, veilleExecSummary, topItems, period, companyContext });
+  const briefingInput = { veilleSummary, veilleExecSummary, topItems, period, companyContext };
+  const prompt = buildBriefingPrompt(briefingInput);
   const response = await generateJson(prompt);
-  const briefing = parseBriefingResponse(response, {
+  const parseCtx = {
     period,
     generatedBy,
     kpis: veilleExecSummary?.boardKpis ?? null,
     // Nombre de signaux numérotés [1..N] fournis au prompt → borne de vérification des citations.
     citationsMax: topItems.length,
-  });
+  };
+  let briefing = parseBriefingResponse(response, parseCtx);
   if (!briefing) return null;
+
+  // Self-critique OPTIONNELLE (fiabilité, flag OFF par défaut) : 2ᵉ passe qui corrige les affirmations
+  // non étayées / chiffres incohérents avant publication. À activer via BRIEFING_SELF_CRITIQUE=true APRÈS
+  // validation live (double le coût token sur cette sortie à fort enjeu). Toute défaillance = on garde
+  // le brouillon (jamais de régression : la self-critique ne peut qu'améliorer ou être ignorée).
+  if (process.env.BRIEFING_SELF_CRITIQUE === "true") {
+    try {
+      const refinedRaw = await generateJson(buildBriefingCritiquePrompt(briefingInput, briefing));
+      const refined = parseBriefingResponse(refinedRaw, parseCtx);
+      if (refined) {
+        briefing = refined;
+        logger.info("runGenerateBriefing: self-critique appliquée (2e passe)");
+      }
+    } catch (err) {
+      logger.warn(`runGenerateBriefing: self-critique ignorée (${err.message}) — brouillon conservé`);
+    }
+  }
 
   const ref = await db.collection("briefings").add({ ...briefing, createdAt: FieldValue.serverTimestamp() });
   logger.info(`runGenerateBriefing: created briefings/${ref.id} generatedBy=${generatedBy}`);
