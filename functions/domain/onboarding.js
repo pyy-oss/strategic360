@@ -317,6 +317,14 @@ function buildConfigDocsFromDraft(draft) {
   const taxonomyDoc = {};
   if (axes.length) taxonomyDoc.axes = axes;
   if (subtypes.length) taxonomyDoc.subtypes = subtypes;
+  // Règle d'homonymie + guidance classifieur du client (audit multi-tenant 2026-07) : sans ce routage,
+  // config/veilleTaxonomy ne les portait PAS et classify.js retombait sur les défauts Neurones (« groupe
+  // français NEURONES… »), filtrant à tort les signaux d'un autre client. classify.js les lit depuis
+  // tax.homonymyRule / tax.classifierGuidance.
+  const hr = coerceStr(plan.homonymyRule);
+  if (hr) taxonomyDoc.homonymyRule = hr;
+  const cg = coerceStr(plan.classifierGuidance);
+  if (cg) taxonomyDoc.classifierGuidance = cg;
 
   const cands = Array.isArray(plan.candidateSources) ? plan.candidateSources : [];
   const validated = cands.some((s) => s && s.valid === true) || cands.some((s) => s && s.valid === false);

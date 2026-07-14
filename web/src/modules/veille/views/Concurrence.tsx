@@ -101,14 +101,17 @@ function NewWinLossPanel({ open, onClose }: { open: boolean; onClose: () => void
     setSubmitting(true);
     setErr(null);
     try {
-      // Montant chiffré (M FCFA) + leçon capitalisée (M14 audit) : sans eux, aucun CA gagné/perdu
-      // ni retour d'expérience — la boucle de feedback restait vide.
-      const amountNum = form.amount.trim() ? Number(form.amount.replace(",", ".")) : NaN;
+      // Montant chiffré + leçon capitalisée (M14 audit). UNITÉ CANONIQUE = XOF (fix audit 2026-07) :
+      // ce formulaire saisit des MILLIONS de FCFA (UX), mais winLoss.amount est stocké en XOF pour rester
+      // cohérent avec l'autre point de saisie (fin d'action, PlanAction.tsx, en XOF bruts) — sinon
+      // l'agrégat « CA gagné/perdu » mélangeait 45 (M FCFA) et 45 000 000 (XOF), faux d'un facteur 1e6.
+      const amountM = form.amount.trim() ? Number(form.amount.replace(",", ".")) : NaN;
+      const amountXof = Number.isFinite(amountM) ? Math.round(amountM * 1e6) : undefined;
       await createWinLossEntry({
         competitor: form.competitor.trim(),
         result: form.result,
         reason: form.reason.trim() || undefined,
-        amount: Number.isFinite(amountNum) ? amountNum : undefined,
+        amount: amountXof,
         lesson: form.lesson.trim() || undefined,
         date: form.date,
       });
@@ -206,8 +209,9 @@ export function Concurrence() {
         <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
           <Card><div style={{ fontSize: 11, color: T.faint }}>Taux de victoire</div><div style={{ fontSize: 22, fontWeight: 700, color: T.gold }}>{winRateGlobal}%</div></Card>
           <Card><div style={{ fontSize: 11, color: T.faint }}>Deals suivis</div><div style={{ fontSize: 22, fontWeight: 700, color: T.steel }}>{wlSummary.total}</div></Card>
-          <Card><div style={{ fontSize: 11, color: T.faint }}>CA gagné (M FCFA)</div><div style={{ fontSize: 22, fontWeight: 700, color: T.emerald }}>{Math.round(wlSummary.won)}</div></Card>
-          <Card><div style={{ fontSize: 11, color: T.faint }}>CA perdu (M FCFA)</div><div style={{ fontSize: 22, fontWeight: 700, color: T.clay }}>{Math.round(wlSummary.lost)}</div></Card>
+          {/* winLoss.amount est en XOF (unité canonique) → affiché en M FCFA (÷ 1e6) pour la lisibilité. */}
+          <Card><div style={{ fontSize: 11, color: T.faint }}>CA gagné (M FCFA)</div><div style={{ fontSize: 22, fontWeight: 700, color: T.emerald }}>{Math.round(wlSummary.won / 1e6)}</div></Card>
+          <Card><div style={{ fontSize: 11, color: T.faint }}>CA perdu (M FCFA)</div><div style={{ fontSize: 22, fontWeight: 700, color: T.clay }}>{Math.round(wlSummary.lost / 1e6)}</div></Card>
         </div>
       )}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>

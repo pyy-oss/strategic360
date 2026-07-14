@@ -233,8 +233,10 @@ function parseBriefingResponse(rawJsonResponse, context) {
 
   const governingThought = cite(coerceString(r.governingThought, "Analyse en cours — idée directrice non disponible."));
   const args = coerceArgumentTriple(r.arguments).map((a) => ({ title: a.title, body: cite(a.body) }));
-  const topOpportunities = coerceTopList(r.topOpportunities);
-  const topThreats = coerceTopList(r.topThreats);
+  // Titres opportunités/menaces : mêmes garde-fous de citation que le reste (audit 2026-07 — ils étaient
+  // les seuls textes à échapper au strip des [n] hors plage).
+  const topOpportunities = coerceTopList(r.topOpportunities).map((o) => ({ ...o, title: cite(o.title) }));
+  const topThreats = coerceTopList(r.topThreats).map((o) => ({ ...o, title: cite(o.title) }));
   const narrative = cite(coerceString(r.narrative, ""));
   const recommendations = (Array.isArray(r.recommendations)
     ? r.recommendations.map(coerceRecommendation).filter(Boolean)

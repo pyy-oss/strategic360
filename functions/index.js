@@ -1341,11 +1341,35 @@ exports.dedupeIntelItemsNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   return result;
 });
 
+/** Nombre d'échecs d'évaluation tolérés avant publication en dernier recours (fail-closed borné). */
+const MAX_EVAL_ATTEMPTS = 3;
+/**
+ * handleEvalUnusable — réponse du juge inexploitable/en panne. FAIL-CLOSED BORNÉ (audit 2026-07) :
+ * on garde l'item `pending` (non publié → pas de bruit non revu, non perdu → ré-évalué au prochain
+ * tick) tant que le nombre de tentatives < MAX_EVAL_ATTEMPTS ; au-delà, publication marquée en dernier
+ * recours (jamais masqué indéfiniment, ni boucle de coût IA infinie). Retourne 1 si publié, 0 sinon.
+ */
+async function handleEvalUnusable(db, it, stamp, reason) {
+  const attempts = (Number(it.evalAttempts) || 0) + 1;
+  if (attempts < MAX_EVAL_ATTEMPTS) {
+    await db.doc(`intelItems/${it.id}`).update({
+      status: "pending", evalFailed: true, evalAttempts: attempts,
+      evalReason: `${reason} — en attente de ré-évaluation (${attempts}/${MAX_EVAL_ATTEMPTS})`, updatedAt: stamp(),
+    });
+    return 0;
+  }
+  await db.doc(`intelItems/${it.id}`).update({
+    status: "new", evalScore: 50, evalFailed: true, evalAttempts: attempts,
+    evalReason: `${reason} — publié par défaut après ${attempts} tentatives`, updatedAt: stamp(),
+  });
+  return 1;
+}
+
 /**
  * runEvaluateIntelItems — PORTE DE QUALITÉ : passe en revue les signaux EN ATTENTE (`pending`) et, via
  * un jugement LLM de PERTINENCE pour NT, les PUBLIE (`new`, avec evalScore/evalReason) ou les ÉCARTE
- * (`rejected`, corbeille exec restaurable). FAIL-OPEN par item : toute erreur d'évaluation → on publie
- * (jamais pire que le comportement historique « tout est publié »), le fil ne se vide jamais.
+ * (`rejected`, corbeille exec restaurable). Réponse inexploitable → FAIL-CLOSED BORNÉ (voir
+ * handleEvalUnusable) : maintenu `pending` + ré-évalué, publié en dernier recours après N échecs.
  * Borné à `limit` par passe (coût). Parallélisé (runInBatches, AI_CONCURRENCY).
  */
 async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
@@ -1376,17 +1400,16 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
         await db.doc(`intelItems/${it.id}`).update({ status: "new", evalScore: parsed.pertinence, evalReason: parsed.raison || "publié", evalFailed: false, updatedAt: stamp() });
         published += 1;
       } else {
-        // Réponse non exploitable (parse null) : fail-open, mais on MARQUE le signal (evalFailed) et on
-        // pose un score plancher explicite (50) pour que le tri aval ne confonde pas un signal « non
-        // évalué » avec un signal réellement validé (audit pertinence 2026-07).
-        await db.doc(`intelItems/${it.id}`).update({ status: "new", evalScore: 50, evalReason: "évaluation indisponible — publié par défaut", evalFailed: true, updatedAt: stamp() });
-        published += 1;
+        // Réponse non exploitable (parse null) : FAIL-CLOSED BORNÉ (audit 2026-07 — auparavant fail-open,
+        // qui publiait du bruit non revu). On garde l'item `pending` (ni publié, ni perdu) : il sera
+        // RÉ-ÉVALUÉ au prochain tick (un hoquet transitoire du juge se résout au retry). Après
+        // MAX_EVAL_ATTEMPTS échecs consécutifs, on publie EN DERNIER RECOURS (marqué evalFailed) pour ne
+        // pas le masquer indéfiniment ni reboucler sur le coût IA.
+        published += await handleEvalUnusable(db, it, stamp, "évaluation indisponible");
       }
     } catch (err) {
-      // Fail-open borné aux vraies pannes (réseau/IA) : on PUBLIE mais on MARQUE (evalFailed + score
-      // plancher) — ne jamais retenir un signal à cause d'une panne, ni le faire passer pour validé.
-      logger.warn(`runEvaluateIntelItems: éval échouée pour ${it.id} — publié par défaut (${err.message})`);
-      try { await db.doc(`intelItems/${it.id}`).update({ status: "new", evalScore: 50, evalReason: "évaluation échouée — publié par défaut", evalFailed: true, updatedAt: stamp() }); published += 1; } catch (_e) { /* ignore */ }
+      logger.warn(`runEvaluateIntelItems: éval échouée pour ${it.id} — mise en attente (${err.message})`);
+      try { published += await handleEvalUnusable(db, it, stamp, "évaluation échouée"); } catch (_e) { /* ignore */ }
     }
   });
   logger.info(`runEvaluateIntelItems: ${items.length} évalués — ${published} publiés, ${rejected} écartés`);
@@ -1524,7 +1547,23 @@ exports.onIntelItemWrite = onDocumentWritten({ document: "intelItems/{id}", regi
     }
   }
 
-  // Score stabilisé (ou suppression) → recalcul des deux agrégats, chacun une seule fois.
+  // Coalescing par CHAMP AGRÉGÉ (audit coûts 2026-07) : les deux agrégats ne dépendent que de
+  // axis/impact/stance/status/priorityScore. Une écriture qui ne touche AUCUN de ces champs (rescore
+  // no-op, evalReason/updatedAt, businessAngle…) ne change pas les agrégats → on saute les 2 lectures
+  // full-collection. Création/suppression → toujours recalculer. Le cron horaire aggregateVeilleExec
+  // reste le filet. Réduit l'amplification O(writes × taille-collection) sans jamais servir un agrégat
+  // périmé sur un changement qui compte.
+  const before = event.data && event.data.before;
+  const b = before && before.exists ? before.data() : null;
+  const a = after && after.exists ? after.data() : null;
+  const AGG_FIELDS = ["axis", "impact", "stance", "status", "priorityScore"];
+  const isCreateOrDelete = (!b && !!a) || (!!b && !a);
+  const aggChanged = isCreateOrDelete || AGG_FIELDS.some((f) => (b ? b[f] : undefined) !== (a ? a[f] : undefined));
+  if (!aggChanged) {
+    return; // rien d'agrégé n'a bougé → pas de recalcul (coût évité)
+  }
+
+  // Champ agrégé modifié (ou création/suppression) → recalcul des deux agrégats, chacun une seule fois.
   try {
     const [veille, veilleExec] = await Promise.all([
       computeVeilleSummary(db),
@@ -2828,6 +2867,30 @@ function assertAccountId(accountId) {
   }
 }
 
+/**
+ * assertAccountInScope — CLOISONNEMENT des callables copilote (fix IDOR, audit 2026-07). copiloteGenerate
+ * et copiloteChat lisaient copiloteAccounts/{accountId} via l'Admin SDK (contourne firestore.rules) SANS
+ * vérifier le périmètre de l'appelant : un rôle `commercial` cloisonné pouvait exfiltrer le contexte
+ * (deals, montants, historique, MEDDIC) de n'importe quel compte en énumérant les IDs. On applique ici le
+ * MÊME garde que listCopiloteAccounts (nt360AccountMatchesScope + profil copiloteProfiles/{email}). Les
+ * rôles non cloisonnés (exec, direction commerciale) voient tout ; sans accountId (agents niveau marché)
+ * rien à cloisonner.
+ */
+async function assertAccountInScope(db, request, accountId) {
+  if (!accountId) return;
+  const role = request.auth?.token?.role;
+  if (COPILOTE_UNSCOPED_ROLES.includes(role)) return;
+  const accSnap = await db.doc(`copiloteAccounts/${accountId}`).get();
+  if (!accSnap.exists) return; // compte inexistant → assembleCopiloteContext renverra un contexte vide (pas de fuite)
+  const email = (request.auth?.token?.email || "").trim().toLowerCase();
+  const profSnap = email ? await db.doc(`copiloteProfiles/${email}`).get() : null;
+  const prof = profSnap && profSnap.exists ? profSnap.data() : {};
+  const scope = { uid: request.auth.uid, email, ams: Array.isArray(prof.ams) ? prof.ams : [], bus: Array.isArray(prof.bus) ? prof.bus : [] };
+  if (!nt360AccountMatchesScope({ id: accSnap.id, ...accSnap.data() }, scope)) {
+    throw new HttpsError("permission-denied", "Ce compte n'est pas dans votre périmètre.");
+  }
+}
+
 exports.copiloteGenerate = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   requireCommercialCaller(request, "utiliser le copilote commercial");
   const { agent, accountId, extra } = request.data || {};
@@ -2837,6 +2900,7 @@ exports.copiloteGenerate = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   if (!spec.accountOptional) assertAccountId(accountId);
   else if (accountId) assertAccountId(accountId); // si un compte est fourni, il doit rester valide
   const db = firestoreDb();
+  await assertAccountInScope(db, request, accountId); // cloisonnement (fix IDOR) avant tout chargement de contexte
   const base = await assembleCopiloteContext(db, accountId);
   // Agents mono-deal : refuser proprement si le compte n'a aucune opportunité ouverte, plutôt que de
   // renvoyer une carte MEDDIC/analyse « à qualifier » sur tous les champs (audit pertinence 2026-07).
@@ -2874,6 +2938,7 @@ exports.copiloteChat = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   }
   assertAccountId(accountId);
   const db = firestoreDb();
+  await assertAccountInScope(db, request, accountId); // cloisonnement (fix IDOR) avant tout chargement de contexte
   const base = await assembleCopiloteContext(db, accountId);
   const ctx = { ecran: ecran || "Copilote", compte: base.account.nom ? base.account : null };
   let parsed;

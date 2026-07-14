@@ -653,6 +653,7 @@ Contraintes :
   ${CANVAS_BLOCKS.map((b) => `"${b}"`).join(", ")}.
 - "d" : 2-4 phrases concrètes en français, ancrées dans le contexte de l'entreprise et, quand
   c'est pertinent, dans les signaux fournis.
+${GROUNDING}
 
 Signaux de veille :
 ${signalsBlock(items)}
@@ -1308,6 +1309,7 @@ activité, donne une force 0-100 et un levier d'amélioration. Réponds UNIQUEME
 
 Contraintes : strength 0-100 honnête et différenciée ; lever = 1 action concrète ancrée dans le
 contexte/les signaux. Français. JSON uniquement.
+${GROUNDING}
 
 Signaux de veille :
 ${signalsBlock(items)}
