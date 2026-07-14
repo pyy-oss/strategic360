@@ -32,16 +32,13 @@ const VALID_AXES = ["1. La demande est là", "2. Nous pouvons gagner", "3. Il fa
  * }} input
  * @returns {string}
  */
-function buildBriefingPrompt(input) {
-  const { veilleSummary, veilleExecSummary, topItems, period, companyContext = COMPANY_CONTEXT } = input || {};
-  const items = Array.isArray(topItems) ? topItems : [];
-
-  // Action 4.3 : `ent` (entité watchlist résolue) et `date` sont rendus quand ils sont présents,
-  // pour que les recommandations puissent nommer un compte/AO précis et être datées.
-  // Signaux NUMÉROTÉS [1..n] : servent de table de sources pour le grounding — chaque affirmation du
-  // briefing doit pouvoir citer le signal [n] qui la fonde (audit qualité 2026-07 : le briefing était
-  // la sortie la MOINS ancrée de la chaîne, sans directive de grounding ni citation).
-  const itemsBlock = items.length
+/**
+ * Signaux NUMÉROTÉS [1..n] : table de sources pour le grounding — chaque affirmation du briefing doit
+ * pouvoir citer le signal [n] qui la fonde. `ent`/`date` rendus quand présents (recommandations
+ * nominatives et datées). Factorisé pour être réutilisé par le prompt de self-critique.
+ */
+function numberedItemsBlock(items) {
+  return items.length
     ? items
         .map(
           (i, idx) =>
@@ -49,6 +46,13 @@ function buildBriefingPrompt(input) {
         )
         .join("\n")
     : "(aucun signal prioritaire disponible)";
+}
+
+function buildBriefingPrompt(input) {
+  const { veilleSummary, veilleExecSummary, topItems, period, companyContext = COMPANY_CONTEXT } = input || {};
+  const items = Array.isArray(topItems) ? topItems : [];
+
+  const itemsBlock = numberedItemsBlock(items);
 
   const kpisBlock = veilleExecSummary?.boardKpis ? JSON.stringify(veilleExecSummary.boardKpis) : "(indisponible)";
   const countsBlock = veilleSummary?.countsByAxis ? JSON.stringify(veilleSummary.countsByAxis) : "(indisponible)";
@@ -98,6 +102,52 @@ Consigne impérative : chaque recommandation doit nommer un compte, un AO, un pr
 ou une obligation réglementaire précise issue des signaux.
 
 Réponds avec le JSON uniquement.`;
+}
+
+/**
+ * buildBriefingCritiquePrompt(input, draft) -> prompt de SELF-CRITIQUE (fiabilité 2026-07). 2ᵉ passe
+ * OPTIONNELLE (activée par flag côté appelant) : on redonne au modèle les signaux numérotés + le
+ * BROUILLON de briefing et on lui demande de CORRIGER — retirer toute affirmation non étayée par un
+ * signal, corriger les chiffres incohérents, ne garder que des citations [n] valides — puis de
+ * renvoyer le MÊME schéma JSON. La sortie se parse avec parseBriefingResponse (mêmes garde-fous).
+ * PUR (aucun appel réseau ici). `draft` = corps de briefing déjà parsé (governingThought, arguments,
+ * content{narrative,recommendations,decisionsRequested,topOpportunities,topThreats}).
+ */
+function buildBriefingCritiquePrompt(input, draft) {
+  const { topItems } = input || {};
+  const items = Array.isArray(topItems) ? topItems : [];
+  const d = draft || {};
+  const c = d.content || {};
+  const draftJson = JSON.stringify(
+    {
+      governingThought: d.governingThought,
+      arguments: d.arguments,
+      narrative: c.narrative,
+      topOpportunities: c.topOpportunities,
+      topThreats: c.topThreats,
+      recommendations: c.recommendations,
+      decisionsRequested: c.decisionsRequested,
+    },
+    null,
+    2
+  );
+  return `Tu es un relecteur exigeant. Voici un BROUILLON de briefing exécutif et les SIGNAUX NUMÉROTÉS
+[1..${items.length || 0}] qui étaient censés le fonder.
+
+SIGNAUX (seule source autorisée) :
+${numberedItemsBlock(items)}
+
+BROUILLON à corriger :
+${draftJson}
+
+CORRIGE le brouillon, sans le réécrire inutilement :
+- SUPPRIME ou nuance toute affirmation, tout chiffre, compte ou échéance NON étayé par un signal ci-dessus.
+- CORRIGE toute incohérence chiffrée (montant/date/score contredits par les signaux ou les KPIs).
+- Ne garde que des citations [n] présentes dans la liste (1 à ${items.length || 0}) ; retire les autres.
+- Conserve ce qui est correct et bien sourcé (ne dégrade pas un bon brouillon).
+
+Renvoie UNIQUEMENT le MÊME schéma JSON que le brouillon (governingThought, arguments[3],
+topOpportunities, topThreats, narrative, recommendations, decisionsRequested), corrigé. JSON uniquement.`;
 }
 
 function coerceString(value, fallback) {
@@ -213,4 +263,4 @@ function parseBriefingResponse(rawJsonResponse, context) {
   };
 }
 
-module.exports = { buildBriefingPrompt, parseBriefingResponse, VALID_AXES };
+module.exports = { buildBriefingPrompt, buildBriefingCritiquePrompt, parseBriefingResponse, VALID_AXES };

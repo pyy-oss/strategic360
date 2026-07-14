@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildBriefingPrompt, parseBriefingResponse } from "../domain/briefing.js";
+import { buildBriefingPrompt, buildBriefingCritiquePrompt, parseBriefingResponse } from "../domain/briefing.js";
 
 describe("buildBriefingPrompt", () => {
   it("includes the period, KPIs and top items in the prompt", () => {
@@ -49,6 +49,20 @@ describe("buildBriefingPrompt", () => {
     expect(prompt).toContain("ANCRAGE");
     expect(prompt).toContain("N'invente aucun fait");
     expect(prompt).toContain("1 à 2");
+  });
+
+  it("buildBriefingCritiquePrompt inclut les signaux + le brouillon et demande une correction sourcée", () => {
+    const input = { topItems: [{ title: "AO Douanes", stance: "opportunity", impact: "high", priorityScore: 88 }] };
+    const draft = {
+      governingThought: "Basculer vers le récurrent [1].",
+      arguments: [{ title: "1", body: "La demande est là [1]." }],
+      content: { narrative: "Synthèse [1].", recommendations: [{ action: "Répondre à l'AO Douanes [1]." }], decisionsRequested: ["Go AO"], topOpportunities: [], topThreats: [] },
+    };
+    const p = buildBriefingCritiquePrompt(input, draft);
+    expect(p).toContain("BROUILLON"); // le brouillon est fourni
+    expect(p).toContain("AO Douanes"); // les signaux numérotés sont fournis
+    expect(p).toContain("SUPPRIME ou nuance"); // consigne de correction
+    expect(p).toContain("1 à 1"); // plage de citation bornée au nb de signaux
   });
 });
 

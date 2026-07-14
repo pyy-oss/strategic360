@@ -74,7 +74,11 @@ export function aggregateTeam(accounts: CopiloteAccount[]): OwnerCockpit[] {
   const cockpits: OwnerCockpit[] = [];
   for (const [owner, accs] of byOwner) {
     let pipe = 0, reserve = 0, wins = 0, chauds = 0, triggers = 0;
-    const actions: OwnerNextAction[] = [];
+    // Chaque action porte une PRIORITÉ (type de déclencheur) et la VALEUR du compte, pour un classement
+    // pertinent — sinon (bug constaté 2026-07) les centaines de replis génériques « Cross-sell ICT » au
+    // même montant plat ne se départageaient plus et l'ordre alphabétique faisait remonter des comptes
+    // minuscules devant les gros. On classe : priorité (vrai déclencheur d'abord) > montant > valeur compte.
+    const ranked: { action: OwnerNextAction; prio: number; accountValue: number }[] = [];
     const topComptes: { nom: string; pipelinePondere: number; score: number }[] = [];
     for (const a of accs) {
       const nt = a.nt360 || {};
@@ -86,21 +90,26 @@ export function aggregateTeam(accounts: CopiloteAccount[]): OwnerCockpit[] {
       if (veille?.hot) chauds += 1;
       triggers += num(veille?.count);
       topComptes.push({ nom: a.nom, pipelinePondere: p, score: num(nt.scorePotentiel) });
-      // Prochaine meilleure action : déclencheur veille chaud > offre événementielle > reco whitespace.
+      // Valeur du compte = pipeline pondéré + CA réalisé (proxy d'importance), repli sur le score potentiel.
+      const accountValue = p + num(nt.casTotal) || num(nt.scorePotentiel);
+      // Prochaine meilleure action : déclencheur veille chaud > veille > offre événementielle > reco whitespace.
       const topVeille = veille?.top?.[0];
       const eventOffer = nt.eventOffers?.[0];
       if (topVeille) {
         // Un déclencheur veille (veille.top) ne porte pas de montant propre : ne PAS emprunter le
         // montant d'un eventOffer sans rapport (chiffrage trompeur, audit v2) → 0 = « à chiffrer ».
-        actions.push({ account: a.nom, action: topVeille.soWhat || topVeille.title, why: `Veille : ${topVeille.title}`, montant: 0 });
+        ranked.push({ action: { account: a.nom, action: topVeille.soWhat || topVeille.title, why: `Veille : ${topVeille.title}`, montant: 0 }, prio: veille?.hot ? 4 : 3, accountValue });
       } else if (eventOffer) {
-        actions.push({ account: a.nom, action: `Proposer ${eventOffer.offre}`, why: eventOffer.event || "opportunité offre", montant: num(eventOffer.montant) });
+        ranked.push({ action: { account: a.nom, action: `Proposer ${eventOffer.offre}`, why: eventOffer.event || "opportunité offre", montant: num(eventOffer.montant) }, prio: 2, accountValue });
       } else if (nt.whitespaceValue?.[0]) {
-        actions.push({ account: a.nom, action: `Cross-sell ${nt.whitespaceValue[0].offre}`, why: "réserve de valeur non captée", montant: num(nt.whitespaceValue[0].montant) });
+        ranked.push({ action: { account: a.nom, action: `Cross-sell ${nt.whitespaceValue[0].offre}`, why: "réserve de valeur non captée", montant: num(nt.whitespaceValue[0].montant) }, prio: 1, accountValue });
       }
     }
     topComptes.sort((x, y) => y.pipelinePondere - x.pipelinePondere || y.score - x.score);
-    actions.sort((x, y) => y.montant - x.montant);
+    // Priorité d'abord (vrai déclencheur avant repli générique), puis montant, puis valeur du compte,
+    // puis nom (ordre stable) — les actions montrées sont celles des comptes qui COMPTENT.
+    ranked.sort((x, y) => y.prio - x.prio || y.action.montant - x.action.montant || y.accountValue - x.accountValue || x.action.account.localeCompare(y.action.account));
+    const actions = ranked.map((r) => r.action);
     cockpits.push({
       owner,
       comptes: accs.length,
