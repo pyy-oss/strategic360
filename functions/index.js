@@ -123,8 +123,12 @@ async function closeRenderBrowser() {
 /** Rend une page JS et renvoie son HTML final (après exécution du script). Timeout dur 30 s.
  * `domcontentloaded` (et non `networkidle2`) : les SPA gardent des connexions ouvertes en
  * permanence et n'atteignent jamais l'inactivité réseau → on attend le DOM puis un court délai
- * pour laisser le JS peupler la page. */
-async function fetchRendered(url) {
+ * pour laisser le JS peupler la page.
+ * `opts.raw` (audit sources 2026-07) : renvoie le CORPS BRUT de la réponse principale au lieu du DOM
+ * rendu — utilisé comme repli pour les FLUX RSS/XML bloqués en 403 anti-bot (le navigateur, avec un
+ * vrai UA, franchit les 403 simples que le fetch HTTP prend ; on récupère le XML brut, sans le
+ * wrapper « XML viewer » que Chromium ajoute autour d'un flux). */
+async function fetchRendered(url, opts = {}) {
   await assertSafePublicUrl(url);
   const browser = await getRenderBrowser();
   const page = await browser.newPage();
@@ -159,9 +163,13 @@ async function fetchRendered(url) {
       } catch { try { await req.abort(); } catch { /* déjà géré */ } }
     });
     await page.setUserAgent(SOURCE_FETCH_HEADERS["User-Agent"]);
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
     // Re-validation de l'URL FINALE après la chaîne de redirections du frame principal.
     await assertSafePublicUrl(page.url());
+    if (opts.raw) {
+      // Corps brut de la réponse principale (flux RSS/XML) — pas d'attente de rendu JS.
+      return response ? await response.text() : "";
+    }
     // Laisse le JS rendre le contenu (listes d'AO, actualités) après le DOMContentLoaded.
     await new Promise((r) => setTimeout(r, 3500));
     return await page.content();
@@ -1114,7 +1122,23 @@ async function runSyncSources(db) {
       let kindUpgrade = null; // "web-js" si une source `web` s'est avérée anti-bot/JS (mémorisé après succès)
 
       if (source.kind === "rss" || source.kind === "newsletter" || source.kind === "portal") {
-        const xml = await fetchSource(source.url);
+        // Repli anti-bot pour les FLUX (audit sources 2026-07) : un flux bloqué en 403 (Cloudflare)
+        // est retenté UNE fois via le navigateur headless en mode RAW (corps brut du flux, UA réel),
+        // qui franchit les 403 simples que le fetch HTTP prend. Les flux restent en kind "rss" (pas
+        // d'upgrade web-js : le parsing RSS a besoin du XML brut, pas du DOM rendu).
+        let xml;
+        try {
+          xml = await fetchSource(source.url);
+        } catch (fetchErr) {
+          const msg = String(fetchErr && fetchErr.message);
+          // On ne retente PAS un refus SSRF déterministe (URL interne) — inutile et trompeur.
+          if (/URL refusée/.test(msg)) throw fetchErr;
+          const rendered = await fetchRendered(source.url, { raw: true }); // échec du rendu aussi → remonte au catch global
+          // Le rendu doit ramener un flux EXPLOITABLE (racine rss/feed/rdf) ; sinon on conserve l'échec
+          // d'origine (pas de faux « ok » sur un flux toujours bloqué / réponse 403 en HTML).
+          if (!rendered || !/<(rss|feed|rdf)[\s>]/i.test(rendered)) throw fetchErr;
+          xml = rendered;
+        }
         // Rééquilibrage du fil : les flux tech/cyber MONDIAUX sont prolifiques et noyaient les
         // signaux locaux — plafond réduit à 2 items/run pour l'axe tech, 5 pour les axes locaux.
         const rssItems = extractRssItems(xml, source.axis === "tech" ? 2 : 5);
