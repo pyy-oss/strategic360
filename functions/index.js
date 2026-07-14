@@ -2196,7 +2196,8 @@ async function runEnrichment(db) {
   try {
     const parsed = parseContextRefreshResponse(
       await generateJson(buildContextRefreshPrompt(companyContext, signals, refreshIdentity)),
-      companyContext
+      companyContext,
+      refreshIdentity.contextMarkers
     );
     if (!parsed) {
       logger.warn("runEnrichment: context refresh response rejected by guards — contexte inchangé");
@@ -2516,7 +2517,8 @@ async function runEnrichment(db) {
   // signaux en pipeline de leads qualifiés. Upsert par slugId(name) ; statut "new" forcé à la
   // création uniquement — un statut humain (qualified/dropped) déjà posé n'est JAMAIS écrasé.
   try {
-    const parsed = parseOpportunitiesResponse(await generateJson(buildOpportunitiesPrompt(signals, companyContext)));
+    const enrichBUs = enrichProfile.taxonomy && enrichProfile.taxonomy.businessUnits;
+    const parsed = parseOpportunitiesResponse(await generateJson(buildOpportunitiesPrompt(signals, companyContext, enrichBUs)), enrichBUs);
     if (!parsed) {
       summary.bizOpportunities = "parse-failed";
       logger.error("runEnrichment: opportunities response unusable (parse returned null)");
@@ -2855,6 +2857,13 @@ async function assembleCopiloteContext(db, accountId) {
     // Nom de l'entreprise (profil onboardé) écrit dans le corps des prompts CVP/marketing via
     // companyNameOf(c). Absent/défaut → « Neurones Technologies ». Dernier reliquat du nom en dur.
     companyName: clientProfile.profile && clientProfile.profile.companyName,
+    // Devise du profil client (audit multi-tenant 2026-07, B10) : formatage des montants via xof(n,cur).
+    // Absent/défaut → « XOF » (identique pour Neurones).
+    currency: clientProfile.profile && clientProfile.profile.currency,
+    // Marché/secteur du profil client (audit multi-tenant 2026-07, B3) : géo/secteur injectés dans le
+    // CORPS des prompts (prospection/contenu) via marketOf(c). Absent/défaut → « Côte d'Ivoire / UEMOA ».
+    geographies: clientProfile.profile && clientProfile.profile.geographies,
+    sectorProfil: clientProfile.profile && clientProfile.profile.sector,
     account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte, eventOffers, battlecards, battlecardsMarket, winStats, valueModel, today: new Date().toISOString().slice(0, 10) },
   };
 }

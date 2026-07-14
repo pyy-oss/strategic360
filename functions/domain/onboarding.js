@@ -10,6 +10,11 @@
  * generateJson). Rien n'est activé sans revue humaine : ces sorties alimentent un BROUILLON éditable.
  */
 
+// Générateur de rôle système AGNOSTIQUE (copilote.js) — source unique. Sans cycle : copilote.js ne
+// dépend que de companyContext.js, pas d'onboarding.js. Utilisé pour produire profile.systemRole du
+// client onboardé (sinon roleOf() retombe sur NT_ROLE Neurones dans tous les agents copilote).
+const { buildSystemRole } = require("./copilote");
+
 const NO_INVENT =
   "OBJECTIVITÉ (impérative) : n'affirme AUCUN fait (nom, chiffre, entité, zone, offre) qui ne soit " +
   "explicitement présent dans le TEXTE fourni. N'invente pas de client, de concurrent, de partenaire " +
@@ -325,6 +330,13 @@ function buildConfigDocsFromDraft(draft) {
   if (hr) taxonomyDoc.homonymyRule = hr;
   const cg = coerceStr(plan.classifierGuidance);
   if (cg) taxonomyDoc.classifierGuidance = cg;
+  // Marqueurs de section attendus dans le CONTEXTE du client (audit multi-tenant 2026-07, C2) : sans
+  // ce champ, config/veilleTaxonomy héritait des 4 marqueurs Neurones (BUSINESS UNITS / OBJECTIF
+  // COMMERCIAL…) et le rafraîchissement hebdo du contexte d'un client tiers était rejeté ou forcé au
+  // gabarit Neurones. On n'exige que les sections RÉELLEMENT produites pour ce client (au minimum
+  // CONCURRENTS quand des concurrents existent). Écrit même vide pour NEUTRALISER le défaut Neurones.
+  const comps = (Array.isArray(eco.entities) ? eco.entities : []).filter((e) => e && e.type === "concurrent" && coerceStr(e.name));
+  taxonomyDoc.contextMarkers = comps.length ? ["CONCURRENTS"] : [];
 
   const cands = Array.isArray(plan.candidateSources) ? plan.candidateSources : [];
   const validated = cands.some((s) => s && s.valid === true) || cands.some((s) => s && s.valid === false);
@@ -338,7 +350,11 @@ function buildConfigDocsFromDraft(draft) {
     .map((e) => ({ id: `onb-${slugifyName(coerceStr(e.name))}`, name: coerceStr(e.name), type: ENTITY_TYPES.includes(e.type) ? e.type : "concurrent", geo: coerceStrOrNull(e.geo) }))
     .filter((e) => e.id !== "onb-");
 
-  return { profileDoc: profile, taxonomyDoc, contextText: assembleContextTextFromDraft(draft), sources, watchlist };
+  // systemRole (audit multi-tenant 2026-07, B1) : GÉNÉRÉ depuis le profil client si absent — sinon
+  // roleOf() retombe sur NT_ROLE (identité/géo/homonymes Neurones) dans les 13 agents copilote. On ne
+  // l'écrase pas s'il est déjà fourni (édition manuelle possible).
+  const profileDoc = coerceStr(profile.systemRole) ? { ...profile } : { ...profile, systemRole: buildSystemRole(profile) };
+  return { profileDoc, taxonomyDoc, contextText: assembleContextTextFromDraft(draft), sources, watchlist };
 }
 
 module.exports = {

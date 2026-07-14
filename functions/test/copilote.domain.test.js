@@ -557,3 +557,32 @@ describe("Levier waouh n°2 — agent Contenu marketing", () => {
     expect(parseContenuResponse({})).toBeNull();
   });
 });
+
+describe("Lot 3 — étanchéité multi-tenant (chat, devise, corps de prompts)", () => {
+  it("buildChatPrompt : identité dérivée du companyName client, plus de « Neurones » ni « UEMOA/CEMAC » codés en dur", async () => {
+    const { buildChatPrompt } = await import("../domain/copilote.js");
+    const def = buildChatPrompt({ ecran: "Copilote" });
+    expect(def).toContain("copilote commercial de Neurones Technologies"); // défaut inchangé
+    const client = buildChatPrompt({ ecran: "Copilote", companyName: "ACME Legal" });
+    expect(client).toContain("copilote commercial de ACME Legal");
+    expect(client).not.toContain("Neurones");
+    expect(client).not.toContain("UEMOA/CEMAC");
+  });
+
+  it("xof via ctx.currency : montants d'un compte formatés dans la devise du client (défaut XOF)", async () => {
+    const { buildCvpPrompt } = await import("../domain/copilote.js");
+    const xofCtx = buildCvpPrompt({ compte: "SGCI", casTotal: 120000000 });
+    expect(xofCtx).toMatch(/120[\s.]000[\s.]000 XOF/);
+    const eurCtx = buildCvpPrompt({ compte: "ACME", companyName: "ACME", currency: "EUR", casTotal: 120000000 });
+    expect(eurCtx).toMatch(/120[\s.]000[\s.]000 EUR/);
+    expect(eurCtx).not.toMatch(/120[\s.]000[\s.]000 XOF/);
+  });
+
+  it("prospection : marché dérivé de geographies, « NT » remplacé par le nom du client", async () => {
+    const { buildProspectionPrompt } = await import("../domain/copilote.js");
+    const client = buildProspectionPrompt({ secteur: "assurance", companyName: "ACME", geographies: ["France", "Bénélux"] });
+    expect(client).toContain("France / Bénélux");
+    expect(client).toContain("Différenciation ACME");
+    expect(client).not.toContain("Côte d'Ivoire / Afrique de l'Ouest");
+  });
+});
