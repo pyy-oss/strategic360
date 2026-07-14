@@ -98,6 +98,37 @@ async function rootsOverview(db) {
   }
 }
 
+/**
+ * INSPECT_MODE="sources": dump READ-ONLY de la santé des sources de veille (collection intelSources
+ * de la base strategic360) — id, nom, kind, actif, échecs consécutifs et lastStatus — pour trier les
+ * URL mortes (404/410) des blocages transitoires. Non sensible (URLs/statuts publics). Aucune écriture.
+ */
+async function sourcesHealth(db) {
+  const snap = await db.collection("intelSources").get();
+  console.log(`intelSources : ${snap.size} source(s).`);
+  const rows = snap.docs.map((d) => {
+    const x = d.data() || {};
+    return {
+      id: d.id,
+      name: x.name || "",
+      kind: x.kind || "",
+      active: x.active !== false,
+      fails: Number(x.consecutiveFailures) || 0,
+      status: x.lastStatus || "(jamais synchro)",
+      url: x.url || "",
+    };
+  });
+  // Tri : échecs d'abord (les plus problématiques), puis par nombre d'échecs décroissant.
+  const rank = (s) => (s.status.startsWith("error") ? 0 : s.status.startsWith("degraded") ? 1 : 2);
+  rows.sort((a, b) => rank(a) - rank(b) || b.fails - a.fails || a.name.localeCompare(b.name));
+  for (const r of rows) {
+    console.log(`- [${r.active ? "actif" : "OFF  "}] ${r.kind.padEnd(7)} ${r.fails}x  ${r.name}\n    ${r.url}\n    → ${r.status}`);
+  }
+  const errors = rows.filter((r) => r.status.startsWith("error")).length;
+  const degraded = rows.filter((r) => r.status.startsWith("degraded")).length;
+  console.log(`\nRésumé : ${errors} en échec · ${degraded} dégradées · ${rows.length - errors - degraded} OK/en attente.`);
+}
+
 async function inspectDocSubcollections(db, path) {
   const ref = db.doc(path);
   const snap = await ref.get();
@@ -134,6 +165,8 @@ async function main() {
       const db = databaseId === "(default)" ? getFirestore() : getFirestore(databaseId);
       if (path) {
         await inspectDocSubcollections(db, path);
+      } else if (mode === "sources") {
+        await sourcesHealth(db);
       } else if (mode === "roots") {
         await rootsOverview(db);
       } else {
