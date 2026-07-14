@@ -212,4 +212,23 @@ describe("onboarding — buildConfigDocsFromDraft (mapping P4, pur)", () => {
     const sansConc = { ...draft, ecosystem: { ...draft.ecosystem, entities: [{ name: "Client X", type: "client" }] } };
     expect(buildConfigDocsFromDraft(sansConc).taxonomyDoc.contextMarkers).toEqual([]);
   });
+
+  it("Lot 4 : dérive scoringDoc (marqueurs géo) depuis geographies et sourceAuthorityDoc depuis regulators", () => {
+    const d = { ...draft, profile: { companyName: "ACME", geographies: ["fr", "benelux"], regulators: ["CNIL", "ANSSI-FR"] } };
+    const out = buildConfigDocsFromDraft(d);
+    // Bonus géographique sur LES zones du client (plus « ci/uemoa »).
+    expect(out.scoringDoc.localGeoMarkers).toEqual([{ markers: ["fr", "benelux"], bonus: 0.15 }]);
+    expect(out.scoringDoc.anchorGeoMarkers).toEqual(["fr", "benelux"]);
+    // Domaines officiels = marqueurs gouvernementaux génériques + jetons des régulateurs du client.
+    expect(out.sourceAuthorityDoc.officialDomains).toContain("cnil");
+    expect(out.sourceAuthorityDoc.officialDomains).toContain("anssi");
+    expect(out.sourceAuthorityDoc.officialDomains).toContain(".gov");
+    expect(out.sourceAuthorityDoc.officialDomains).not.toContain("bceao.int");
+  });
+
+  it("Lot 4 : sans geographies/regulators → docs vides (les défauts sont conservés par mergeProfile)", () => {
+    const out = buildConfigDocsFromDraft({ profile: { companyName: "X" }, ecosystem: {}, plan: {} });
+    expect(out.scoringDoc).toEqual({});
+    expect(out.sourceAuthorityDoc).toEqual({});
+  });
 });
