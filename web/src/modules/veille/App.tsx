@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import { T } from "../../design/tokens";
 import { Badge } from "../../design/ui";
+import { BrandMark } from "../../design/BrandMark";
 import { auth } from "../../lib/firebase";
 import { useAuthClaims } from "../../lib/AuthProvider";
 import { LENS, NAV, NAV_GROUPS } from "./data";
@@ -144,12 +145,11 @@ export default function VeilleApp() {
 
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg,${T.plum},#6b4f86)`, display: "grid", placeItems: "center", fontFamily: "'Bricolage Grotesque'", fontWeight: 700, color: "#0E1613", fontSize: 18 }}>
-            S
-          </div>
+          <BrandMark size={36} />
           <div>
             <div className="apptitle" style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 19, fontWeight: 700 }}>Sentinel</div>
-            <div style={{ fontSize: 11.5, color: T.dim }}>Neurones Technologies CI · intelligence & aide à la décision · Afrique / UEMOA / CI</div>
+            <div style={{ fontSize: 11, color: T.gold, fontWeight: 600, letterSpacing: 0.2 }}>Veille stratégique &amp; copilote commercial</div>
+            <div style={{ fontSize: 11.5, color: T.dim }}>Neurones Technologies CI · UEMOA / Afrique de l'Ouest</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
