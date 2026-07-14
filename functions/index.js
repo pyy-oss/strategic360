@@ -1038,8 +1038,16 @@ async function runSyncSources(db) {
   // déjà présents. Partagé (mutable) entre les sources d'un même run pour aussi capter les doublons
   // intra-run (best-effort : les lots parallèles peuvent se croiser, l'id exact reste la garde dure).
   let dedupeIndex = [];
+  // Set des IDs déjà ingérés (maîtrise des coûts, 2026-07) : les flux RSS/portails re-servent les MÊMES
+  // items à chaque passe. L'ID est déterministe (hash de l'URL) : on peut donc le calculer AVANT
+  // l'appel Vertex et SAUTER la classification d'un item déjà connu — item identique, déjà classé, la
+  // dédup post-classification l'aurait de toute façon écarté. Zéro perte de qualité, coupe la dépense IA
+  // redondante (le gros de la facture). Ne s'applique qu'aux items portant une URL propre (ID stable).
+  const existingIds = new Set();
+  let skippedKnown = 0;
   try {
     const existingSnap = await db.collection("intelItems").get();
+    for (const d of existingSnap.docs) existingIds.add(d.id);
     dedupeIndex = existingSnap.docs
       .map((d) => d.data())
       .filter((x) => x && (x.status || "new") !== "archived" && x.title)
@@ -1113,6 +1121,8 @@ async function runSyncSources(db) {
           rssItems.map(async (rssItem) => {
             const rawText = `${rssItem.title}\n${rssItem.description}`.trim();
             if (!rawText) return false;
+            // Item déjà ingéré (URL connue) → on saute l'appel Vertex (coût évité, aucune perte : item identique).
+            if (rssItem.link && existingIds.has(intelItemId({ url: rssItem.link }))) { skippedKnown += 1; return false; }
             const classified = await classifyRawText(rawText, watchlistEntities, {
               ...context,
               url: rssItem.link || source.url,
@@ -1136,6 +1146,8 @@ async function runSyncSources(db) {
           const settled = await Promise.allSettled(
             webItems.map(async (wi) => {
               const perItemLink = wi.link && wi.link !== source.url ? wi.link : undefined;
+              // Item déjà ingéré (URL propre connue) → saut de l'appel Vertex (coût évité, item identique).
+              if (perItemLink && existingIds.has(intelItemId({ url: perItemLink }))) { skippedKnown += 1; return false; }
               const classified = await classifyRawText(wi.title, watchlistEntities, {
                 ...context,
                 // Pas de lien propre → on N'ANCRE PAS sur l'URL du portail (sinon collapse) : ID = titre+date.
@@ -1243,8 +1255,8 @@ async function runSyncSources(db) {
   // Statut final : synchro terminée (le front repasse le bouton en état normal).
   await writeSyncStatus({ running: false, finishedAt: FieldValue.serverTimestamp(), processed: doneCount, created: createdCount, evaluated: evaluated.published, phase: "done" });
 
-  logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourceDocs.length} itemsCreated=${itemsCreated} deduped=${deduped.archived} évalués=${evaluated.evaluated} (pub ${evaluated.published}/rej ${evaluated.rejected})`);
-  return { sourcesTotal: sourcesSnap.size, sourcesProcessed, itemsCreated, deduped: deduped.archived, evaluated: evaluated.published, rejected: evaluated.rejected };
+  logger.info(`syncSources: done — sourcesProcessed=${sourcesProcessed}/${sourceDocs.length} itemsCreated=${itemsCreated} skippedKnown=${skippedKnown} (classification IA évitée) deduped=${deduped.archived} évalués=${evaluated.evaluated} (pub ${evaluated.published}/rej ${evaluated.rejected})`);
+  return { sourcesTotal: sourcesSnap.size, sourcesProcessed, itemsCreated, skippedKnown, deduped: deduped.archived, evaluated: evaluated.published, rejected: evaluated.rejected };
   } catch (err) {
     // Libération du verrou en échec (M8) : le front sort du spinner et le prochain run peut démarrer.
     await writeSyncStatus({ running: false, finishedAt: FieldValue.serverTimestamp(), phase: "error" });
