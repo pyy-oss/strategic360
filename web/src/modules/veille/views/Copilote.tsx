@@ -212,6 +212,24 @@ export function Copilote() {
         ))}
       </div>
 
+      {/* Panneau de l'agent sélectionné (bouton Générer + livrable) — placé JUSTE sous la barre
+          d'actions pour que l'output apparaisse là où on clique, et non tout en bas après le détail
+          du compte (correctif UX 2026-07). Le détail chiffré du compte suit en contexte. */}
+      {tab === "prospection" && <ProspectionTab accountId={accountId} canWrite={canWrite} />}
+      {tab === "sequence" && <SequenceTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "cvp" && <CvpTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "businessCase" && <BusinessCaseTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "meddic" && <MeddicTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "dealAnalysis" && <DealAnalysisTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "stakeholders" && <StakeholdersTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "brief" && <BriefTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "triennal" && <TriennalTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "planCompte" && <PlanCompteTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "planAction" && <PlanActionTab accountId={accountId} disabled={!accountId} canWrite={canWrite} accountName={account?.nom} />}
+      {tab === "redaction" && <RedactionTab accountId={accountId} compte={account?.nom || ""} canWrite={canWrite} />}
+      {tab === "contenu" && <ContenuTab accountId={accountId} canWrite={canWrite} />}
+      {tab === "chat" && <ChatTab accountId={accountId} canWrite={canWrite} />}
+
       {account && (
         <Card style={{ marginBottom: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -359,21 +377,6 @@ export function Copilote() {
 
       {loading && <PortfolioSkeleton />}
       {!account && !loading && <PortfolioDashboard accounts={sorted} poids={poids} fmt={fmtC} onPick={setAccountId} />}
-
-      {tab === "prospection" && <ProspectionTab accountId={accountId} canWrite={canWrite} />}
-      {tab === "sequence" && <SequenceTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "cvp" && <CvpTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "businessCase" && <BusinessCaseTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "meddic" && <MeddicTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "dealAnalysis" && <DealAnalysisTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "stakeholders" && <StakeholdersTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "brief" && <BriefTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "triennal" && <TriennalTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "planCompte" && <PlanCompteTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "planAction" && <PlanActionTab accountId={accountId} disabled={!accountId} canWrite={canWrite} accountName={account?.nom} />}
-      {tab === "redaction" && <RedactionTab accountId={accountId} compte={account?.nom || ""} canWrite={canWrite} />}
-      {tab === "contenu" && <ContenuTab accountId={accountId} canWrite={canWrite} />}
-      {tab === "chat" && <ChatTab accountId={accountId} canWrite={canWrite} />}
     </div>
   );
 }
