@@ -121,6 +121,7 @@ export function Onboarding() {
   const entities = draft?.ecosystem?.entities ?? [];
   const axes = draft?.plan?.axes?.length ? draft.plan.axes : draft?.ecosystem?.axes ?? [];
   const keywords = draft?.plan?.keywords ?? [];
+  const offerMarkers = Object.entries(draft?.plan?.offerMarkers ?? {});
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -220,6 +221,20 @@ export function Onboarding() {
                 <strong style={{ color: T.ink }}>Mots-clés :</strong> {keywords.join(" · ")}
               </div>
             )}
+            {offerMarkers.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, color: T.dim, fontWeight: 600, marginBottom: 6 }}>
+                  Déclencheurs veille → offres (boucle cross-sell)
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {offerMarkers.map(([subtype, markers]) => (
+                    <div key={subtype} style={{ fontSize: 11.5, color: T.dim }}>
+                      <span style={{ color: T.plum, fontWeight: 600 }}>{subtype}</span> → {(markers ?? []).join(", ")}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
 
           {/* Sources candidates */}
@@ -254,8 +269,10 @@ export function Onboarding() {
           <Card>
             <Eyebrow color={T.emerald}>Appliquer</Eyebrow>
             <div style={{ fontSize: 12, color: T.dim, marginTop: 8, maxWidth: 720 }}>
-              Écrit <code>config/profile</code>, <code>config/veilleTaxonomy</code>, le contexte entreprise, et amorce
-              les sources retenues + les entités de l'écosystème. Les docs de scoring/offres restent aux valeurs par défaut.
+              Écrit <code>config/profile</code>, <code>config/veilleTaxonomy</code>, le contexte entreprise, et — quand ils sont
+              dérivables — <code>config/scoring</code> (bonus géographique de vos zones), <code>config/sourceAuthority</code>
+              (vos régulateurs) et <code>config/offerMapping</code> (déclencheurs veille → vos offres). Amorce aussi les
+              sources retenues + les entités de l'écosystème.
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, marginTop: 14, flexWrap: "wrap" }}>
               <Toggle checked={activateSources} onChange={setActivateSources} color={T.gold}

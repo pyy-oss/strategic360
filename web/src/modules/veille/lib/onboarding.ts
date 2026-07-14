@@ -45,6 +45,9 @@ export interface OnboardingDraft {
   plan?: {
     axes?: OnboardingAxis[]; classifierGuidance?: string; homonymyRule?: string;
     keywords?: string[]; candidateSources?: OnboardingCandidateSource[];
+    // Mapping type d'événement de veille → mots-clés des offres du client (boucle veille → cross-sell),
+    // dérivé par l'IA depuis le site. Écrit dans config/offerMapping à l'application.
+    offerMarkers?: Record<string, string[]>;
   };
   stats?: { siteTextLength?: number; entities?: number; axes?: number; candidateSources?: number; validSources?: number };
   createdBy?: string | null;

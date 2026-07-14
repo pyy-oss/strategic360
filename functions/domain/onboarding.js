@@ -14,6 +14,9 @@
 // dépend que de companyContext.js, pas d'onboarding.js. Utilisé pour produire profile.systemRole du
 // client onboardé (sinon roleOf() retombe sur NT_ROLE Neurones dans tous les agents copilote).
 const { buildSystemRole } = require("./copilote");
+// Sous-types de veille connus (source unique) — pour valider les clés du mapping offre dérivé (Lot
+// offerMapping). Pas de cycle : classify.js ne dépend pas d'onboarding.js.
+const { VALID_SUBTYPES } = require("./classify");
 
 const NO_INVENT =
   "OBJECTIVITÉ (impérative) : n'affirme AUCUN fait (nom, chiffre, entité, zone, offre) qui ne soit " +
@@ -177,7 +180,17 @@ Réponds UNIQUEMENT avec un objet JSON valide :
   "keywords": [string],           // requêtes/mots-clés de veille pour ce secteur
   "candidateSources": [
     { "name": string, "url": string, "kind": "rss"|"web"|"web-js"|"newsletter"|"portal", "axis": string }
-  ]
+  ],
+  "offerMarkers": {               // BOUCLE VEILLE -> VENTE : pour chaque TYPE d'événement de veille pertinent,
+                                  // les mots-cles des OFFRES/SERVICES DU CLIENT (detectes sur son site) qu'il rend
+                                  // opportunes MAINTENANT. Clés = types d'événement parmi : vulnerability, cve,
+                                  // regulation, eol, implantation, market_entry, expansion, supply, hire, leadership,
+                                  // funding, budget, product_launch, trend. Valeurs = 2 a 8 mots-cles d'offres DU
+                                  // CLIENT en minuscules (ex. cabinet d'avocats -> regulation: ["conformite","rgpd",
+                                  // "contentieux"] ; ESN -> vulnerability: ["cyber","soc","audit"]). N'invente pas
+                                  // d'offre absente du site ; omets un type si aucune offre du client ne s'y rattache.
+    "<type>": [string]
+  }
 }
 JSON uniquement.`;
 }
@@ -204,6 +217,17 @@ function parseVeillePlanResponse(raw) {
     }))
     .slice(0, 60);
   const classifierGuidance = coerceStr(raw.classifierGuidance);
+  // Mapping offre dérivé (Lot offerMapping) : clés = sous-types de veille CONNUS uniquement, valeurs =
+  // 1 à 8 mots-clés d'offres du client en minuscules. Borné (≤ 20 sous-types). Vide → non écrit.
+  const offerMarkers = {};
+  const rawOM = raw.offerMarkers && typeof raw.offerMarkers === "object" && !Array.isArray(raw.offerMarkers) ? raw.offerMarkers : {};
+  for (const [k, v] of Object.entries(rawOM)) {
+    const key = coerceStr(k).toLowerCase().replace(/[\s'/]+/g, "_").replace(/[^a-z0-9_]/g, "");
+    if (!VALID_SUBTYPES.has(key)) continue;
+    const markers = coerceStrArray(v, 8).map((x) => x.toLowerCase()).filter(Boolean);
+    if (markers.length) offerMarkers[key] = markers;
+    if (Object.keys(offerMarkers).length >= 20) break;
+  }
   if (!axes.length && !candidateSources.length && !classifierGuidance) return null;
   return {
     axes,
@@ -211,6 +235,7 @@ function parseVeillePlanResponse(raw) {
     homonymyRule: coerceStr(raw.homonymyRule),
     keywords: coerceStrArray(raw.keywords, 60),
     candidateSources,
+    offerMarkers,
   };
 }
 
@@ -382,7 +407,17 @@ function buildConfigDocsFromDraft(draft) {
     sourceAuthorityDoc.officialDomains = [".gov", "gouv", "worldbank.org", ...regTokens.filter((t) => !["gov", "gouv"].includes(t))];
   }
 
-  return { profileDoc, taxonomyDoc, scoringDoc, sourceAuthorityDoc, contextText: assembleContextTextFromDraft(draft), sources, watchlist };
+  // config/offerMapping (Lot offerMapping) : mapping sous-type de veille -> mots-clés des OFFRES DU
+  // CLIENT, dérivé par l'IA depuis son site (buildVeillePlanPrompt). Sans lui, les marqueurs d'offre
+  // Neurones (cyber/soc/wallix/reseau/academy…) ne matchaient AUCUNE offre d'un client non-IT et la
+  // boucle « veille -> cross-sell » était morte. Doc PARTIEL (mergeProfile conserve managedMarkers/
+  // placeholderBu par défaut). Écrit seulement si l'IA a produit un mapping non vide.
+  const offerMappingDoc = {};
+  if (plan.offerMarkers && typeof plan.offerMarkers === "object" && Object.keys(plan.offerMarkers).length) {
+    offerMappingDoc.subtypeOfferMarkers = plan.offerMarkers;
+  }
+
+  return { profileDoc, taxonomyDoc, scoringDoc, sourceAuthorityDoc, offerMappingDoc, contextText: assembleContextTextFromDraft(draft), sources, watchlist };
 }
 
 module.exports = {
