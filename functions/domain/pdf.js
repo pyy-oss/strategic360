@@ -33,7 +33,7 @@ function buildBriefingPdf(doc, briefingData) {
   const topThreats = Array.isArray(content.topThreats) ? content.topThreats : [];
   const recommendations = Array.isArray(content.recommendations) ? content.recommendations : [];
 
-  doc.font("Helvetica-Bold").fontSize(18).text("Briefing exécutif — Veille Stratégique", { align: "left" });
+  doc.font("Helvetica-Bold").fontSize(18).text("Briefing exécutif — Sentinel", { align: "left" });
   doc.font("Helvetica").fontSize(10).fillColor("#666666").text(b.period || "Période non précisée");
   doc.moveDown(1);
   doc.fillColor("#000000");

@@ -81,10 +81,10 @@ export default function Login() {
               fontSize: 18,
             }}
           >
-            V
+            S
           </div>
           <div>
-            <div style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 19, fontWeight: 700 }}>Veille Stratégique</div>
+            <div style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 19, fontWeight: 700 }}>Sentinel</div>
             <div style={{ fontSize: 11.5, color: T.dim }}>Neurones Technologies CI</div>
           </div>
         </div>

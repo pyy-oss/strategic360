@@ -145,10 +145,10 @@ export default function VeilleApp() {
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg,${T.plum},#6b4f86)`, display: "grid", placeItems: "center", fontFamily: "'Bricolage Grotesque'", fontWeight: 700, color: "#0E1613", fontSize: 18 }}>
-            V
+            S
           </div>
           <div>
-            <div className="apptitle" style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 19, fontWeight: 700 }}>Veille Stratégique</div>
+            <div className="apptitle" style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 19, fontWeight: 700 }}>Sentinel</div>
             <div style={{ fontSize: 11.5, color: T.dim }}>Neurones Technologies CI · intelligence & aide à la décision · Afrique / UEMOA / CI</div>
           </div>
         </div>
@@ -192,7 +192,7 @@ export default function VeilleApp() {
       {view === "reglages" && <Reglages />}
 
       <footer style={{ marginTop: 22, paddingTop: 14, borderTop: `1px solid ${T.line}`, fontSize: 11.5, color: T.faint, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <span>Veille Stratégique · données réelles (Firestore) · IA Gemini avec revue humaine</span>
+        <span>Sentinel · données réelles (Firestore) · IA Gemini avec revue humaine</span>
         <span>Focale : {LENS.find((l) => l[0] === lens)?.[1]}</span>
       </footer>
     </div>

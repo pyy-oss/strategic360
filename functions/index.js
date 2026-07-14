@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Cloud Functions (Node 20) — "Veille Stratégique" (Neurones Technologies CI).
+ * Cloud Functions (Node 20) — "Sentinel" (veille stratégique & copilote, Neurones Technologies CI).
  *
  * V0 (Socle & design): structure only — correct Cloud Functions v2 trigger signatures per
  * BUILD_KIT.md §10, bodies throw "not implemented" pending their roadmap phase. No Vertex AI

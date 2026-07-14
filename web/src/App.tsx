@@ -14,7 +14,7 @@ function Landing() {
   return <Navigate to={commercial ? "/veille/copilote" : "/veille/radar"} replace />;
 }
 
-/** Top-level app router. V0: single module (Veille Stratégique) mounted at /veille/:view.
+/** Top-level app router. V0: single module (Sentinel — veille & copilote) mounted at /veille/:view.
  * Default route redirects to the executive radar view.
  * V1: /login is public; everything else requires auth, and /veille/* additionally requires
  * at least read access to the "veille" module (per config/permissions, mirroring firestore.rules).
