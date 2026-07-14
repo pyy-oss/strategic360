@@ -3104,6 +3104,10 @@ exports.applyOnboardingDraft = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   // bonus géographique sur SES zones et l'autorité de SES régulateurs, au lieu des défauts CI.
   if (built.scoringDoc && Object.keys(built.scoringDoc).length) batch.set(db.doc("config/scoring"), built.scoringDoc, { merge: true });
   if (built.sourceAuthorityDoc && Object.keys(built.sourceAuthorityDoc).length) batch.set(db.doc("config/sourceAuthority"), built.sourceAuthorityDoc, { merge: true });
+  // config/offerMapping dérivé par l'IA (mapping veille -> offres du client) — écrit si non vide ;
+  // mergeProfile conserve managedMarkers/placeholderBu par défaut. Fait vivre la boucle veille->vente
+  // pour un client non-IT (sinon les marqueurs Neurones ne matchaient aucune de ses offres).
+  if (built.offerMappingDoc && Object.keys(built.offerMappingDoc).length) batch.set(db.doc("config/offerMapping"), built.offerMappingDoc, { merge: true });
   if (built.contextText) {
     batch.set(db.doc("frameworks/companyContext"), { content: { text: built.contextText }, source: "onboarding", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   }

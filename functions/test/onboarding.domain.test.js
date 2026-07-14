@@ -120,6 +120,20 @@ describe("onboarding — plan de veille", () => {
   it("parseVeillePlanResponse : rien d'exploitable → null", () => {
     expect(parseVeillePlanResponse({ axes: [], candidateSources: [] })).toBeNull();
   });
+
+  it("parseVeillePlanResponse : offerMarkers — clés bornées aux sous-types connus, valeurs minuscules", () => {
+    const out = parseVeillePlanResponse({
+      axes: [{ key: "reglementaire", label: "R", alignWeight: 0.8 }],
+      offerMarkers: {
+        regulation: ["Conformité", "RGPD", ""],   // minusculisé, vide écarté
+        contentieux: ["litige"],                    // sous-type INCONNU → écarté
+        vulnerability: [],                          // vide → écarté
+      },
+    });
+    expect(out.offerMarkers.regulation).toEqual(["conformité", "rgpd"]);
+    expect(out.offerMarkers.contentieux).toBeUndefined();
+    expect(out.offerMarkers.vulnerability).toBeUndefined();
+  });
 });
 
 describe("onboarding — buildConfigDocsFromDraft (mapping P4, pur)", () => {
@@ -230,5 +244,12 @@ describe("onboarding — buildConfigDocsFromDraft (mapping P4, pur)", () => {
     const out = buildConfigDocsFromDraft({ profile: { companyName: "X" }, ecosystem: {}, plan: {} });
     expect(out.scoringDoc).toEqual({});
     expect(out.sourceAuthorityDoc).toEqual({});
+  });
+
+  it("offerMapping : route plan.offerMarkers → offerMappingDoc.subtypeOfferMarkers (vide sinon)", () => {
+    const d = { ...draft, plan: { ...draft.plan, offerMarkers: { regulation: ["conformite", "rgpd"] } } };
+    expect(buildConfigDocsFromDraft(d).offerMappingDoc).toEqual({ subtypeOfferMarkers: { regulation: ["conformite", "rgpd"] } });
+    // absent → doc vide (mergeProfile conserve le défaut Neurones)
+    expect(buildConfigDocsFromDraft(draft).offerMappingDoc).toEqual({});
   });
 });
