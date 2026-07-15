@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { T } from "../../../design/tokens";
 import { Eyebrow, Card, Badge } from "../../../design/ui";
 import { useIsExec } from "../../../lib/rbac";
-import { exportBriefingPdf, generateBriefing, useLatestBriefing, type Briefing as BriefingDoc } from "../lib/briefings";
+import { exportBriefingPdf, generateBriefing, reviewBriefing, useLatestBriefing, type Briefing as BriefingDoc } from "../lib/briefings";
 
 /**
  * "Briefing exécutif" (pyramide de Minto) — reads the latest generated `briefings` document only
@@ -14,6 +14,7 @@ import { exportBriefingPdf, generateBriefing, useLatestBriefing, type Briefing a
 function ActionBar({ briefing, isExec }: { briefing: BriefingDoc | null; isExec: boolean }) {
   const [generating, setGenerating] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   if (!isExec) return null;
@@ -43,10 +44,36 @@ function ActionBar({ briefing, isExec }: { briefing: BriefingDoc | null; isExec:
     }
   }
 
+  // Franchit (ou retire) le gate de revue humaine. Sans ce bouton, le board pack restait a vie en
+  // « Brouillon — a valider » et n'engageait aucune decision (audit valeur CXO 2026-07).
+  async function handleReview(reviewed: boolean) {
+    if (!briefing) return;
+    setReviewing(true);
+    setErr(null);
+    try {
+      await reviewBriefing(briefing.id, reviewed);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Échec de la mise à jour du statut.");
+    } finally {
+      setReviewing(false);
+    }
+  }
+
+  const isDraft = !!briefing && briefing.status === "draft";
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button className="pill on" onClick={handleGenerate} disabled={generating}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+        {briefing && isDraft && (
+          <button className="pill on" onClick={() => handleReview(true)} disabled={reviewing} title="Valider ce briefing après revue — il devient exploitable comme décision">
+            {reviewing ? "Validation…" : "Valider (revue faite)"}
+          </button>
+        )}
+        {briefing && !isDraft && (
+          <button className="pill" onClick={() => handleReview(false)} disabled={reviewing} title="Repasser en brouillon (retirer la validation)">
+            {reviewing ? "…" : "Retirer la validation"}
+          </button>
+        )}
+        <button className="pill" onClick={handleGenerate} disabled={generating}>
           {generating ? "Génération…" : "Générer un briefing"}
         </button>
         <button className="pill" onClick={handleExport} disabled={exporting || !briefing}>
@@ -103,8 +130,9 @@ export function Briefing() {
             <Eyebrow color={T.gold}>Briefing exécutif — {briefing.period}</Eyebrow>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
               <span style={{ fontSize: 11, color: T.faint }}>Généré par IA · revue humaine obligatoire · exportable en board pack PDF · les repères [n] renvoient au signal source (provenance), ils n'attestent pas la véracité de l'affirmation</span>
-              <Badge c={T.emerald}>Généré (statut : {briefing.status})</Badge>
-              {briefing.status === "draft" && <Badge c={T.gold}>Brouillon — en attente de revue</Badge>}
+              {briefing.status === "draft"
+                ? <Badge c={T.gold}>Brouillon — en attente de revue</Badge>
+                : <Badge c={T.emerald}>✓ Validé — revue humaine faite</Badge>}
             </div>
           </div>
           <ActionBar briefing={briefing} isExec={isExec} />

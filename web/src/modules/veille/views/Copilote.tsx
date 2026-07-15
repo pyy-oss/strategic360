@@ -43,6 +43,7 @@ import {
   type SequenceResult,
   type StakeholdersResult,
 } from "../lib/copilote";
+import { Freshness } from "../components/Freshness";
 
 const CHALEUR_C: Record<string, string> = { Chaud: T.clay, Tiède: T.gold, Froid: T.steel };
 const NIV_C: Record<string, string> = { "Élevé": T.clay, Moyen: T.gold, Faible: T.steel };
@@ -247,12 +248,18 @@ export function Copilote() {
 
           {/* Empreinte chiffrée — traitement KPI (tabular-nums, Bricolage) : la valeur saute aux yeux. */}
           {account.nt360 && (
-            <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 12 }}>
-              <Money label="CAS réalisé" value={account.nt360.casTotal ?? 0} accent={T.emerald} />
-              <Money label="Pipeline pondéré" value={account.nt360.pipelinePondere ?? 0} accent={T.gold} />
-              {typeof account.nt360.wins === "number" && account.nt360.wins > 0 && (
-                <div><Eyebrow>Affaires gagnées</Eyebrow><div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 24, fontWeight: 700, color: T.plum, marginTop: 6 }}>{account.nt360.wins}</div></div>
-              )}
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: "flex", gap: 22, flexWrap: "wrap" }}>
+                <Money label="CAS réalisé" value={account.nt360.casTotal ?? 0} accent={T.emerald} />
+                <Money label="Pipeline pondéré" value={account.nt360.pipelinePondere ?? 0} accent={T.gold} />
+                {typeof account.nt360.wins === "number" && account.nt360.wins > 0 && (
+                  <div><Eyebrow>Affaires gagnées</Eyebrow><div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 24, fontWeight: 700, color: T.plum, marginTop: 6 }}>{account.nt360.wins}</div></div>
+                )}
+              </div>
+              {/* Fraicheur de l'empreinte nt360 : credibilite du chiffre visible (audit valeur CXO 2026-07). */}
+              <div style={{ marginTop: 6 }}>
+                <Freshness at={(account.nt360.updatedAt as { toMillis?: () => number } | undefined) ?? null} label="Empreinte nt360" />
+              </div>
             </div>
           )}
 
