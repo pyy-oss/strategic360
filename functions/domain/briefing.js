@@ -257,7 +257,10 @@ function parseBriefingResponse(rawJsonResponse, context) {
       recommendations,
       decisionsRequested,
     },
-    kpis: ctx.kpis || null,
+    // NB (audit 4 zones 2026-07) : on NE persiste PLUS de KPI financier (boardKpis/winRateGlobal) dans
+    // le doc briefing. Ce champ n'etait rendu NULLE PART (ni vue Briefing, ni PDF) mais rendait le
+    // winRate board lisible par tout role ayant `veille` (read briefings), contournant le gate
+    // `finance` de summaries/veille_exec. Suppression = fuite fermee, zero regression d'affichage.
     generatedBy: ctx.generatedBy || "vertex-ai",
     // Non-negotiable human review gate — see function doc comment above.
     reviewedBy: null,

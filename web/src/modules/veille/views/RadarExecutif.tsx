@@ -252,7 +252,10 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
         return ep === "imminent" || ep === "court" || BUSINESS_SUBTYPES.has(s.subtype ?? "");
       }),
     6,
-    (s) => s.ent
+    // Clé de diversité = entité, avec repli sur l'ACHETEUR de l'angle business (audit 4 zones 2026-07) :
+    // un signal d'AO « buyer-only » (BCEAO, Trésor) sans `ent` avait une clé undefined, jamais plafonnée
+    // → 4 signaux du même acheteur monopolisaient le top-6. Pas de repli sur `geo` (sur-diversifie par pays).
+    (s) => s.ent ?? s.businessAngle?.buyer
   );
   // « Décision du jour » : recommandation = idée directrice / reco n°1 du dernier briefing, sinon
   // l'action recommandée (ou le so-what) du signal le plus chaud. CTA vers la source de l'action.
@@ -278,7 +281,10 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
       return lensAdjustedScore(b, lens) - lensAdjustedScore(a, lens);
     }),
     6,
-    (s) => s.ent
+    // Clé de diversité = entité, avec repli sur l'ACHETEUR de l'angle business (audit 4 zones 2026-07) :
+    // un signal d'AO « buyer-only » (BCEAO, Trésor) sans `ent` avait une clé undefined, jamais plafonnée
+    // → 4 signaux du même acheteur monopolisaient le top-6. Pas de repli sur `geo` (sur-diversifie par pays).
+    (s) => s.ent ?? s.businessAngle?.buyer
   );
   const cell = (imp: string, st: string) => items.filter((s) => s.impact === imp && s.stance === st).length;
   const intro = (

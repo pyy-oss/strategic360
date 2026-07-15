@@ -935,6 +935,9 @@ function CvpTab({ accountId, disabled, canWrite }: { accountId: string; disabled
           <ul style={{ margin: "10px 0 0", paddingLeft: 18, color: T.dim, fontSize: 13, lineHeight: 1.7 }}>
             {data.differenciateurs.map((d, i) => <li key={i}>{d}</li>)}
           </ul>
+          {/* Ferme la boucle insight->envoi (audit 4 zones 2026-07) : la CVP etait le seul livrable
+              pret-a-envoyer sans bouton d'envoi direct (WhatsApp/e-mail), contrairement aux 4 autres. */}
+          <MsgActions corps={[data.message, ...(data.differenciateurs ?? [])].filter(Boolean).join("\n\n")} />
           {data.prochaineEtape && (
             <div style={{ marginTop: 12, padding: "10px 12px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${T.gold}`, fontSize: 12.5, color: T.ink }}>
               <b style={{ color: T.gold }}>▶ Prochaine étape :</b> {data.prochaineEtape}
@@ -1036,8 +1039,11 @@ function PlanCompteTab({ accountId, disabled, canWrite }: { accountId: string; d
 
 const QUAND_C: Record<string, string> = { "0–30 jours": T.clay, "30–60 jours": T.gold, "60–90 jours": T.steel, Continu: T.faint };
 
-// Urgence dérivée de l'échéance narrative du plan (pour prioriser l'action une fois ajoutée).
-const QUAND_URGENCE: Record<string, number> = { Immédiat: 5, "Cette semaine": 5, "Ce mois": 4, "Ce trimestre": 3 };
+// Urgence dérivée de l'échéance du plan (pour prioriser l'action une fois ajoutée). Les clés DOIVENT
+// être les buckets réellement produits par le plan (copilote.js normalizeQuand → « 0–30 jours »…),
+// pas des libellés « Immédiat/Cette semaine » qui ne matchaient JAMAIS `p.quand` (audit 4 zones
+// 2026-07) : le lookup retombait toujours sur 3, rendant le quadrant « Faire maintenant » inatteignable.
+const QUAND_URGENCE: Record<string, number> = { "0–30 jours": 5, "30–60 jours": 4, "60–90 jours": 3, Continu: 2 };
 
 function PlanActionTab({ accountId, disabled, canWrite, accountName }: { accountId: string; disabled: boolean; canWrite: boolean; accountName?: string }) {
   const { data, busy, err, done, run } = useAgent<PlanActionResult>("planAction", accountId);
