@@ -114,10 +114,14 @@ jobs:
       # réalité vérifiée DANS la fonction (requireCommercialCaller/…). On garantit donc ce binding,
       # de façon idempotente, sur les SEULS callables (onCall) du Copilote — jamais sur les fonctions
       # planifiées/déclencheurs (qui, elles, ne doivent pas être publiquement invocables).
-      - name: Ensure public invoker on Copilote callables (idempotent)
+      # Audit final pré-prod 2026-07 : la liste couvrait 5 callables Copilote ; elle est étendue aux 19
+      # onCall (dont onboardCompany — TOUT PREMIER appel d'un tenant neuf) pour ne pas laisser un
+      # callable injoignable après création (erreur « internal » opaque). onSchedule/onDocumentWritten
+      # restent volontairement exclus (jamais publiquement invocables).
+      - name: Ensure public invoker on all callables (idempotent)
         continue-on-error: true
         run: |
-          for svc in listcopiloteaccounts copiloteadmin copilotegenerate copilotechat synccopiloteaccountsnow; do
+          for svc in applyonboardingdraft backfillkpihistory classifyai copiloteadmin copilotechat copilotegenerate dedupeintelitemsnow enrichnow evaluateintelitemsnow exportpdf generatebriefing listcopiloteaccounts onboardcompany setpermissionsmatrix setpipelineconfig setuserrole synccopiloteaccountsnow syncinternalquantinow syncsourcesnow; do
             gcloud run services add-iam-policy-binding "$svc" \
               --region=europe-west1 \
               --project=propulse-business-87f7a \

@@ -6,15 +6,22 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // Raw internal imports (P&L / LIVE / Facturation / fiche affaire .xlsx) — Functions-only write.
+    // Raw internal imports (P&L / LIVE / Facturation / fiche affaire .xlsx) — Functions-only write,
+    // and NEVER client-readable (audit final pre-prod 2026-07) : les .xlsx bruts financiers ne doivent
+    // pas etre exfiltrables en acces direct SDK. Les Functions lisent via l'Admin SDK (bypass des
+    // regles) ; le front ne lit jamais ces fichiers. `read: if request.auth != null` contournait tout
+    // le finance-gating de firestore.rules (aggrave par l'Auth PARTAGEE du projet).
     match /imports/{allPaths=**} {
-      allow read: if request.auth != null;
+      allow read: if false;
       allow write: if false;
     }
 
-    // Generated exports (board pack / one-pager PDF) — Functions-only write, signed URLs for access.
+    // Generated exports (board pack / one-pager PDF) — Functions-only write ; l'acces legitime passe
+    // par les URL SIGNEES renvoyees par exportPdf (qui outrepassent les regles). Pas de lecture client
+    // directe (audit final pre-prod 2026-07) : sinon un role non-exec enumere les ids `briefings` et
+    // recupere le board-pack exec, contournant le gate exec-only du callable.
     match /exports/{allPaths=**} {
-      allow read: if request.auth != null;
+      allow read: if false;
       allow write: if false;
     }
 

@@ -43,10 +43,17 @@ function slug(s) {
     .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 }
 
-/** Id déterministe (idempotent) d'une source de surveillance depuis le nom de l'entité, ou null. */
-function entityMonitorSourceId(name) {
+/**
+ * Id déterministe (idempotent) d'une source de surveillance. INCLUT la géo (audit final pré-prod
+ * 2026-07) : deux entités homonymes de géos différentes (Orange CI / Orange SN) ne doivent PAS
+ * collisionner sur le même id — sinon la seconde est silencieusement perdue. Renvoie null si le nom
+ * ne donne pas de slug exploitable.
+ */
+function entityMonitorSourceId(name, geo) {
   const s = slug(name);
-  return s ? MONITOR_SOURCE_PREFIX + s : null;
+  if (!s) return null;
+  const g = slug(geo);
+  return MONITOR_SOURCE_PREFIX + s + (g ? "-" + g : "");
 }
 
 /**
@@ -73,7 +80,7 @@ function isMonitored(entity) {
 function buildEntityMonitorSource(entity, lang) {
   if (!isMonitored(entity)) return null;
   const name = String(entity.name).trim();
-  const id = entityMonitorSourceId(name);
+  const id = entityMonitorSourceId(name, entity.geo);
   if (!id) return null;
   return {
     id,
@@ -86,25 +93,45 @@ function buildEntityMonitorSource(entity, lang) {
 }
 
 /**
- * planWatchlistMonitors(entities, existingMonitorIds, lang) -> { upserts, deactivateIds }.
- * Calcule la mise en PHASE des sources de surveillance avec la watchlist :
- *  - upserts     : sources à créer/mettre à jour (entités éligibles, dédoublonnées par id, bornées).
- *  - deactivateIds : sources générées EXISTANTES dont l'entité n'est plus éligible → à désactiver
- *                    (on ne supprime pas : on préserve l'historique/les statuts). PUR.
+ * planWatchlistMonitors(entities, existingById, opts) -> { upserts, deactivateIds }.
+ * Met en PHASE les sources de surveillance avec la watchlist, en tenant compte de l'ÉTAT existant :
+ *  - `existingById` : map { id: { active, consecutiveFailures, url, name, axis } } des sources monitor
+ *    déjà en base (issue de monSnap).
+ *  - `opts.failureThreshold` : seuil d'échecs consécutifs (= MAX_CONSECUTIVE_FAILURES) au-delà duquel
+ *    une source auto-désactivée pour ÉCHECS ne doit PAS être réactivée de force (audit final pré-prod :
+ *    sinon on ressuscite un flux mort à chaque run et l'auto-cicatrisation ne s'ancre jamais).
+ *
+ * upserts (chacun `{ id, name, url, kind, axis, watchlistEntity, activate }`) : uniquement les sources
+ * NOUVELLES ou dont le contenu (url/name/axis) a changé, ou à réactiver parce qu'elles avaient été
+ * désactivées pour cause de sortie de watchlist (pas pour échecs). `activate=true` demande de (re)poser
+ * active:true ; sinon on NE TOUCHE PAS le champ active (préserve une auto-désactivation pour échecs).
+ * deactivateIds : sources monitor existantes ENCORE actives dont l'entité n'est plus éligible. PUR.
  */
-function planWatchlistMonitors(entities, existingMonitorIds, lang) {
+function planWatchlistMonitors(entities, existingById, opts) {
   const list = Array.isArray(entities) ? entities : [];
+  const existing = existingById && typeof existingById === "object" ? existingById : {};
+  const threshold = opts && Number.isFinite(opts.failureThreshold) ? opts.failureThreshold : 5;
+  const lang = opts && opts.lang;
   const upserts = [];
   const wanted = new Set();
   for (const e of list) {
     const src = buildEntityMonitorSource(e, lang);
     if (!src || wanted.has(src.id)) continue;
     wanted.add(src.id);
-    upserts.push(src);
+    const ex = existing[src.id];
+    if (!ex) {
+      upserts.push({ ...src, activate: true }); // nouvelle source
+    } else {
+      const contentChanged = ex.url !== src.url || ex.name !== src.name || (ex.axis || null) !== (src.axis || null);
+      const disabledForFailures = ex.active === false && (Number(ex.consecutiveFailures) || 0) >= threshold;
+      // Réactiver UNIQUEMENT une source désactivée pour sortie de watchlist (pas pour échecs).
+      const reactivate = ex.active === false && !disabledForFailures;
+      if (!contentChanged && !reactivate) continue; // deja en phase → aucune ecriture (anti-churn)
+      upserts.push({ ...src, activate: reactivate }); // ne (re)pose active que si reactivation legitime
+    }
     if (upserts.length >= MAX_MONITORS) break;
   }
-  const existing = Array.isArray(existingMonitorIds) ? existingMonitorIds : [];
-  const deactivateIds = existing.filter((id) => !wanted.has(id));
+  const deactivateIds = Object.keys(existing).filter((id) => !wanted.has(id) && existing[id] && existing[id].active !== false);
   return { upserts, deactivateIds };
 }
 

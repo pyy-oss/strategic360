@@ -229,6 +229,36 @@ describe("Copilote — plan d'action réellement daté & NO_GENERIC déterminist
     // 99 millions ∉ allowed, contexte monétaire → annoté même sans devise.
     expect(out.message).toMatch(/99 millions \(chiffre à vérifier\)/);
   });
+
+  it("parseCvpResponse : décimale FRANÇAISE (virgule) correctement lue — « 1,2 milliard » halluciné est annoté", async () => {
+    const { parseCvpResponse } = await import("../domain/copilote.js");
+    // allowed = 2 000 000 000 (un vrai deal). « 1,2 milliard » = 1,2e9 ≠ 2e9 → doit être annoté.
+    // Avant le correctif, « 1, » était ignoré et « 2 milliard » lu comme 2e9 ∈ allowed → non annoté (faux négatif).
+    const ctx = { valueModel: { whitespaceValue: [] }, deals: [{ nom: "Méga", montant: 2000000000 }] };
+    const out = parseCvpResponse(
+      { message: "Un pipeline de 1,2 milliard FCFA est en jeu.", differenciateurs: [] },
+      ctx
+    );
+    expect(out.message).toMatch(/1,2 milliard FCFA \(chiffre à vérifier\)/);
+  });
+
+  it("parseCvpResponse : décimale FR reconnue quand elle correspond à un montant réel (45,5 M FCFA)", async () => {
+    const { parseCvpResponse } = await import("../domain/copilote.js");
+    const ctx = { valueModel: { nextOffer: { montant: 45500000 }, whitespaceValue: [] } };
+    const out = parseCvpResponse(
+      { message: "Offre à 45,5 M FCFA.", differenciateurs: [] },
+      ctx
+    );
+    expect(out.message).toMatch(/45,5 M FCFA(?! \(chiffre)/);
+  });
+
+  it("parsePlanActionResponse : une échéance ISO calendairement IMPOSSIBLE (2026-02-30) est rejetée", async () => {
+    const { parsePlanActionResponse } = await import("../domain/copilote.js");
+    const out = parsePlanActionResponse({
+      plan: [{ quand: "0–30 jours", echeance: "2026-02-30", action: "RDV" }],
+    }, { today: "2026-07-07" });
+    expect(out.plan[0].echeance).toBe("");
+  });
 });
 
 describe("Copilote — agent planAction (plan d'action daté 90 j)", () => {
