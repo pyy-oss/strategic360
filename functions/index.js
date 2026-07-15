@@ -40,6 +40,7 @@ const {
   buildConfigDocsFromDraft,
 } = require("./domain/onboarding");
 const { buildEvaluatePrompt, parseEvaluateResponse } = require("./domain/evaluate");
+const { planWatchlistMonitors, MONITOR_SOURCE_TAG } = require("./domain/watchlistMonitor");
 const { pickRelevant } = require("./domain/retrieve");
 const { buildBriefingPrompt, buildBriefingCritiquePrompt, parseBriefingResponse } = require("./domain/briefing");
 const { buildBriefingPdf } = require("./domain/pdf");
@@ -1020,7 +1021,45 @@ async function upsertClassifiedItem(db, classified, dedupeIndex) {
  * feed, Vertex AI hiccup) never aborts the whole run — logged and skipped, next source continues.
  * Roadmap: V7 IA & sync.
  */
+/**
+ * ensureWatchlistMonitorSources(db) — SURVEILLANCE ACTIVE des entités (2026-07) : met en phase des
+ * sources RSS de recherche Google News avec la watchlist, pour que chaque entité PRIORITAIRE
+ * (Haute/Moyenne) soit réellement cherchée (et pas seulement étiquetée si un flux généraliste la cite).
+ * Idempotent : ids déterministes `wlmon-<slug>`, upsert en merge (préserve lastStatus/échecs), et
+ * désactivation (jamais suppression) des sources d'entités devenues non prioritaires/inactives.
+ * Best-effort : une erreur ici ne doit pas casser la synchro.
+ */
+async function ensureWatchlistMonitorSources(db) {
+  try {
+    const [wlSnap, monSnap] = await Promise.all([
+      db.collection("intelWatchlist").get(),
+      db.collection("intelSources").where("source", "==", MONITOR_SOURCE_TAG).get(),
+    ]);
+    const entities = wlSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const existingMonitorIds = monSnap.docs.map((d) => d.id);
+    const { upserts, deactivateIds } = planWatchlistMonitors(entities, existingMonitorIds);
+    if (!upserts.length && !deactivateIds.length) return;
+    const batch = db.batch();
+    for (const s of upserts) {
+      batch.set(db.doc(`intelSources/${s.id}`), {
+        name: s.name, url: s.url, kind: s.kind, axis: s.axis || null,
+        active: true, source: MONITOR_SOURCE_TAG, watchlistEntity: s.watchlistEntity,
+      }, { merge: true });
+    }
+    for (const id of deactivateIds) {
+      batch.set(db.doc(`intelSources/${id}`), { active: false }, { merge: true });
+    }
+    await batch.commit();
+    logger.info(`ensureWatchlistMonitorSources: ${upserts.length} source(s) d'entite en phase, ${deactivateIds.length} desactivee(s).`);
+  } catch (err) {
+    logger.warn(`ensureWatchlistMonitorSources: echec (non bloquant) — ${err.message}`);
+  }
+}
+
 async function runSyncSources(db) {
+  // Génère/met à jour les sources de surveillance des entités watchlist AVANT de charger la liste,
+  // pour qu'elles soient crawlées dès ce run (audit surveillance active 2026-07).
+  await ensureWatchlistMonitorSources(db);
 
   const [sourcesSnap, watchlistSnap] = await Promise.all([
     db.collection("intelSources").where("active", "==", true).get(),
