@@ -572,3 +572,35 @@ describe("nt360 — isMeaningfulBu (offres fourre-tout exclues du cross-sell)", 
     expect(isMeaningfulBu(null)).toBe(false);
   });
 });
+
+describe("canonicalClientKey — normalisation des noms clients nt360 (zero config)", () => {
+  it("fusionne accents, casse, ponctuation et formes juridiques", async () => {
+    const { canonicalClientKey } = await import("../domain/nt360.js");
+    // Formes juridiques ignorees -> meme cle.
+    expect(canonicalClientKey("Orange SA")).toBe("orange");
+    expect(canonicalClientKey("Orange S.A.")).toBe("orange");
+    expect(canonicalClientKey("ORANGE, sa")).toBe("orange");
+    expect(canonicalClientKey("Orange SARL")).toBe("orange");
+    // Accents / espaces multiples.
+    expect(canonicalClientKey("Société  Générale")).toBe("societe-generale");
+    // Ne sur-fusionne PAS deux clients differents.
+    expect(canonicalClientKey("Orange Money")).toBe("orange-money");
+    expect(canonicalClientKey("Bank of Africa")).not.toBe(canonicalClientKey("Bank of Africa CI"));
+    // Nom reduit a une forme juridique -> "" (l'appelant retombe sur le slug/hash).
+    expect(canonicalClientKey("SA")).toBe("");
+    expect(canonicalClientKey("")).toBe("");
+  });
+
+  it("deriveCopiloteAccounts fusionne les variantes d'un meme client en UN compte", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const orders = [
+      { client: "Orange SA", bu: "ICT", cas: 100 },
+      { client: "Orange S.A.", bu: "CYBER", cas: 50 },
+      { client: "ORANGE, sa", bu: "ICT", cas: 25 },
+    ];
+    const accts = deriveCopiloteAccounts(orders, []);
+    const orange = accts.filter((a) => a.slug === "orange");
+    expect(orange).toHaveLength(1); // les 3 variantes -> 1 seul compte
+    expect(orange[0].casTotal).toBe(175); // CAS agrege
+  });
+});
