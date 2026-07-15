@@ -8,9 +8,9 @@
  * documented throughout BUILD_KIT.md §10.
  */
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, orderBy, query, type FieldValue, type Timestamp } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, type FieldValue, type Timestamp } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
-import { db, functions } from "../../../lib/firebase";
+import { auth, db, functions } from "../../../lib/firebase";
 
 /* ---------------------------------------------------------------------------------------------
  * Types (BUILD_KIT.md §6 `briefings/{id}`, mirrored from functions/domain/briefing.js)
@@ -130,4 +130,19 @@ export async function exportBriefingPdf(briefingId?: string): Promise<string> {
   const call = httpsCallable<{ briefingId?: string }, ExportBriefingPdfResult>(functions, "exportPdf", HEAVY_CALL);
   const { data } = await call(briefingId ? { briefingId } : {});
   return data.url;
+}
+
+/**
+ * FRANCHIT LE GATE DE REVUE HUMAINE (audit valeur CXO 2026-07). Un briefing naît toujours `draft` ;
+ * sans action de validation, le board pack reste éternellement « Brouillon — à valider », ce qui
+ * neutralise l'engagement décisionnel du DG. Cette écriture directe (autorisée par firestore.rules :
+ * `briefings` write si exec()) pose `status: 'reviewed'` + `reviewedBy`/`reviewedAt`. C'EST l'acte
+ * de revue humaine exigé par le socle — jamais fait par l'IA. Repasser en brouillon est possible
+ * (un exec peut vouloir retirer une validation). Le serveur reste l'autorité (règle exec()).
+ */
+export async function reviewBriefing(briefingId: string, reviewed: boolean): Promise<void> {
+  const uid = auth.currentUser?.uid ?? null;
+  await updateDoc(doc(db, "briefings", briefingId), reviewed
+    ? { status: "reviewed", reviewedBy: uid, reviewedAt: serverTimestamp() }
+    : { status: "draft", reviewedBy: null, reviewedAt: null });
 }

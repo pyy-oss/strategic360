@@ -42,6 +42,7 @@ const {
 const { buildEvaluatePrompt, parseEvaluateResponse } = require("./domain/evaluate");
 const { planWatchlistMonitors, MONITOR_SOURCE_TAG } = require("./domain/watchlistMonitor");
 const { pickRelevant } = require("./domain/retrieve");
+const { selectDigestSignals, buildDigestPayload, hasDigestContent, DEFAULT_MIN_SCORE } = require("./domain/digest");
 const { buildBriefingPrompt, buildBriefingCritiquePrompt, parseBriefingResponse } = require("./domain/briefing");
 const { buildBriefingPdf } = require("./domain/pdf");
 const { generateJson, DEFAULT_MODEL } = require("./domain/vertex");
@@ -2155,6 +2156,85 @@ exports.generateBriefingWeekly = onSchedule(
     const result = await runGenerateBriefing(db, "vertex-ai:scheduled");
     if (!result) {
       logger.error("generateBriefingWeekly: réponse IA inexploitable — aucun briefing créé cette semaine");
+    }
+  }
+);
+
+/**
+ * sendDailyDigest — CANAL SORTANT (audit valeur CXO 2026-07). Le systeme etait 100% "pull" : un
+ * signal critique attendait la connexion du DG. Chaque matin (07:00 tenant), on pousse un digest des
+ * TOP signaux prioritaires NOUVEAUX depuis le dernier envoi + une alerte si un briefing hebdo attend
+ * une revue. On ne pousse JAMAIS le contenu d'un briefing (draft sous garde humaine), seulement le
+ * lien pour le revoir. Transport = WEBHOOK JSON (env DIGEST_WEBHOOK_URL) : aucune cle SMTP ni compte
+ * tiers a livrer, l'operateur branche le relais de son choix (email, Make, Slack...). Sans webhook
+ * configure, la fonction NE consomme PAS les signaux (curseur non avance) : rien n'est perdu, tout
+ * partira des que le canal sera branche. Etat dans summaries/digestStatus. Best-effort, jamais bloquant.
+ */
+exports.sendDailyDigest = onSchedule(
+  { schedule: "0 7 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 300, memory: "512MiB" },
+  async () => {
+    const db = firestoreDb();
+    const webhook = process.env.DIGEST_WEBHOOK_URL;
+    const statusRef = db.doc("summaries/digestStatus");
+    const nowMs = Date.now();
+    // Curseur : ne pousser que les signaux NOUVEAUX depuis le dernier envoi (anti-renvoi).
+    let sinceMs = 0;
+    try {
+      const st = await statusRef.get();
+      if (st.exists) {
+        const v = st.data() || {};
+        sinceMs = Number.isFinite(v.lastCutoffMs) ? v.lastCutoffMs
+          : (v.lastSentAt && typeof v.lastSentAt.toMillis === "function" ? v.lastSentAt.toMillis() : 0);
+      }
+    } catch (e) {
+      logger.warn(`sendDailyDigest: lecture digestStatus echouee (${e.message}) — curseur a 0`);
+    }
+
+    const itemsSnap = await db.collection("intelItems").get();
+    const items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const minScore = Number(process.env.DIGEST_MIN_SCORE) || DEFAULT_MIN_SCORE;
+    const signals = selectDigestSignals(items, { sinceMs, minScore });
+
+    // Briefing pret a revoir : dernier briefing en draft cree depuis le dernier envoi.
+    let briefingReady = false;
+    try {
+      const bSnap = await db.collection("briefings").orderBy("createdAt", "desc").limit(1).get();
+      if (!bSnap.empty) {
+        const b = bSnap.docs[0].data() || {};
+        const bms = b.createdAt && typeof b.createdAt.toMillis === "function" ? b.createdAt.toMillis() : 0;
+        briefingReady = b.status === "draft" && bms > sinceMs;
+      }
+    } catch (e) {
+      logger.warn(`sendDailyDigest: lecture du dernier briefing echouee (${e.message})`);
+    }
+
+    const prof = await loadClientProfile(db).catch(() => null);
+    const title = (prof && prof.profile && prof.profile.companyName) || "Sentinel";
+    const appUrl = process.env.DIGEST_APP_URL || "https://strategic360.web.app";
+    const payload = buildDigestPayload({ signals, briefingReady, appUrl, asOfMs: nowMs, title });
+
+    if (!hasDigestContent(payload)) {
+      logger.info("sendDailyDigest: rien a pousser (0 signal prioritaire nouveau, aucun briefing a revoir)");
+      await statusRef.set({ lastRunAt: FieldValue.serverTimestamp(), lastCutoffMs: nowMs, lastSignalCount: 0 }, { merge: true });
+      return;
+    }
+    if (!webhook) {
+      logger.warn(`sendDailyDigest: DIGEST_WEBHOOK_URL non configure — canal sortant INACTIF (${payload.signalCount} signal(aux), briefing=${payload.briefingReady} en attente). Configurez le webhook pour activer la diffusion ; les signaux ne sont pas consommes.`);
+      return; // curseur NON avance : rien n'est perdu, tout partira des que le webhook sera branche
+    }
+    const recipients = String(process.env.DIGEST_RECIPIENTS || "").split(",").map((s) => s.trim()).filter(Boolean);
+    try {
+      const res = await fetch(webhook, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...payload, recipients }),
+      });
+      if (!res.ok) throw new Error(`webhook HTTP ${res.status}`);
+      logger.info(`sendDailyDigest: digest pousse (${payload.signalCount} signal(aux), briefing=${payload.briefingReady}) vers le webhook`);
+      await statusRef.set({ lastSentAt: FieldValue.serverTimestamp(), lastCutoffMs: nowMs, lastSignalCount: payload.signalCount, lastBriefingReady: payload.briefingReady }, { merge: true });
+    } catch (e) {
+      // Curseur NON avance : nouvel essai au prochain run (les signaux ne sont pas perdus).
+      logger.error(`sendDailyDigest: envoi webhook echoue (${e.message}) — curseur non avance, re-essai au prochain run`);
     }
   }
 );

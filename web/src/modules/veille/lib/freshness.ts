@@ -48,3 +48,30 @@ export function stalenessLabel(item: Datable | undefined, now: number = Date.now
   if (age !== null && age > 180 && !item?.dueDate) return "Ancien";
   return null;
 }
+
+/**
+ * FRAÎCHEUR AS-OF (audit valeur CXO 2026-07) — libellé temps-relatif français d'un instant `ms`
+ * (epoch ms), pour dater à l'écran les chiffres nt360/summaries (« un DAF ne signe pas un chiffre
+ * sans savoir de quand il date »). PUR. Renvoie null si `ms` n'est pas un instant exploitable.
+ */
+export function relativeTimeFr(ms: number | null | undefined, now: number = Date.now()): string | null {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return null;
+  const diff = now - ms;
+  if (diff < 0) return "à l'instant";
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "à l'instant";
+  if (min < 60) return `il y a ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `il y a ${h} h`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `il y a ${d} j`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `il y a ${mo} mois`;
+  return `il y a ${Math.floor(mo / 12)} an(s)`;
+}
+
+/** Âge d'un instant `ms` en jours (≥ 0), ou null si inexploitable. Sert le seuil de péremption des chiffres. */
+export function timestampAgeDays(ms: number | null | undefined, now: number = Date.now()): number | null {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return null;
+  return Math.max((now - ms) / DAY_MS, 0);
+}

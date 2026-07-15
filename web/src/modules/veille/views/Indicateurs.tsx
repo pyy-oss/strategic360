@@ -2,6 +2,7 @@ import React from "react";
 import { T, STCOL } from "../../../design/tokens";
 import { Eyebrow, Card } from "../../../design/ui";
 import { useQuantiSummary } from "../lib/quanti";
+import { Freshness } from "../components/Freshness";
 
 /**
  * "Indicateurs avancés" (leading KRIs) — renders ONLY the KRIs actually computed by the internal
@@ -31,6 +32,11 @@ export function Indicateurs() {
             Indicateurs avancés — en attente des imports internes (P&L/LIVE/Facturation).
           </div>
         </Card>
+      )}
+      {kris.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <Freshness at={(quanti?.updatedAt as { toMillis?: () => number } | undefined) ?? null} label="Données internes synchronisées" />
+        </div>
       )}
       {kris.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 14 }}>

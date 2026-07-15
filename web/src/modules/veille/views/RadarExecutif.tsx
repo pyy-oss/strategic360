@@ -12,6 +12,7 @@ import { useVeilleExecSummary, useAiHealth, useKpiHistory, kpiDelta, backfillKpi
 import { useIsExec } from "../../../lib/rbac";
 import { computeVeilleAttribution } from "../lib/attribution";
 import { useLatestBriefing } from "../lib/briefings";
+import { Freshness } from "../components/Freshness";
 
 /** Flèche de tendance semaine-sur-semaine (levier « waouh » n°1). `invert` : métrique où « baisse =
  * bon » (menaces, non-traité). Rien tant qu'il n'y a pas d'historique comparable — pas de fausse tendance. */
@@ -111,12 +112,36 @@ function VeilleAttributionPanel() {
  * (jamais de bandeau vide). Les montants viennent de l'attribution réelle, pas d'une invention.
  */
 function DecisionDuJour({
-  moneyXof, declencheeXof, urgent, reco, ctaLabel, onCta,
+  moneyXof, declencheeXof, urgent, reco, ctaLabel, onCta, baseHasData, asOf,
 }: {
   moneyXof: number; declencheeXof: number; urgent: { title: string; count: number } | null;
   reco: string | null; ctaLabel: string; onCta: () => void;
+  baseHasData: boolean; asOf?: { toMillis?: () => number } | null;
 }) {
-  if (moneyXof <= 0 && !urgent && !reco) return null;
+  // ÉTAT DE REPLI DATÉ (audit valeur CXO 2026-07) : un jour calme n'est PAS un vide. Plutôt que de
+  // masquer le bandeau (return null = vide ambigu « l'outil marche-t-il ? »), on affiche un état
+  // directeur daté quand la base a des données mais rien de saillant. Base réellement vide → null
+  // (les états vides des autres blocs + le canari IA prennent le relais).
+  if (moneyXof <= 0 && !urgent && !reco) {
+    if (!baseHasData) return null;
+    return (
+      <Card style={{ borderLeft: `3px solid ${T.steel}`, background: `linear-gradient(90deg, ${T.steel}10, ${T.panel})` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <Eyebrow color={T.steel}>Décision du jour</Eyebrow>
+              <Freshness at={asOf} />
+            </div>
+            <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 16, fontWeight: 700, color: T.ink, marginTop: 6, lineHeight: 1.4 }}>
+              RAS aujourd'hui — 0 signal business imminent, aucun pipeline attribuable à trancher.
+            </div>
+            <div style={{ fontSize: 12, color: T.dim, marginTop: 6 }}>La veille tourne : rien d'urgent ne requiert d'arbitrage à cet instant.</div>
+          </div>
+          <button className="pill" onClick={onCta} style={{ flexShrink: 0 }}>{ctaLabel}</button>
+        </div>
+      </Card>
+    );
+  }
   return (
     <Card style={{ borderLeft: `3px solid ${T.gold}`, background: `linear-gradient(90deg, ${T.gold}14, ${T.panel})` }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
@@ -232,7 +257,11 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   // « Décision du jour » : recommandation = idée directrice / reco n°1 du dernier briefing, sinon
   // l'action recommandée (ou le so-what) du signal le plus chaud. CTA vers la source de l'action.
   const topUrgent = bizImminent[0] ?? null;
-  const briefReco = latestBriefing?.content?.recommendations?.[0]?.action || latestBriefing?.governingThought || "";
+  // La « Décision du jour » ne promeut que la reco d'un briefing REVU (audit valeur CXO 2026-07) :
+  // un briefing draft n'a pas franchi le gate de revue humaine — le mettre en avant comme LA décision
+  // du DG contournerait ce gate. Sinon, on retombe sur l'action recommandée du signal le plus chaud.
+  const briefReviewed = !!latestBriefing && latestBriefing.status !== "draft";
+  const briefReco = briefReviewed ? (latestBriefing?.content?.recommendations?.[0]?.action || latestBriefing?.governingThought || "") : "";
   const decisionReco = briefReco || topUrgent?.recommendedAction || topUrgent?.soWhat || null;
   const decisionCta = briefReco ? { label: "Ouvrir le briefing →", go: () => setView("briefing") }
     : topUrgent ? { label: "Voir le signal →", go: () => navigate("/veille/fil?st=" + (topUrgent.stance || "")) }
@@ -286,6 +315,8 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
           reco={decisionReco}
           ctaLabel={decisionCta.label}
           onCta={decisionCta.go}
+          baseHasData={items.length > 0}
+          asOf={(exec?.updatedAt as { toMillis?: () => number } | undefined) ?? null}
         />
       </div>
       <div style={{ fontSize: 12, color: T.plum, marginBottom: 14, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 12px" }}>
@@ -293,6 +324,9 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
       </div>
       <div style={{ marginBottom: 14 }}>
         <VeilleAttributionPanel />
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+        <Freshness at={(exec?.updatedAt as { toMillis?: () => number } | undefined) ?? null} label="Chiffres synchronisés" />
       </div>
       <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 14 }}>
         <KpiCard title="Ouvrir le Copilote (comptes suivis)" onClick={() => setView("copilote")}>
