@@ -2104,7 +2104,6 @@ async function runGenerateBriefing(db, generatedBy) {
   const parseCtx = {
     period,
     generatedBy,
-    kpis: veilleExecSummary?.boardKpis ?? null,
     // Nombre de signaux numérotés [1..N] fournis au prompt → borne de vérification des citations.
     citationsMax: topItems.length,
   };
@@ -2223,12 +2222,28 @@ exports.sendDailyDigest = onSchedule(
       return; // curseur NON avance : rien n'est perdu, tout partira des que le webhook sera branche
     }
     const recipients = String(process.env.DIGEST_RECIPIENTS || "").split(",").map((s) => s.trim()).filter(Boolean);
+    // Durcissement du fetch sortant (audit 4 zones 2026-07) : HTTPS obligatoire (le payload porte des
+    // e-mails d'execs + titres/soWhat — jamais en clair), garde anti-IP-interne (checkPublicHttpUrl),
+    // et TIMEOUT dur de 15 s (sans lui, un webhook muet faisait pendre la fonction jusqu'a 300 s).
+    const wcheck = checkPublicHttpUrl(webhook);
+    if (!wcheck.ok || wcheck.url.protocol !== "https:") {
+      logger.error(`sendDailyDigest: DIGEST_WEBHOOK_URL rejete (${wcheck.ok ? "HTTPS requis" : wcheck.reason}) — envoi annule, curseur non avance`);
+      return;
+    }
     try {
-      const res = await fetch(webhook, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...payload, recipients }),
-      });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 15000);
+      let res;
+      try {
+        res = await fetch(webhook, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...payload, recipients }),
+          signal: ctrl.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
       if (!res.ok) throw new Error(`webhook HTTP ${res.status}`);
       logger.info(`sendDailyDigest: digest pousse (${payload.signalCount} signal(aux), briefing=${payload.briefingReady}) vers le webhook`);
       await statusRef.set({ lastSentAt: FieldValue.serverTimestamp(), lastCutoffMs: nowMs, lastSignalCount: payload.signalCount, lastBriefingReady: payload.briefingReady }, { merge: true });
@@ -3547,10 +3562,15 @@ async function runSyncCopiloteAccounts(db) {
   let churnCount = 0;    // comptes avec ≥1 offre dormante matérielle (récurrent qui s'éteint)
   let churnMontant = 0;  // Σ du CAS annuel des offres dormantes
   const autoOppCandidates = []; // opportunités cross-sell/upsell à émettre dans le pipeline suivi
+  // Attribution par compte (audit 4 zones 2026-07) : le 1er AM connu du compte devient le proprietaire
+  // par defaut de l'opportunite auto-emise — sinon elle partait sans owner ni echeance (invisible dans
+  // « Mon equipe », jamais relancee). L'humain peut toujours reassigner (garde anti-ecrasement plus bas).
+  const ownerBySlug = new Map();
   for (let i = 0; i < derived.length; i += CHUNK) {
     const slice = derived.slice(i, i + CHUNK);
     const batch = db.batch();
     for (const acc of slice) {
+      if (!ownerBySlug.has(acc.slug)) ownerBySlug.set(acc.slug, [...(acc.ams || [])][0] || null);
       // Réserve de valeur chiffrée et PERSISTÉE (visible sans lancer une génération IA).
       const val = nt360DeriveAccountValue(acc, meta, todayIso);
       reserveTotale += val.whitespacePotential;
@@ -3685,10 +3705,16 @@ async function runSyncCopiloteAccounts(db) {
           : `Chiffrer et proposer ${cand.offre} (panier de référence réel)`;
     // Déclenchée par un événement de veille : on référence l'événement et on relève l'urgence.
     const nextAction = cand.event ? `⚡ ${cand.event} → ${baseAction}` : baseAction;
+    // Échéance PROPOSÉE dérivée de l'horizon (audit 4 zones 2026-07) : événement de veille → J+7,
+    // sinon J+30. Donne une date d'action des l'emission (le quadrant « Faire maintenant » et « Mon
+    // equipe » deviennent alimentes) ; l'humain la reprécise à la qualification.
+    const nextActionDate = new Date(Date.now() + (cand.event ? 7 : 30) * 86400000).toISOString().slice(0, 10);
+    // `bu` seulement si l'offre est une BU RÉELLE du catalogue (audit 4 zones 2026-07) : sinon le badge
+    // PlanAction affichait une valeur hors-type. À défaut, on garde `offering` (libellé libre) seul.
+    const buReal = buCatalog.includes(cand.offre) ? cand.offre : null;
     const payload = {
       name: `${kindLabel} ${cand.offre} — ${cand.client}`,
       client: cand.client,
-      bu: cand.offre,
       offering: cand.offre,
       estAmount: String(Math.round(cand.montant)),
       horizon: cand.event ? "court" : "moyen",       // événement → fenêtre plus courte
@@ -3699,10 +3725,15 @@ async function runSyncCopiloteAccounts(db) {
       generatedBy: "sync",     // ni IA (enrichissement veille) ni humain : dérivé du portefeuille
       updatedAt: FieldValue.serverTimestamp(),
     };
+    if (buReal) payload.bu = buReal;
     if (existing.exists) {
-      delete payload.status; // ne jamais repasser un lead qualifié/écarté par un humain en "new"
+      // Ne jamais écraser ce qu'un humain a qualifié : statut, propriétaire réassigné, échéance reprécisée.
+      delete payload.status;
     } else {
       payload.status = "new";
+      const owner = ownerBySlug.get(cand.slug);
+      if (owner) payload.owner = owner;
+      payload.nextActionDate = nextActionDate;
     }
     await ref.set(payload, { merge: true });
     oppsWritten += 1;

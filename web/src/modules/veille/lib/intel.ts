@@ -55,6 +55,9 @@ export interface IntelItem {
   subtype?: string;
   cat?: string;
   ent?: string;
+  /** Angle business (Action 4.2) : acheteur/BU/échéance extraits d'un signal d'AO. `buyer` sert de
+   * clé de diversité de repli quand `ent` est absent (audit 4 zones 2026-07). */
+  businessAngle?: { buyer?: string; bu?: string; estAmount?: string; deadline?: string; tenderRef?: string };
   geo?: string;
   date: string;
   impact: IntelImpact;

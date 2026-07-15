@@ -45,10 +45,16 @@ function titleSimilarity(a, b) {
 function isNearDuplicate(a, b, threshold = 0.6) {
   const A = titleTokens(a);
   const B = titleTokens(b);
-  if (!A.size || !B.size) return 0 >= 1; // false
+  if (!A.size || !B.size) return false;
   let inter = 0;
-  for (const t of A) if (B.has(t)) inter++;
-  if (inter < 2) return false;
+  let interStrong = 0;
+  for (const t of A) if (B.has(t)) { inter++; if (!GENERIC_TOKENS.has(t)) interStrong++; }
+  // DURCISSEMENT (audit 4 zones 2026-07) : on exige >= 2 jetons partages NON generiques, comme
+  // isStrongDuplicate. Sinon deux AO distincts au libelle quasi identique (« fourniture materiel
+  // informatique — ministere SANTE » vs « ... EDUCATION ») partagent 4 jetons dont 3 generiques et
+  // etaient fusionnes/jetes A L'EXTRACTION (dedupeByTitle, avant tout discriminant) — perte non
+  // restaurable d'un vrai appel d'offres. Ici interStrong = {ministere} = 1 -> plus de fusion.
+  if (inter < 2 || interStrong < 2) return false;
   return inter / Math.min(A.size, B.size) >= threshold;
 }
 

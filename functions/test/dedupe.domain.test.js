@@ -56,6 +56,21 @@ describe("dedupe — similarité de titres", () => {
     expect(isNearDuplicate("", "quoi que ce soit")).toBe(false);
   });
 
+  it("isNearDuplicate : deux AO distincts au libellé quasi identique ne fusionnent PAS (durcissement 4 zones)", () => {
+    // 4 jetons partages (fourniture, materiel, informatique, ministere) mais 3 sont generiques ;
+    // seul « ministere » est discriminant -> interStrong=1 -> plus de fusion. Avant : recouvrement
+    // 0.8 >= 0.6 fusionnait ces deux appels d'offres pourtant destines a deux acheteurs differents.
+    expect(isNearDuplicate(
+      "Fourniture de materiel informatique pour le Ministere de la Sante",
+      "Fourniture de materiel informatique pour le Ministere de l'Education"
+    )).toBe(false);
+    // Un vrai meme-evenement (entite + sujet forts partages) fusionne toujours.
+    expect(isNearDuplicate(
+      "La BRVM lance un appel d'offres refonte SI",
+      "Appel d'offres BRVM refonte du SI"
+    )).toBe(true);
+  });
+
   it("dedupeByTitle : garde le premier de chaque grappe, préserve l'ordre, accepte objets et chaînes", () => {
     const items = [
       { title: "La BRVM lance un appel d'offres refonte SI" },

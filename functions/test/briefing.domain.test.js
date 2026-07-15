@@ -94,7 +94,9 @@ describe("parseBriefingResponse — valid fixture", () => {
     expect(briefing.content.topOpportunities).toHaveLength(1);
     expect(briefing.content.topThreats).toHaveLength(1);
     expect(briefing.content.recommendations).toHaveLength(2);
-    expect(briefing.kpis).toEqual({ menacesTotal: 4 });
+    // Le KPI financier n'est PLUS persisté dans le doc briefing (audit 4 zones 2026-07 : fuite du
+    // winRate board via la lecture `veille` de briefings, contournant le gate finance).
+    expect(briefing.kpis).toBeUndefined();
     expect(briefing.generatedBy).toBe("vertex-ai");
   });
 });

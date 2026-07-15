@@ -167,8 +167,18 @@ service cloud.firestore {
     // `finance` (DAF, achats, direction commerciale, exécutifs — selon la matrice), plus seulement
     // des exécutifs. Les autres agrégats (veille, aiHealth, syncStatus) restent lisibles par tout
     // authentifié (fil/radar/santé).
+    // Durcissement (audit 4 zones 2026-07) : la règle unique ne cloisonnait QUE les agrégats
+    // financiers. Or `copiloteClientValue`/`copiloteMeta` (classement clients, cross-sell, churn) sont
+    // du domaine `copilote`, et `digestStatus` est l'état interne du canal sortant — aucun n'a à être
+    // lisible par un rôle sans droit copilote (ex. technique). `veille`/`aiHealth`/`syncStatus` restent
+    // ouverts (fil/radar/santé). Aucun code client ne lit copilote*/digestStatus (grep web = 0).
     match /summaries/{d} {
-      allow read: if request.auth != null && (!(d in ['veille_exec', 'quanti', 'kpiHistory']) || canRead('finance'));
+      allow read: if request.auth != null && (
+        (d in ['veille_exec', 'quanti', 'kpiHistory']) ? canRead('finance')
+        : (d in ['copiloteClientValue', 'copiloteMeta']) ? canRead('copilote')
+        : (d == 'digestStatus') ? exec()
+        : true
+      );
       allow write: if false;
     }
 
