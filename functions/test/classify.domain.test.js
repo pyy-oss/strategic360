@@ -400,3 +400,31 @@ describe("anti-obsession cyber — équilibre sectoriel (2026-07)", () => {
     expect(p).toContain("ENABLERS");
   });
 });
+
+describe("durcissement final pre-prod 2026-07", () => {
+  it("isHighAuthorityRating : A/B fiables ; C/D/E/F et non cotees rejetees", async () => {
+    const { isHighAuthorityRating } = await import("../domain/classify.js");
+    expect(isHighAuthorityRating("A2")).toBe(true);
+    expect(isHighAuthorityRating("B2")).toBe(true);
+    expect(isHighAuthorityRating("b1")).toBe(true);
+    expect(isHighAuthorityRating("C3")).toBe(false);
+    expect(isHighAuthorityRating("D3")).toBe(false);
+    expect(isHighAuthorityRating("F6")).toBe(false);
+    expect(isHighAuthorityRating(undefined)).toBe(false);
+    expect(isHighAuthorityRating("")).toBe(false);
+  });
+
+  it("coerceBusinessAngle : une BU custom du profil client est preservee (plus de coercition vers VALID_BUS)", () => {
+    const r = parseClassificationResponse(
+      { title: "Appel d'offres", summary: "s", businessAngle: { bu: "SANTE", buyer: "CHU" } },
+      { taxonomy: { businessUnits: ["SANTE", "EDUCATION"] } }
+    );
+    expect(r.businessAngle.bu).toBe("SANTE");
+    // BU hors liste du profil -> supprimee.
+    const r2 = parseClassificationResponse(
+      { title: "AO", summary: "s", businessAngle: { bu: "INCONNU" } },
+      { taxonomy: { businessUnits: ["SANTE"] } }
+    );
+    expect(r2.businessAngle).toBeUndefined();
+  });
+});

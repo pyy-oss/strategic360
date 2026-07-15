@@ -288,6 +288,18 @@ function deriveSourceRatingFromUrl(url, sourceAuthority) {
   return undefined; // inconnu → l'appelant retombe sur le défaut conservateur C3
 }
 
+/**
+ * isHighAuthorityRating(rating) -> boolean — vrai si la note d'amirauté traduit une source
+ * FIABLE : 1re lettre A (fiable) ou B (habituellement fiable). Sert de garde pour les écritures
+ * sensibles pilotées par l'IA (ex. réécriture de la vérité-terrain du contexte entreprise, audit
+ * final pré-prod 2026-07) : une claim d'une source quelconque (C/D/E/F ou non cotée) ne doit pas
+ * empoisonner un artefact lu par tous les agents aval. PUR.
+ */
+function isHighAuthorityRating(rating) {
+  const first = (typeof rating === "string" ? rating.trim().toUpperCase() : "").charAt(0);
+  return first === "A" || first === "B";
+}
+
 function coerceEnum(value, allowed, fallback) {
   if (typeof value === "string" && allowed.includes(value)) return value;
   return fallback;
@@ -346,11 +358,14 @@ function resolveWatchlistEntity(rawEntity, watchlist) {
  * @param {unknown} raw
  * @returns {object | undefined}
  */
-function coerceBusinessAngle(raw) {
+function coerceBusinessAngle(raw, businessUnits) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  // BU validées contre la liste du PROFIL client (audit final pré-prod 2026-07) — le prompt (buEnum)
+  // est déjà client-aware ; sans ça, une BU custom (ex. "SANTE") était coercée à undefined et perdue.
+  const bus = Array.isArray(businessUnits) && businessUnits.length ? businessUnits.filter((b) => typeof b === "string" && b.trim()) : VALID_BUS;
   const angle = {
     buyer: coerceString(raw.buyer, undefined),
-    bu: coerceEnum(raw.bu, VALID_BUS, undefined),
+    bu: coerceEnum(raw.bu, bus, undefined),
     estAmount: coerceString(raw.estAmount, undefined),
     deadline: coerceString(raw.deadline, undefined),
     tenderRef: coerceString(raw.tenderRef, undefined),
@@ -415,7 +430,7 @@ function parseClassificationResponse(rawJsonResponse, context) {
     // Bloc business (Action 4.2) : dueDate validée par regex ISO stricte (une échéance floue ou
     // inventée ne doit jamais piloter le scoring de proximité) ; budgetIdentified strictement
     // booléen ; businessAngle coercé champ par champ (voir coerceBusinessAngle).
-    businessAngle: coerceBusinessAngle(r.businessAngle),
+    businessAngle: coerceBusinessAngle(r.businessAngle, tax.businessUnits),
     dueDate: isValidCalendarDate(r.dueDate) ? r.dueDate.trim() : undefined,
     budgetIdentified: r.budgetIdentified === true,
     date: coerceString(r.date, ctx.defaultDate || today),
@@ -466,6 +481,7 @@ module.exports = {
   resolveWatchlistEntity,
   deriveProxFromDueDate,
   deriveSourceRatingFromUrl,
+  isHighAuthorityRating,
   isValidCalendarDate,
   VALID_AXES,
   VALID_IMPACTS,

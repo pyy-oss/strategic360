@@ -594,6 +594,26 @@ describe("parseGe9Response / parseHorizonsResponse", () => {
     expect(parseGe9Response(null)).toBeNull();
   });
 
+  it("buildGe9Prompt : la devise du profil étiquette les CAS internes (défaut XOF, override EUR)", async () => {
+    const { buildGe9Prompt } = await import("../domain/enrich.js");
+    const gran = [{ seg: "SOC", casN: 100, casN1: 90, delta: 10 }];
+    // Défaut : XOF (non-régression Neurones).
+    expect(buildGe9Prompt([], gran)).toContain("CAS N=100 XOF");
+    // Override EUR : plus aucun XOF codé en dur sur les CAS.
+    const eur = buildGe9Prompt([], gran, undefined, "EUR");
+    expect(eur).toContain("CAS N=100 EUR");
+    expect(eur).not.toContain("100 XOF");
+  });
+
+  it("buildTechRadarPrompt / buildInnovationBetsPrompt : plus d'abréviation « NT » dans le CORPS du prompt (fuite d'identité tenant)", async () => {
+    const { buildTechRadarPrompt, buildInnovationBetsPrompt } = await import("../domain/enrich.js");
+    // Contexte tenant NEUTRE (un client onboardé « Acme Corp ») : le corps du prompt ne doit plus
+    // injecter « NT » (Neurones) — seul le companyContext, lui, porte l'identité du tenant.
+    const neutral = "Acme Corp — cabinet de conseil, Paris.";
+    expect(buildTechRadarPrompt(SIGNALS, neutral)).not.toMatch(/\bNT\b/);
+    expect(buildInnovationBetsPrompt(SIGNALS, neutral)).not.toMatch(/\bNT\b/);
+  });
+
   it("horizons: h coercé vers H2, drop sans titre, null si moins de 3", async () => {
     const { parseHorizonsResponse } = await import("../domain/enrich.js");
     const parsed = parseHorizonsResponse({

@@ -118,7 +118,13 @@ export default function VeilleApp() {
 
   const visibleGroups = useMemo(
     () => NAV_GROUPS
-      .map((g) => ({ ...g, items: g.items.filter(canSeeView) }))
+      .map((g) => {
+        const items = g.items.filter(canSeeView);
+        // L'en-tête de groupe doit ouvrir une vue RÉELLEMENT accessible (audit final pré-prod 2026-07) :
+        // g.home peut pointer un module interdit au rôle → clic = rebond vers le radar. On recale home
+        // sur la 1re vue visible du groupe (items déjà filtrés par canSeeView).
+        return { ...g, items, home: items.includes(g.home) ? g.home : (items[0] ?? g.home) };
+      })
       .filter((g) => g.items.length > 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [isExec, role, perms.loading, perms.matrix]

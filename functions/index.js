@@ -10,7 +10,7 @@
 
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue, FieldPath } = require("firebase-admin/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
@@ -27,7 +27,7 @@ const { computePorterForces, computeBcg, computeCasSummary, computePipeline, com
 const dns = require("node:dns/promises");
 const { intelItemId } = require("./domain/ids");
 const { isForbiddenIp, checkPublicHttpUrl } = require("./domain/netguard");
-const { buildClassificationPrompt, parseClassificationResponse, deriveSourceRatingFromUrl } = require("./domain/classify");
+const { buildClassificationPrompt, parseClassificationResponse, deriveSourceRatingFromUrl, isHighAuthorityRating } = require("./domain/classify");
 const { dedupeByTitle, isNearDuplicate, isStrongDuplicate, blocksMerge, clusterNearDuplicates } = require("./domain/dedupe");
 const {
   pickOnboardingLinks,
@@ -250,6 +250,17 @@ async function fetchSource(url) {
 
 /** Source health: auto-deactivate a source after this many consecutive fetch failures. */
 const MAX_CONSECUTIVE_FAILURES = 5;
+
+// Hôtes d'agrégateurs RSS fiables où un 403/429 est un rate-limit (pas un défi anti-bot JS) : inutile
+// (et coûteux) d'y retenter en rendu headless — le navigateur reçoit la même réponse (audit final
+// pré-prod 2026-07). Concerne surtout news.google.com (jusqu'à MAX_MONITORS sources de surveillance).
+const AGGREGATOR_RSS_HOSTS = ["news.google.com"];
+function isAggregatorRssHost(url) {
+  try {
+    const h = new URL(String(url)).hostname.replace(/^www\./, "").toLowerCase();
+    return AGGREGATOR_RSS_HOSTS.some((a) => h === a || h.endsWith("." + a));
+  } catch { return false; }
+}
 
 // Modèle RBAC (13 profils ESN × 7 modules) — SOURCE UNIQUE dans domain/rbac.js, partagée avec
 // seed.js et le front (web/src/lib/rbac.ts, tenu en miroir). Voir ce fichier pour la matrice.
@@ -1036,15 +1047,22 @@ async function ensureWatchlistMonitorSources(db) {
       db.collection("intelSources").where("source", "==", MONITOR_SOURCE_TAG).get(),
     ]);
     const entities = wlSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const existingMonitorIds = monSnap.docs.map((d) => d.id);
-    const { upserts, deactivateIds } = planWatchlistMonitors(entities, existingMonitorIds);
+    // Etat existant des sources monitor (active/echecs/contenu) : indispensable pour NE PAS ressusciter
+    // un flux auto-desactive pour echecs, ni reecrire des docs inchanges (audit final pre-prod 2026-07).
+    const existingById = {};
+    for (const d of monSnap.docs) {
+      const x = d.data() || {};
+      existingById[d.id] = { active: x.active, consecutiveFailures: x.consecutiveFailures, url: x.url, name: x.name, axis: x.axis };
+    }
+    const { upserts, deactivateIds } = planWatchlistMonitors(entities, existingById, { failureThreshold: MAX_CONSECUTIVE_FAILURES });
     if (!upserts.length && !deactivateIds.length) return;
     const batch = db.batch();
     for (const s of upserts) {
-      batch.set(db.doc(`intelSources/${s.id}`), {
-        name: s.name, url: s.url, kind: s.kind, axis: s.axis || null,
-        active: true, source: MONITOR_SOURCE_TAG, watchlistEntity: s.watchlistEntity,
-      }, { merge: true });
+      // `active:true` n'est ecrit QUE pour une source nouvelle ou une reactivation legitime (activate) :
+      // on ne force jamais active sur une source auto-desactivee pour echecs (elle reste inactive).
+      const set = { name: s.name, url: s.url, kind: s.kind, axis: s.axis || null, source: MONITOR_SOURCE_TAG, watchlistEntity: s.watchlistEntity };
+      if (s.activate) set.active = true;
+      batch.set(db.doc(`intelSources/${s.id}`), set, { merge: true });
     }
     for (const id of deactivateIds) {
       batch.set(db.doc(`intelSources/${id}`), { active: false }, { merge: true });
@@ -1057,8 +1075,38 @@ async function ensureWatchlistMonitorSources(db) {
 }
 
 async function runSyncSources(db) {
-  // Génère/met à jour les sources de surveillance des entités watchlist AVANT de charger la liste,
-  // pour qu'elles soient crawlées dès ce run (audit surveillance active 2026-07).
+  const statusRef = db.doc("summaries/syncStatus");
+  const writeSyncStatus = (patch) => statusRef.set(patch, { merge: true }).catch(() => {});
+
+  // VERROU EN TÊTE (audit final pré-prod 2026-07 + M9) : on acquiert le verrou de run AVANT toute
+  // écriture de sources monitor et AVANT la lecture full-collection intelItems, pour ne PAS payer O(N)
+  // reads/writes sur un run concurrent rejeté (sync manuelle pendant le cron). Si un run est marqué
+  // running depuis moins de SYNC_LOCK_TTL_MS, on refuse de démarrer ; au-delà du TTL le verrou est
+  // périmé (run tué au timeout) et repris. `total` est inconnu ici (sources pas encore chargées) → 0,
+  // mis à jour plus bas une fois la liste connue.
+  let lockAcquired = false;
+  try {
+    lockAcquired = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(statusRef);
+      const cur = snap.exists ? snap.data() : {};
+      const startedMs = cur.startedAt && typeof cur.startedAt.toMillis === "function" ? cur.startedAt.toMillis() : 0;
+      if (cur.running === true && startedMs && Date.now() - startedMs < SYNC_LOCK_TTL_MS) return false;
+      tx.set(statusRef, { running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null, total: 0, processed: 0, created: 0, phase: "ingestion" }, { merge: true });
+      return true;
+    });
+  } catch (e) {
+    // Transaction indisponible → on continue SANS verrou (mieux vaut une sync que pas de sync).
+    logger.warn(`syncSources: verrou indisponible (${e.message}) — run sans verrou`);
+    lockAcquired = true;
+    await writeSyncStatus({ running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null, total: 0, processed: 0, created: 0, phase: "ingestion" });
+  }
+  if (!lockAcquired) {
+    logger.warn("syncSources: un run est déjà en cours (verrou actif) — démarrage refusé");
+    return { sourcesTotal: 0, sourcesProcessed: 0, itemsCreated: 0, deduped: 0, evaluated: 0, rejected: 0, skipped: true };
+  }
+
+  // Verrou tenu : on peut engager les opérations coûteuses. Génère/met à jour les sources de
+  // surveillance des entités watchlist AVANT de charger la liste, pour qu'elles soient crawlées dès ce run.
   await ensureWatchlistMonitorSources(db);
 
   const [sourcesSnap, watchlistSnap] = await Promise.all([
@@ -1108,38 +1156,10 @@ async function runSyncSources(db) {
   let itemsCreated = 0;
 
   // Suivi de PROGRESSION (UX 2026-07) : on publie l'avancement dans summaries/syncStatus pour que le
-  // front affiche « X/Y sources · N signaux · phase » en direct au lieu d'un spinner aveugle.
-  // Best-effort : toute écriture échouée est ignorée, jamais d'impact sur la synchro.
+  // front affiche « X/Y sources · N signaux · phase » en direct. Le verrou (posé en tête avec total=0)
+  // est déjà tenu ; on met à jour `total` maintenant que la liste des sources est connue.
   const total = sourceDocs.length;
-  const statusRef = db.doc("summaries/syncStatus");
-  const writeSyncStatus = (patch) => statusRef.set(patch, { merge: true }).catch(() => {});
-
-  // VERROU de run (audit M9) : la sync manuelle (syncSourcesNow) et le cron quotidien pouvaient
-  // tourner EN MÊME TEMPS → double coût IA, doublons (dedupeIndex non partagé) et courses sur
-  // syncStatus. Acquisition transactionnelle : si un run est marqué running depuis moins de
-  // SYNC_LOCK_TTL_MS, on refuse de démarrer. Au-delà du TTL le verrou est considéré périmé (run tué
-  // au timeout — c'est aussi la récupération du bug M8 « spinner infini » : le prochain run reprend
-  // la main, et le front ignore un running plus vieux que le TTL).
-  let lockAcquired = false;
-  try {
-    lockAcquired = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(statusRef);
-      const cur = snap.exists ? snap.data() : {};
-      const startedMs = cur.startedAt && typeof cur.startedAt.toMillis === "function" ? cur.startedAt.toMillis() : 0;
-      if (cur.running === true && startedMs && Date.now() - startedMs < SYNC_LOCK_TTL_MS) return false;
-      tx.set(statusRef, { running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null, total, processed: 0, created: 0, phase: "ingestion" }, { merge: true });
-      return true;
-    });
-  } catch (e) {
-    // Transaction indisponible → on continue SANS verrou (mieux vaut une sync que pas de sync).
-    logger.warn(`syncSources: verrou indisponible (${e.message}) — run sans verrou`);
-    lockAcquired = true;
-    await writeSyncStatus({ running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null, total, processed: 0, created: 0, phase: "ingestion" });
-  }
-  if (!lockAcquired) {
-    logger.warn("syncSources: un run est déjà en cours (verrou actif) — démarrage refusé");
-    return { sourcesTotal: sourcesSnap.size, sourcesProcessed: 0, itemsCreated: 0, deduped: 0, evaluated: 0, rejected: 0, skipped: true };
-  }
+  await writeSyncStatus({ total });
 
   // Traite UNE source : fetch + extraction + classification. Renvoie le nombre d'items créés.
   // Isolé pour être exécuté en LOTS PARALLÈLES (runInBatches) — la boucle séquentielle précédente
@@ -1172,6 +1192,11 @@ async function runSyncSources(db) {
           const msg = String(fetchErr && fetchErr.message);
           // On ne retente PAS un refus SSRF déterministe (URL interne) — inutile et trompeur.
           if (/URL refusée/.test(msg)) throw fetchErr;
+          // Agrégateur RSS fiable (audit final pré-prod 2026-07) : sur news.google.com un 403/429 est un
+          // RATE-LIMIT, pas un défi anti-bot JS que Chromium résout. Rendre en headless donnerait la même
+          // réponse tout en gaspillant navigations/mémoire (jusqu'à MAX_SOURCES_PER_RUN sources same-host
+          // via la surveillance d'entités). On propage donc l'échec sans repli headless.
+          if (isAggregatorRssHost(source.url)) throw fetchErr;
           const rendered = await fetchRendered(source.url, { raw: true }); // échec du rendu aussi → remonte au catch global
           // Le rendu doit ramener un flux EXPLOITABLE (racine rss/feed/rdf) ; sinon on conserve l'échec
           // d'origine (pas de faux « ok » sur un flux toujours bloqué / réponse 403 en HTML).
@@ -2255,7 +2280,13 @@ function anchorGe9PositionsOnInternalCas(items, granularite) {
 
 async function runEnrichment(db) {
   const itemsSnap = await db.collection("intelItems").get();
-  const signals = pickSignalsForEnrichment(itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  const allItems = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const signals = pickSignalsForEnrichment(allItems);
+  // Sous-ensemble FIABLE pour le rafraichissement de la verite-terrain (audit final pre-prod 2026-07,
+  // anti-empoisonnement du contexte) : seuls les signaux issus de sources a haute autorite (note
+  // d'amiraute A/B — officiel/reputable) peuvent piloter une reecriture du contexte de reference lu
+  // par tous les agents aval. Une fausse claim d'une source quelconque (C/D/E/F) ne doit pas s'y ancrer.
+  const trustedSignals = pickSignalsForEnrichment(allItems.filter((it) => isHighAuthorityRating(it.sourceRating)));
   // Échantillon ENTRELACÉ PAR AXE (audit pertinence 2026-07) : les cadres qui visent la BREADTH
   // (SWOT/PESTEL, Diagnostic, GE9, Ansoff, Horizons, paris d'innovation, scénarios) doivent voir un
   // input équilibré, pas la seule tête priorité-clusterisée. La diversité est déjà garantie dans la
@@ -2286,21 +2317,26 @@ async function runEnrichment(db) {
   const enrichProfile = await loadClientProfile(db);
   const refreshIdentity = { ...enrichProfile.profile, contextMarkers: enrichProfile.taxonomy && enrichProfile.taxonomy.contextMarkers };
   try {
-    const parsed = parseContextRefreshResponse(
-      await generateJson(buildContextRefreshPrompt(companyContext, signals, refreshIdentity)),
-      companyContext,
-      refreshIdentity.contextMarkers
-    );
-    if (!parsed) {
-      logger.warn("runEnrichment: context refresh response rejected by guards — contexte inchangé");
-    } else if (parsed.text === companyContext || parsed.changes.length === 0) {
-      logger.info("runEnrichment: contexte entreprise inchangé (aucune mise à jour justifiée)");
+    if (!trustedSignals.length) {
+      // Aucune source fiable (A/B) dans le cycle : on NE touche PAS a la verite-terrain (anti-empoisonnement).
+      logger.info("runEnrichment: aucun signal a haute autorite (A/B) — rafraichissement du contexte ignore");
     } else {
-      const status = await writeFrameworkDoc(db, "companyContext", { text: parsed.text, changes: parsed.changes });
-      if (status === "written") {
-        invalidateCompanyContextCache();
-        companyContext = parsed.text;
-        logger.info(`runEnrichment: contexte entreprise mis à jour — ${parsed.changes.join(" ; ")}`);
+      const parsed = parseContextRefreshResponse(
+        await generateJson(buildContextRefreshPrompt(companyContext, trustedSignals, refreshIdentity)),
+        companyContext,
+        refreshIdentity.contextMarkers
+      );
+      if (!parsed) {
+        logger.warn("runEnrichment: context refresh response rejected by guards — contexte inchangé");
+      } else if (parsed.text === companyContext || parsed.changes.length === 0) {
+        logger.info("runEnrichment: contexte entreprise inchangé (aucune mise à jour justifiée)");
+      } else {
+        const status = await writeFrameworkDoc(db, "companyContext", { text: parsed.text, changes: parsed.changes });
+        if (status === "written") {
+          invalidateCompanyContextCache();
+          companyContext = parsed.text;
+          logger.info(`runEnrichment: contexte entreprise mis à jour — ${parsed.changes.join(" ; ")}`);
+        }
       }
     }
   } catch (err) {
@@ -2499,7 +2535,8 @@ async function runEnrichment(db) {
   try {
     const quantiSnap = await db.doc("summaries/quanti").get();
     const granularite = quantiSnap.exists ? quantiSnap.data()?.granularite : null;
-    const parsed = parseGe9Response(await generateJson(buildGe9Prompt(diverseSignals, granularite, companyContext)));
+    const ge9Currency = enrichProfile.profile && enrichProfile.profile.currency;
+    const parsed = parseGe9Response(await generateJson(buildGe9Prompt(diverseSignals, granularite, companyContext, ge9Currency)));
     if (!parsed) {
       summary.ge9 = "parse-failed";
       logger.error("runEnrichment: ge9 response unusable (parse returned null)");
@@ -3885,22 +3922,31 @@ exports.purgeArchivedIntelItems = onSchedule(
       const cutoffMs = Date.now() - INTELITEMS_ARCHIVE_RETENTION_DAYS * 24 * 3600 * 1000;
       const toMs = (ts) => (ts && typeof ts.toMillis === "function" ? ts.toMillis() : (ts instanceof Date ? ts.getTime() : (typeof ts === "number" ? ts : null)));
       let deleted = 0;
-      // Boucle bornée : jusqu'à 20 lots de 400 archivés. On filtre l'ancienneté en mémoire (updatedAt
-      // sinon createdAt) pour ne pas exiger d'index composite status+updatedAt.
-      for (let i = 0; i < 20; i++) {
-        const snap = await db.collection("intelItems").where("status", "==", "archived").limit(400).get();
+      // PAGINATION par curseur sur l'id de document (audit final pré-prod 2026-07) : l'ancienne boucle
+      // relisait toujours les 400 MÊMES archivés (tri __name__ implicite, sans curseur) et cassait dès
+      // qu'un lot ne contenait aucun périmé — les vieux archivés dont l'id trie APRÈS n'étaient jamais
+      // atteints, la rétention n'était pas honorée. On parcourt désormais TOUTE la collection archivée
+      // page par page (startAfter), en filtrant l'ancienneté en mémoire (updatedAt sinon createdAt) pour
+      // éviter un index composite status+updatedAt. Borne dure à 50 pages (~20 000 docs/run) en garde-fou.
+      let lastDoc = null;
+      for (let i = 0; i < 50; i++) {
+        let q = db.collection("intelItems").where("status", "==", "archived").orderBy(FieldPath.documentId()).limit(400);
+        if (lastDoc) q = q.startAfter(lastDoc);
+        const snap = await q.get();
         if (snap.empty) break;
         const stale = snap.docs.filter((d) => {
           const data = d.data() || {};
           const ms = toMs(data.updatedAt) ?? toMs(data.createdAt);
           return ms != null && ms < cutoffMs;
         });
-        if (!stale.length) break; // aucun archivé assez vieux dans ce lot → rien à purger
-        const batch = db.batch();
-        stale.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-        deleted += stale.length;
-        if (snap.size < 400) break;
+        if (stale.length) {
+          const batch = db.batch();
+          stale.forEach((d) => batch.delete(d.ref));
+          await batch.commit();
+          deleted += stale.length;
+        }
+        lastDoc = snap.docs[snap.docs.length - 1]; // curseur = dernier doc lu (périmé ou non)
+        if (snap.size < 400) break; // dernière page atteinte
       }
       if (deleted) logger.info(`purgeArchivedIntelItems: ${deleted} intelItems archivés > ${INTELITEMS_ARCHIVE_RETENTION_DAYS} j supprimés.`);
     } catch (err) {

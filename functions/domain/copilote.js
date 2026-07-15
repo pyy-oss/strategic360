@@ -12,6 +12,9 @@
 
 // Source unique des différenciateurs de marque (audit 2026-07) — partagée avec les cadres (enrich.js).
 const { NT_DIFFERENCIATEURS } = require("./companyContext");
+// Validation calendaire réutilisée du classifieur (audit final pré-prod 2026-07) — une échéance ISO
+// impossible (2026-02-30) ne doit jamais être propagée dans le plan d'action.
+const { isValidCalendarDate } = require("./classify");
 
 /* ------------------------------------------------------------------------------------------- *
  * Rôle système commun (ANNEXE 02 §A · NT_ROLE)
@@ -545,23 +548,36 @@ function scaleOf(unitWord) {
   const hit = AMOUNT_SCALE.find((x) => x.re.test(u));
   return hit ? hit.mult : 1;
 }
+// Parse un montant ecrit a la francaise : la virgule est le separateur DECIMAL (« 1,2 milliard »,
+// « 45,5 M »), tandis que l'espace (normal/insecable/fin) et le point sont des separateurs de
+// MILLIERS. Sans virgule, on conserve le comportement historique (point/espaces = milliers).
+// Renvoie NaN si la chaine est vide. Corrige l'angle mort ou « 1,2 milliard FCFA » etait lu « 2e9 »
+// (la partie « 1, » ignoree) et pouvait echapper au flag « (chiffre a verifier) ». PUR.
+function parseFrAmount(numStr) {
+  const s = String(numStr == null ? "" : numStr).trim();
+  if (!s) return NaN;
+  if (s.indexOf(",") !== -1) {
+    return Number(s.replace(/[ .\xa0 ]/g, "").replace(",", "."));
+  }
+  return Number(s.replace(/[ .\xa0 ]/g, ""));
+}
 function annotateStrayAmounts(text, allowed) {
   if (typeof text !== "string" || !text || !allowed || !allowed.size) return text;
   const inAllowed = (val) => [...allowed].some((a) => Math.abs(a - val) <= Math.max(1, a * 0.02));
-  // 1) Nombre + multiplicateur d'échelle optionnel (M / millions / Md / k) + marqueur monétaire
-  //    (XOF / FCFA / F CFA / €/EUR / $/USD). Ex. « 45 M FCFA », « 60 000 € », « 250 millions XOF ».
-  let out = text.replace(/(\d[\d .  ]*\d|\d)\s*(milliards?|mds?|millions?|m|k)?\s*(?:XOF|FCFA|F\s?CFA|€|EUR|\$|USD)/gi, (m, num, scaleWord) => {
+  // 1) Nombre (virgule decimale FR incluse) + multiplicateur d'echelle optionnel (M / millions / Md /
+  //    k) + marqueur monetaire (XOF / FCFA / F CFA / €/EUR / $/USD). Ex. « 1,2 milliard FCFA », « 45,5 M FCFA ».
+  let out = text.replace(/(\d[\d .,\xa0 ]*\d|\d)\s*(milliards?|mds?|millions?|m|k)?\s*(?:XOF|FCFA|F\s?CFA|€|EUR|\$|USD)/gi, (m, num, scaleWord) => {
     if (/à vérifier/i.test(m)) return m;
-    const val = Number(String(num).replace(/[ .  ]/g, ""));
+    const val = parseFrAmount(num);
     if (!Number.isFinite(val) || val <= 0) return m;
     const scaled = val * scaleOf(scaleWord);
     return inAllowed(scaled) ? m : `${m} (chiffre à vérifier)`;
   });
-  // 2) Nombre + mot d'échelle monétaire (millions/milliards) SANS symbole de devise (« un potentiel de
-  //    250 millions ») : contexte fortement monétaire — on flague s'il ne correspond à aucun montant réel.
-  out = out.replace(/(\d[\d., ]*\d|\d)\s*(milliards?|mds?|millions?)\b(?!\s*(?:XOF|FCFA|F\s?CFA|€|EUR|\$|USD))/gi, (mm, num2, scaleWord2) => {
+  // 2) Nombre + mot d'echelle monetaire (millions/milliards) SANS symbole de devise (« un potentiel de
+  //    250 millions ») : contexte fortement monetaire — on flague s'il ne correspond a aucun montant reel.
+  out = out.replace(/(\d[\d.,\xa0  ]*\d|\d)\s*(milliards?|mds?|millions?)\b(?!\s*(?:XOF|FCFA|F\s?CFA|€|EUR|\$|USD))/gi, (mm, num2, scaleWord2) => {
     if (/à vérifier/i.test(mm)) return mm;
-    const base2 = Number(String(num2).replace(/[ .,]/g, ""));
+    const base2 = parseFrAmount(num2);
     if (!Number.isFinite(base2) || base2 <= 0) return mm;
     const scaled2 = base2 * scaleOf(scaleWord2);
     return inAllowed(scaled2) ? mm : `${mm} (chiffre à vérifier)`;
@@ -728,7 +744,9 @@ function normalizeEcheance(raw, todayIso) {
   const s = typeof raw === "string" ? raw.trim() : "";
   if (!s) return "";
   const iso = s.match(/\d{4}-\d{2}-\d{2}/);
-  if (iso) return iso[0]; // date ISO déjà présente
+  // Date ISO présente MAIS validée : une date calendaire impossible (2026-02-30, 2026-13-40) est
+  // rejetée plutôt que propagée dans plan[].echeance (audit final pré-prod 2026-07).
+  if (iso) return isValidCalendarDate(iso[0]) ? iso[0] : "";
   const base = Date.parse(typeof todayIso === "string" ? todayIso : "");
   if (Number.isNaN(base)) return "";
   const addDays = (n) => new Date(base + n * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
