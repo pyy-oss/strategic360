@@ -228,6 +228,40 @@ function slugifyClient(name) {
     .trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
+
+// Formes juridiques / suffixes d'entreprise a IGNORER pour identifier un client (audit valeur CXO
+// 2026-07). Sans ca, « Orange SA », « Orange S.A. » et « ORANGE, sa » etaient TROIS comptes distincts.
+// Liste conservatrice (formes juridiques univoques) — on n'y met AUCUN mot pouvant faire partie d'une
+// raison sociale (« co », « group »...), pour ne jamais sur-fusionner deux clients differents. Zero
+// configuration : l'heuristique tourne seule, aucune table d'alias a maintenir.
+const CLIENT_LEGAL_FORMS = new Set([
+  "sa", "sas", "sasu", "sarl", "sarlu", "suarl", "eurl", "snc", "sci", "scop", "scoop", "gie", "sci",
+  "ltd", "ltda", "llc", "inc", "plc", "gmbh", "ag", "spa", "srl", "bv", "nv", "oy", "ab", "sprl",
+  "kg", "kgaa", "pte", "sdn", "bhd", "sprl",
+]);
+
+/**
+ * canonicalClientKey(name) -> cle canonique d'identite client (audit valeur CXO 2026-07). Normalise
+ * accents, casse, ponctuation et ESPACES, puis retire les formes juridiques (SA/SARL/Ltd...) pour que
+ * les variantes triviales d'un meme client fusionnent en UN compte au lieu de se dedoubler. PUR.
+ * Renvoie "" si le nom se reduit a une forme juridique / n'a aucun jeton exploitable (l'appelant
+ * retombe alors sur slugifyClient, puis sur un hash — jamais de perte). Heuristique volontairement
+ * conservatrice : elle ne devine PAS les abreviations metier (« CI » vs « Cote d'Ivoire »), qui
+ * demanderaient une table d'alias — hors scope « zero effort ».
+ */
+function canonicalClientKey(name) {
+  const toks = String(name == null ? "" : name)
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    // Ponctuation INTRA-mot supprimee (pas remplacee par un espace) : « s.a. » -> « sa » (forme
+    // juridique reconnue ensuite), « d'ivoire » -> « divoire ». Le reste (virgule, tiret, espace)
+    // devient un separateur de jetons.
+    .replace(/['`’.]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim().split(/\s+/).filter(Boolean)
+    .filter((t) => !CLIENT_LEGAL_FORMS.has(t));
+  return toks.join("-");
+}
 // Libellés d'offre/BU FOURRE-TOUT (audit 2026-07 : le copilote proposait « introduire l'offre AUTRE »).
 // Ces catégories techniques ne sont pas des offres vendables → on ne les propose jamais en cross-sell
 // ni comme next best offer / potentiel chiffré. Une offre RÉELLE reste toujours nommable.
@@ -282,7 +316,9 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
   const byClient = new Map();
   const get = (client) => {
     const nom = String(client).trim();
-    const slug = slugifyClient(nom) || `cpt-${hashName(nom)}`;
+    // Cle d'identite NORMALISEE (fusionne « Orange SA » / « Orange S.A. ») ; repli sur le slug brut
+    // puis un hash pour ne jamais perdre ni fusionner a tort un nom non exploitable.
+    const slug = canonicalClientKey(nom) || slugifyClient(nom) || `cpt-${hashName(nom)}`;
     if (!byClient.has(slug)) {
       byClient.set(slug, { slug, nom, wonBu: new Set(), openBu: new Set(), casTotal: 0, pipelinePondere: 0, wins: 0, opps: [], ams: new Set(), bus: new Set(), buStats: new Map() });
     }
@@ -819,4 +855,5 @@ module.exports = {
   matchSignalsToAccount,
   copiloteAccountMatchesScope,
   slugifyClient,
+  canonicalClientKey,
 };
