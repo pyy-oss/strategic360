@@ -80,7 +80,7 @@ function NewItemPanel({ open, onClose }: { open: boolean; onClose: () => void })
     }
   }
 
-  const labelStyle: React.CSSProperties = { fontSize: 11, color: T.faint, display: "block", marginBottom: 4 };
+  const labelStyle: React.CSSProperties = { fontSize: 11, color: T.dim, display: "block", marginBottom: 4 };
 
   return (
     <Modal open={open} onClose={onClose} title="Nouvelle fiche de veille">
@@ -194,7 +194,7 @@ export function Fil() {
     <div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <span style={{ fontSize: 11.5, color: T.faint }}>Axe :</span>
+          <span style={{ fontSize: 11.5, color: T.dim }}>Axe :</span>
           <button className={`pill ${ax === "all" ? "on" : ""}`} onClick={() => setAx("all")}>
             Tous
           </button>
@@ -203,19 +203,19 @@ export function Fil() {
               {AX[k].l}
             </button>
           ))}
-          <span style={{ fontSize: 11.5, color: T.faint, marginLeft: 10 }}>Posture :</span>
+          <span style={{ fontSize: 11.5, color: T.dim, marginLeft: 10 }}>Posture :</span>
           {["all", "opportunity", "threat", "neutral"].map((k) => (
             <button key={k} className={`pill ${st === k ? "on" : ""}`} onClick={() => setSt(k)}>
               {k === "all" ? "Toutes" : STANCE[k].l}
             </button>
           ))}
-          <span style={{ fontSize: 11.5, color: T.faint, marginLeft: 10 }}>Impact :</span>
+          <span style={{ fontSize: 11.5, color: T.dim, marginLeft: 10 }}>Impact :</span>
           {["all", "high", "medium", "low"].map((k) => (
             <button key={k} className={`pill ${imp === k ? "on" : ""}`} onClick={() => setImp((v) => (v === k ? "all" : k))}>
               {k === "all" ? "Tous" : IMP[k]?.l ?? k}
             </button>
           ))}
-          <span style={{ fontSize: 11.5, color: T.faint, marginLeft: 10 }}>Imminence :</span>
+          <span style={{ fontSize: 11.5, color: T.dim, marginLeft: 10 }}>Imminence :</span>
           {["all", "imminent", "court"].map((k) => (
             <button key={k} className={`pill ${prx === k ? "on" : ""}`} onClick={() => setPrx((v) => (v === k ? "all" : k))}>
               {k === "all" ? "Toutes" : PROX[k]?.l ?? k}
@@ -229,7 +229,7 @@ export function Fil() {
           </button>
           {isExec && (
             <>
-              <span style={{ fontSize: 11.5, color: T.faint, marginLeft: 10 }}>Vue :</span>
+              <span style={{ fontSize: 11.5, color: T.dim, marginLeft: 10 }}>Vue :</span>
               {([
                 ["published", "Publiés"],
                 ["pending", "En attente"],
@@ -276,10 +276,10 @@ export function Fil() {
       {canWrite && <NewItemPanel open={showForm} onClose={() => setShowForm(false)} />}
 
       {loading && items.length === 0 && (
-        <div style={{ fontSize: 12.5, color: T.faint, marginBottom: 10 }}>Chargement du fil de veille…</div>
+        <div style={{ fontSize: 12.5, color: T.dim, marginBottom: 10 }}>Chargement du fil de veille…</div>
       )}
       {!loading && rows.length === 0 && (
-        <div style={{ fontSize: 12.5, color: T.faint, marginBottom: 10 }}>
+        <div style={{ fontSize: 12.5, color: T.dim, marginBottom: 10 }}>
           Aucune fiche de veille pour ces filtres. {canWrite ? "Utilisez « + Nouvelle fiche » pour en saisir une." : ""}
         </div>
       )}
@@ -292,7 +292,7 @@ export function Fil() {
                 <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 20, color: STANCE[s.stance].c, lineHeight: 1 }}>
                   {s.priorityScore ?? "—"}
                 </div>
-                <div style={{ fontSize: 9.5, color: T.faint, marginTop: 2 }}>priorité</div>
+                <div style={{ fontSize: 9.5, color: T.dim, marginTop: 2 }}>priorité</div>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, color: T.ink, fontWeight: 600 }}>{s.title}</div>
@@ -402,7 +402,7 @@ function SignalLifecycle({ s }: { s: IntelItem }) {
   };
   return (
     <div style={{ marginTop: 10, borderTop: `1px solid ${T.line}`, paddingTop: 8, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-      <span style={{ fontSize: 11, color: T.faint }}>Statut :</span>
+      <span style={{ fontSize: 11, color: T.dim }}>Statut :</span>
       {STATUS_FLOW.map((st) => (
         <button key={st} className={`pill ${s.status === st ? "on" : ""}`} disabled={busy} onClick={() => setStatus(st)} style={{ fontSize: 11, padding: "3px 8px" }}>
           {STATUS_META[st].l}

@@ -425,7 +425,7 @@ function PipelineCadencePanel() {
 
   const togglePause = async () => {
     setSaving(true);
-    try { await setPipelineConfig({ paused: !paused }); toast.success(!paused ? "Pipelines suspendus — aucun appel IA jusqu'à réactivation." : "Pipelines réactivés."); }
+    try { await setPipelineConfig({ paused: !paused }); toast.success(!paused ? "Traitements IA suspendus — aucun appel IA jusqu'à réactivation." : "Traitements IA réactivés."); }
     catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); } finally { setSaving(false); }
   };
   const save = async () => {

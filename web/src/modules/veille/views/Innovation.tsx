@@ -342,7 +342,7 @@ export function Innovation() {
                       <div style={{ marginTop: 3, fontSize: 11.5, color: T.dim, fontStyle: "italic" }}>
                         {o.rationale}
                         {Array.isArray(o.sourceSignals) && o.sourceSignals.length > 0 && (
-                          <span style={{ color: T.faint }}> · {o.sourceSignals.length} signal(aux) source</span>
+                          <span style={{ color: T.dim }}> · {o.sourceSignals.length} {o.sourceSignals.length > 1 ? "signaux sources" : "signal source"}</span>
                         )}
                       </div>
                     )}

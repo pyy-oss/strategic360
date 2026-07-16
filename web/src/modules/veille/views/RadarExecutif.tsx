@@ -158,7 +158,7 @@ function DecisionDuJour({
               <>💰 <span style={{ color: T.gold }}>{fmt(moneyXof)} XOF</span> de pipeline attribuable à la veille</>
             ) : null}
             {urgent && (
-              <>{(declencheeXof > 0 || moneyXof > 0) ? " · " : "⏱️ "}<span style={{ color: T.clay }}>{urgent.count} signal{urgent.count > 1 ? "aux" : ""} business imminent{urgent.count > 1 ? "s" : ""}</span></>
+              <>{(declencheeXof > 0 || moneyXof > 0) ? " · " : "⏱️ "}<span style={{ color: T.clay }}>{urgent.count} {urgent.count > 1 ? "signaux" : "signal"} business imminent{urgent.count > 1 ? "s" : ""}</span></>
             )}
           </div>
           {reco && (
@@ -215,7 +215,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
     setSeedBusy(true); setSeedMsg(null);
     try {
       const r = await backfillKpiHistory();
-      setSeedMsg(`Historique reconstruit : ${r.total} point(s), tendances menaces/opportunités disponibles.`);
+      setSeedMsg(`Historique reconstruit : ${r.total} point${r.total > 1 ? "s" : ""}, tendances menaces/opportunités disponibles.`);
     } catch (e) {
       setSeedMsg(e instanceof Error ? e.message : "Échec de la reconstruction.");
     } finally { setSeedBusy(false); }
@@ -439,7 +439,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
         <Eyebrow color={T.emerald}>💼 Business imminent</Eyebrow>
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
           {bizImminent.length === 0 && (
-            <div style={{ fontSize: 12, color: T.faint }}>Aucun signal business à échéance proche pour l'instant.</div>
+            <div style={{ fontSize: 12, color: T.dim }}>Aucun signal business à échéance proche pour l'instant.</div>
           )}
           {bizImminent.map((s) => (
             <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${s.prox === "imminent" ? T.clay : T.emerald}` }}>
@@ -462,10 +462,10 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
         <Eyebrow color={T.steel}>Décisions en attente / récentes</Eyebrow>
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
           {decisionsLoading && decisions.length === 0 && (
-            <div style={{ fontSize: 12, color: T.faint }}>Chargement des décisions…</div>
+            <div style={{ fontSize: 12, color: T.dim }}>Chargement des décisions…</div>
           )}
           {!decisionsLoading && decisions.length === 0 && (
-            <div style={{ fontSize: 12, color: T.faint }}>Aucune décision enregistrée pour l'instant.</div>
+            <div style={{ fontSize: 12, color: T.dim }}>Aucune décision enregistrée pour l'instant.</div>
           )}
           {decisions.map((d, i) => (
             <div key={d.id} style={{ display: "flex", alignItems: "baseline", gap: 10, fontSize: 12.5, padding: "8px 0", borderTop: i > 0 ? `1px solid ${T.line}` : "none" }}>
@@ -531,8 +531,8 @@ function WatchlistPanel({ entries, loading, signalCounts }: { entries: import(".
         <Badge c={T.plum}>{activeCount} actives</Badge>
       </div>
 
-      {loading && entries.length === 0 && <div style={{ marginTop: 12, fontSize: 12, color: T.faint }}>Chargement de la watchlist…</div>}
-      {!loading && entries.length === 0 && <div style={{ marginTop: 12, fontSize: 12, color: T.faint }}>Aucune entité en watchlist pour l'instant.</div>}
+      {loading && entries.length === 0 && <div style={{ marginTop: 12, fontSize: 12, color: T.dim }}>Chargement de la watchlist…</div>}
+      {!loading && entries.length === 0 && <div style={{ marginTop: 12, fontSize: 12, color: T.dim }}>Aucune entité en watchlist pour l'instant.</div>}
 
       {entries.length > 0 && (
         <>
@@ -577,7 +577,7 @@ function WatchlistPanel({ entries, loading, signalCounts }: { entries: import(".
                   <button
                     key={w.id}
                     onClick={() => navigate(`/veille/fil?ent=${encodeURIComponent(w.name)}`)}
-                    title={`${nSignals} signal${nSignals > 1 ? "aux" : ""} rattaché${nSignals > 1 ? "s" : ""} — voir les signaux de « ${w.name} » · ${w.priority}${w.geo ? ` · ${w.geo}` : ""}`}
+                    title={`${nSignals} ${nSignals > 1 ? "signaux" : "signal"} rattaché${nSignals > 1 ? "s" : ""} — voir les signaux de « ${w.name} » · ${w.priority}${w.geo ? ` · ${w.geo}` : ""}`}
                     style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, padding: "8px 11px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${prioColor(w.priority)}`, opacity: w.active ? 1 : 0.55, border: "none", cursor: "pointer", textAlign: "left", width: "100%" }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>

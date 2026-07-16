@@ -117,7 +117,8 @@ describe("businessFactor (Action 5.2)", () => {
     expect(businessFactor({ subtype: "tender" })).toBe(1.0);
     expect(businessFactor({ subtype: "funding" })).toBe(0.9);
     expect(businessFactor({ subtype: "eol" })).toBe(0.9);
-    expect(businessFactor({ subtype: "regulation" })).toBe(0.85);
+    // regulation exige désormais un ancrage LOCAL (passe finale 2026-07) : ancré (geo ci) → mapping brut 0.85.
+    expect(businessFactor({ subtype: "regulation", geo: "ci" })).toBe(0.85);
     expect(businessFactor({ subtype: "budget" })).toBe(0.85);
     expect(businessFactor({ subtype: "pricing" })).toBe(0.6);
     expect(businessFactor({ subtype: "program_change" })).toBe(0.6);
@@ -125,6 +126,12 @@ describe("businessFactor (Action 5.2)", () => {
     expect(businessFactor({ subtype: "win" })).toBe(0.5);
     expect(businessFactor({ subtype: "product_launch" })).toBe(0.45);
     expect(SUBTYPE_BUSINESS.tender).toBe(1.0);
+  });
+  it("regulation HORS-ZONE (sans ancrage local) est décotée comme une CVE mondiale (passe finale 2026-07)", () => {
+    // Une réglementation sans compte suivi ni géo CI/UEMOA n'est pas monétisable → décote 0.6.
+    expect(businessFactor({ subtype: "regulation" })).toBeCloseTo(0.85 * 0.6, 5);
+    // Ancrée (compte suivi via ent, ou géo locale) → pleine valeur.
+    expect(businessFactor({ subtype: "regulation", ent: "BCEAO" })).toBe(0.85);
   });
   it("defaults unknown/missing subtype to 0.4", () => {
     expect(businessFactor({})).toBe(0.4);

@@ -451,8 +451,8 @@ function PorterTab() {
     );
   }
   const forces: { force: string; v: number | null; note: string }[] = [
-    { force: "Pouvoir fournisseurs", v: pf?.pouvoirFournisseurs ?? null, note: "Concentration Top-3 fournisseurs (CAS) — calculé depuis les imports P&L (orders)." },
-    { force: "Pouvoir clients", v: pf?.pouvoirClients ?? null, note: "Concentration Top-5 clients (montant pipeline) — calculé depuis les imports LIVE (opportunities)." },
+    { force: "Pouvoir fournisseurs", v: pf?.pouvoirFournisseurs ?? null, note: "Concentration Top-3 fournisseurs (CAS) — calculé depuis les imports P&L." },
+    { force: "Pouvoir clients", v: pf?.pouvoirClients ?? null, note: "Concentration Top-5 clients (montant pipeline) — calculé depuis les imports LIVE." },
     { force: "Rivalité", v: ai?.rivalite?.v ?? null, note: ai?.rivalite?.note || "Estimée par l'IA depuis les signaux concurrents — en attente de génération." },
     { force: "Substituts", v: ai?.substituts?.v ?? null, note: ai?.substituts?.note || "Menace de désintermédiation (éditeurs/hyperscalers) — estimée par l'IA." },
     { force: "Nouveaux entrants", v: ai?.nouveauxEntrants?.v ?? null, note: ai?.nouveauxEntrants?.note || "Menace de nouveaux entrants — estimée par l'IA." },
