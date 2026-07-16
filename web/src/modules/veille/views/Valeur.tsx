@@ -37,10 +37,10 @@ export function Valeur() {
   const projete = current != null ? current + (pipe != null ? pipe * (wr != null ? wr : 1) : 0) : null;
   const hasBridge = current != null;
   const bridgeSteps: { label: string; value: number; accent: string; sub?: string }[] = [
-    ...(base != null ? [{ label: "CA N-1", value: base, accent: T.faint }] : []),
-    ...(current != null ? [{ label: "CA réalisé", value: current, accent: T.emerald, sub: base != null ? `${current - base >= 0 ? "▲ +" : "▼ "}${fmt(current - base)} vs N-1` : undefined }] : []),
-    ...(pipe != null ? [{ label: "Pipeline pondéré", value: pipe, accent: T.gold, sub: wr != null ? `× ${pct(wr)} win-rate` : "potentiel projet" }] : []),
-    ...(projete != null ? [{ label: "Projeté", value: projete, accent: T.steel, sub: "CA réalisé + pipeline attendu" }] : []),
+    ...(base != null ? [{ label: "CAS N-1", value: base, accent: T.faint }] : []),
+    ...(current != null ? [{ label: "CAS réalisé", value: current, accent: T.emerald, sub: base != null ? `${current - base >= 0 ? "▲ +" : "▼ "}${fmt(current - base)} vs N-1` : undefined }] : []),
+    ...(pipe != null ? [{ label: "Pipeline pondéré", value: pipe, accent: T.gold, sub: wr != null ? `× ${pct(wr)} taux de victoire` : "potentiel projet" }] : []),
+    ...(projete != null ? [{ label: "Projeté", value: projete, accent: T.steel, sub: "CAS réalisé + pipeline attendu" }] : []),
   ];
   // Longue liste (audit design) : filtre opp/menace (si pertinent) + pagination. L'échelle des
   // barres reste calée sur le max GLOBAL pour rester comparable d'une page à l'autre.
@@ -52,16 +52,16 @@ export function Valeur() {
     <div>
       <div className="g3" style={{ display: "grid", gridTemplateColumns: hasThreat ? "repeat(3,1fr)" : "1fr", gap: 14, marginBottom: 14 }}>
         <Card>
-          <Kpi label="Valeur attendue — opportunités" value={liveVas ? fmt(evOpp) : "—"} accent={T.emerald} sub="Σ (proba × impact)" />
+          <Kpi label="Valeur attendue — opportunités" value={liveVas ? <>{fmt(evOpp)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></> : "—"} accent={T.emerald} sub="Σ (proba × impact)" />
         </Card>
         {hasThreat && (
           <Card>
-            <Kpi label="Valeur à risque — menaces" value={fmt(evThreat)} accent={T.clay} sub="Σ (proba × impact)" />
+            <Kpi label="Valeur à risque — menaces" value={<>{fmt(evThreat)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></>} accent={T.clay} sub="Σ (proba × impact)" />
           </Card>
         )}
         {hasThreat && (
           <Card>
-            <Kpi label="Valeur nette en jeu" value={fmt(evOpp + evThreat)} accent={T.gold} sub="net at stake" />
+            <Kpi label="Valeur nette en jeu" value={<>{fmt(evOpp + evThreat)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></>} accent={T.gold} sub="valeur nette en jeu" />
           </Card>
         )}
       </div>
@@ -74,7 +74,7 @@ export function Valeur() {
                 {i > 0 && <div style={{ alignSelf: "center", color: T.faint, fontSize: 16 }}>→</div>}
                 <div style={{ flex: 1, minWidth: 130, background: T.panel2, borderRadius: 9, padding: "10px 12px", borderTop: `2px solid ${s.accent}` }}>
                   <div style={{ fontSize: 10.5, color: T.faint }}>{s.label}</div>
-                  <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 18, fontWeight: 700, color: s.accent, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{fmt(s.value)}</div>
+                  <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 18, fontWeight: 700, color: s.accent, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{fmt(s.value)} <span style={{ fontSize: 11, color: T.dim }}>XOF</span></div>
                   {s.sub && <div style={{ fontSize: 10.5, color: T.dim, marginTop: 2 }}>{s.sub}</div>}
                 </div>
               </React.Fragment>
@@ -82,7 +82,7 @@ export function Valeur() {
           </div>
         ) : (
           <div style={{ marginTop: 12, padding: "14px 16px", background: T.panel2, borderRadius: 9, fontSize: 12.5, color: T.dim, lineHeight: 1.5 }}>
-            📊 Le pont de valeur (CA N-1 → réalisé → pipeline → projeté) s'affichera dès la <b style={{ color: T.ink }}>première synchronisation des données internes</b> (P&L / pipeline nt360). Lancez-la depuis <b style={{ color: T.ink }}>Indicateurs</b> ou attendez la synchro quotidienne.
+            📊 Le pont de valeur (CAS N-1 → réalisé → pipeline → projeté) s'affichera dès la <b style={{ color: T.ink }}>première synchronisation des données internes</b> (P&L / pipeline nt360). Lancez-la depuis <b style={{ color: T.ink }}>Indicateurs</b> ou attendez la synchro quotidienne.
           </div>
         )}
       </Card>

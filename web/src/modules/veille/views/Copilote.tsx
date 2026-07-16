@@ -45,16 +45,19 @@ import {
 } from "../lib/copilote";
 import { Freshness } from "../components/Freshness";
 
-const CHALEUR_C: Record<string, string> = { Chaud: T.clay, Tiède: T.gold, Froid: T.steel };
+// Chaleur d'un prospect = intensité POSITIVE (passe finale 2026-07) : un lead « Chaud » est le plus
+// désirable — il ne doit JAMAIS s'afficher dans le rouge « clay » réservé aux menaces/retards.
+const CHALEUR_C: Record<string, string> = { Chaud: T.emerald, Tiède: T.gold, Froid: T.steel };
+// NIV_C sert le NIVEAU DE RISQUE (risques cachés) : « Élevé » en rouge est ici correct (danger).
 const NIV_C: Record<string, string> = { "Élevé": T.clay, Moyen: T.gold, Faible: T.steel };
 
 const AGENT_TABS: { k: string; l: string; icon: string }[] = [
   { k: "prospection", l: "Prospection", icon: "🎯" },
   { k: "sequence", l: "Séquence multi-touch", icon: "📨" },
   { k: "cvp", l: "Proposition de valeur", icon: "💡" },
-  { k: "businessCase", l: "Business case", icon: "💰" },
+  { k: "businessCase", l: "Dossier de rentabilité", icon: "💰" },
   { k: "meddic", l: "Qualification MEDDIC", icon: "🩺" },
-  { k: "dealAnalysis", l: "Analyse de deal", icon: "♟️" },
+  { k: "dealAnalysis", l: "Analyse d'affaire", icon: "♟️" },
   { k: "stakeholders", l: "Parties prenantes", icon: "🕸️" },
   { k: "brief", l: "Brief RDV", icon: "📑" },
   { k: "triennal", l: "Plan triennal", icon: "🗺️" },
@@ -690,7 +693,7 @@ function PortfolioDashboard({
           {/* Composition explicite (audit 2026-07) : le « poids » agrège CA RÉALISÉ (passé) + pipeline
               pondéré (futur) — deux natures différentes. On le libelle comme tel et on montre le détail
               (vert = réalisé, or = pipeline) pour ne pas masquer le mélange derrière un seul chiffre. */}
-          <Eyebrow color={T.emerald}>Top comptes — CA réalisé + pipeline pondéré</Eyebrow>
+          <Eyebrow color={T.emerald}>Top comptes — CAS réalisé + pipeline pondéré</Eyebrow>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
             {accounts.slice(0, 8).map((a) => (
               <button key={a.id} onClick={() => onPick(a.id)}
@@ -1115,7 +1118,9 @@ function PlanActionTab({ accountId, disabled, canWrite, accountName }: { account
 /* ---------- Livrables à forte valeur (audit profondeur 2026-07) ---------- */
 
 const PROBA_C: Record<string, string> = { "Élevée": T.emerald, Moyenne: T.gold, Faible: T.clay };
-const POUVOIR_C: Record<string, string> = { "Élevé": T.clay, Moyen: T.gold, Faible: T.steel };
+// Le POUVOIR d'une partie prenante est une MAGNITUDE NEUTRE, pas un danger (passe finale 2026-07) :
+// un décideur à fort pouvoir peut être un allié. On l'affiche en accent neutre (plum), pas en rouge menace.
+const POUVOIR_C: Record<string, string> = { "Élevé": T.plum, Moyen: T.gold, Faible: T.steel };
 const POSTURE_C: Record<string, string> = { Champion: T.emerald, Favorable: T.emerald, Neutre: T.steel, Sceptique: T.gold, "Détracteur": T.clay, Inconnu: T.faint };
 
 /** En-tête + états communs d'un onglet livrable (réduit la répétition). */

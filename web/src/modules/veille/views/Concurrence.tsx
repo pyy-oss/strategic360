@@ -105,8 +105,11 @@ function NewWinLossPanel({ open, onClose }: { open: boolean; onClose: () => void
       // ce formulaire saisit des MILLIONS de FCFA (UX), mais winLoss.amount est stocké en XOF pour rester
       // cohérent avec l'autre point de saisie (fin d'action, PlanAction.tsx, en XOF bruts) — sinon
       // l'agrégat « CA gagné/perdu » mélangeait 45 (M FCFA) et 45 000 000 (XOF), faux d'un facteur 1e6.
-      const amountM = form.amount.trim() ? Number(form.amount.replace(",", ".")) : NaN;
-      const amountXof = Number.isFinite(amountM) ? Math.round(amountM * 1e6) : undefined;
+      // Saisie en XOF BRUTS (passe finale 2026-07) — même convention que PlanAction.tsx, pour lever
+      // l'ambiguïté d'unité : un même champ winLoss.amount saisi tantôt en « M FCFA », tantôt en XOF,
+      // exposait à une erreur d'un facteur 1e6 selon l'écran de départ de l'utilisateur.
+      const amountRaw = form.amount.trim() ? Number(form.amount.replace(/[ ]/g, "").replace(",", ".")) : NaN;
+      const amountXof = Number.isFinite(amountRaw) ? Math.round(amountRaw) : undefined;
       await createWinLossEntry({
         competitor: form.competitor.trim(),
         result: form.result,
@@ -148,8 +151,11 @@ function NewWinLossPanel({ open, onClose }: { open: boolean; onClose: () => void
         </div>
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 10, marginBottom: 10 }}>
           <div>
-            <label style={labelStyle}>Montant (M FCFA)</label>
-            <Input inputMode="decimal" placeholder="ex : 45" value={form.amount} onChange={(v) => set("amount", v)} />
+            <label style={labelStyle}>Montant (XOF)</label>
+            <Input inputMode="decimal" placeholder="ex : 45000000" value={form.amount} onChange={(v) => set("amount", v)} />
+            {form.amount.trim() && Number.isFinite(Number(form.amount.replace(/[ ]/g, "").replace(",", "."))) && (
+              <div style={{ fontSize: 10.5, color: T.dim, marginTop: 3 }}>= {Number(form.amount.replace(/[ ]/g, "").replace(",", ".")).toLocaleString("fr-FR")} XOF</div>
+            )}
           </div>
           <div>
             <label style={labelStyle}>Leçon capitalisée</label>
@@ -208,7 +214,7 @@ export function Concurrence() {
       {wlSummary.total > 0 && (
         <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
           <Card><div style={{ fontSize: 11, color: T.faint }}>Taux de victoire</div><div style={{ fontSize: 22, fontWeight: 700, color: T.gold }}>{winRateGlobal}%</div></Card>
-          <Card><div style={{ fontSize: 11, color: T.faint }}>Deals suivis</div><div style={{ fontSize: 22, fontWeight: 700, color: T.steel }}>{wlSummary.total}</div></Card>
+          <Card><div style={{ fontSize: 11, color: T.dim }}>Affaires suivies</div><div style={{ fontSize: 22, fontWeight: 700, color: T.steel }}>{wlSummary.total}</div></Card>
           {/* winLoss.amount est en XOF (unité canonique) → affiché en M FCFA (÷ 1e6) pour la lisibilité. */}
           <Card><div style={{ fontSize: 11, color: T.faint }}>CA gagné (M FCFA)</div><div style={{ fontSize: 22, fontWeight: 700, color: T.emerald }}>{Math.round(wlSummary.won / 1e6)}</div></Card>
           <Card><div style={{ fontSize: 11, color: T.faint }}>CA perdu (M FCFA)</div><div style={{ fontSize: 22, fontWeight: 700, color: T.clay }}>{Math.round(wlSummary.lost / 1e6)}</div></Card>
@@ -266,7 +272,7 @@ export function Concurrence() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
                   <Eyebrow color={T.clay}>{c.competitor}</Eyebrow>
                   <Badge c={c.win >= 0.5 ? T.emerald : T.clay}>
-                    {c.deals > 0 ? `${pct(c.win)} · ${c.deals} deals` : "pas de win/loss"}
+                    {c.deals > 0 ? `${pct(c.win)} · ${c.deals} ${c.deals > 1 ? "affaires" : "affaire"}` : "pas de win/loss"}
                   </Badge>
                 </div>
                 {c.generatedBy === "ai" && (

@@ -169,29 +169,42 @@ function factBase(c) {
   // Cold start (audit 2026-07) : quand l'affinité de cross-sell ne fonde PAS l'offre (csPct=0, ex.
   // compte sans historique ou portefeuille sans co-occurrence), on ne prétend plus « data-driven / à
   // prioriser » — on la présente honnêtement comme une piste à qualifier.
+  // Priorité au DÉCLENCHEUR DE VEILLE (passe finale 2026-07) : quand la next best offer est portée par
+  // un événement (offre rendue opportune par un signal — EOL, réglementaire, AO), on l'annonce comme
+  // pilotée par la demande réelle, pas seulement par l'affinité statistique.
   const reco = rec.offre
-    ? (Number(rec.csPct) > 0
-        ? `— NEXT BEST OFFER (recommandation data-driven, affinité de cross-sell sur le portefeuille NT) : « ${coerceStr(rec.offre)} » — ${rec.csPct}% des comptes au profil d'achat comparable la détiennent${montant}. À prioriser dans la recommandation.`
-        : `— PISTE DE QUALIFICATION (whitespace non encore étayé par l'affinité portefeuille — aucune donnée de cross-sell exploitable sur ce compte, à confirmer avant d'en faire une priorité) : « ${coerceStr(rec.offre)} »${montant}.`)
+    ? (rec.triggeredBy
+        ? `— NEXT BEST OFFER PILOTÉE PAR LA VEILLE (offre rendue opportune par un événement de marché — timing à exploiter) : « ${coerceStr(rec.offre)} » — déclenchée par « ${coerceStr(rec.triggeredBy)} »${montant}. À prioriser (fenêtre ouverte).`
+        : Number(rec.csPct) > 0
+          ? `— NEXT BEST OFFER (recommandation data-driven, affinité de cross-sell sur le portefeuille NT) : « ${coerceStr(rec.offre)} » — ${rec.csPct}% des comptes au profil d'achat comparable la détiennent${montant}. À prioriser dans la recommandation.`
+          : `— PISTE DE QUALIFICATION (whitespace non encore étayé par l'affinité portefeuille — aucune donnée de cross-sell exploitable sur ce compte, à confirmer avant d'en faire une priorité) : « ${coerceStr(rec.offre)} »${montant}.`)
     : "";
   // Déclencheurs de veille RATTACHÉS à ce compte (signaux qui le nomment) — timing/accroche commerciale.
   // On rend la MATIÈRE TEMPORELLE (date), le SO-WHAT et l'OFFRE DÉCLENCHÉE quand ils existent : sans
   // eux l'IA ne pouvait produire ni timing ni accroche (audit pertinence 2026-07).
-  const signauxCompte = (Array.isArray(c.signauxCompte) ? c.signauxCompte : [])
-    .map((s) => {
-      if (!s || typeof s !== "object") return "";
-      const titre = coerceStr(s.titre || s.name);
-      if (!titre) return "";
-      const meta = [];
-      if (s.date) meta.push(coerceStr(s.date));
-      if (s.prox) meta.push(coerceStr(s.prox));
-      const head = meta.length ? `${titre} (${meta.join(" · ")})` : titre;
-      const tail = [];
-      if (s.soWhat) tail.push(`so-what : ${coerceStr(s.soWhat)}`);
-      if (s.offreLiee) tail.push(`offre à activer : ${coerceStr(s.offreLiee)}`);
-      return tail.length ? `${head} — ${tail.join(" ; ")}` : head;
-    })
-    .filter(Boolean).slice(0, 5);
+  const renderSignal = (s) => {
+    if (!s || typeof s !== "object") return "";
+    const titre = coerceStr(s.titre || s.name);
+    if (!titre) return "";
+    const meta = [];
+    if (s.date) meta.push(coerceStr(s.date));
+    if (s.prox) meta.push(coerceStr(s.prox));
+    const head = meta.length ? `${titre} (${meta.join(" · ")})` : titre;
+    const tail = [];
+    if (s.soWhat) tail.push(`so-what : ${coerceStr(s.soWhat)}`);
+    if (s.offreLiee) tail.push(`offre à activer : ${coerceStr(s.offreLiee)}`);
+    return tail.length ? `${head} — ${tail.join(" ; ")}` : head;
+  };
+  const signauxCompte = (Array.isArray(c.signauxCompte) ? c.signauxCompte : []).map(renderSignal).filter(Boolean).slice(0, 5);
+  // Signaux SECTORIELS (passe finale 2026-07) : la demande du marché du secteur du compte (AO, budgets,
+  // réglementaire, EOL, fintech, e-gov) ne nomme pas toujours le compte, mais fonde l'accroche métier
+  // et l'offre à pousser. Elle etait deja dans le ctx (c.signaux) mais n'etait servie qu'a la prospection
+  // et au contenu — pas au plan d'action / CVP / dossier de rentabilite. On l'expose (dédupliquée du
+  // rattaché-compte) pour rebrancher signal->action datee la ou ca vend.
+  const compteTitres = new Set((Array.isArray(c.signauxCompte) ? c.signauxCompte : []).map((s) => coerceStr(s && (s.titre || s.name))));
+  const signauxSecteur = (Array.isArray(c.signaux) ? c.signaux : [])
+    .filter((s) => s && !compteTitres.has(coerceStr(s.titre || s.name)))
+    .map(renderSignal).filter(Boolean).slice(0, 4);
   return [
     `— Compte : ${coerceStr(c.compte, "(non nommé)")}${c.secteur ? ` — secteur ${coerceStr(c.secteur)}` : ""}${c.tier ? `, compte ${coerceStr(c.tier)}` : ""}.`,
     `— ${empreinteChiffree(c)}`,
@@ -200,6 +213,7 @@ function factBase(c) {
     `— Whitespace = offres NT JAMAIS vendues à ce compte, classées par affinité de cross-sell décroissante : ${list(c.whitespace)}.`,
     reco,
     signauxCompte.length ? `— Déclencheurs de veille détectés sur CE compte (à exploiter comme accroche/timing, ne pas inventer au-delà) : ${list(signauxCompte)}.` : "",
+    signauxSecteur.length ? `— Signaux SECTORIELS du marché (demande du secteur, pas encore rattachée à ce compte — à relier à une offre NT si pertinent, sans présumer que le compte est concerné) : ${list(signauxSecteur)}.` : "",
     `— Opportunités réelles en cours (à nommer avec leur montant exact) : ${list(deals)}.`,
     (Array.isArray(c.enjeux) && c.enjeux.length) ? `— Enjeux saisis par le commercial : ${list(c.enjeux)}.` : "",
   ].filter(Boolean).join("\n");

@@ -2945,7 +2945,17 @@ async function assembleCopiloteContext(db, accountId) {
   // Classement du whitespace par AFFINITÉ de cross-sell (market basket) + « next best offer ».
   const ranked = nt360RecommendNextOffers(ownedBus, whitespace0, affinity);
   const whitespace = ranked.length ? ranked.map((r) => r.offre) : whitespace0;
-  const recoBase = ranked.find((r) => r.csPct > 0) || ranked[0] || null;
+  let recoBase = ranked.find((r) => r.csPct > 0) || ranked[0] || null;
+  // NEXT BEST OFFER PILOTÉE PAR LA VEILLE (passe finale 2026-07) : si un déclencheur de veille rattaché
+  // au compte pointe une offre (offreLiee) présente dans le whitespace, on la PROMEUT en tête de reco —
+  // la demande réelle (EOL, réglementaire, AO) prime sur la seule affinité statistique interne. On tague
+  // `triggeredBy` pour que le libellé cite l'événement déclencheur (copilote.js).
+  for (const s of signauxCompteRich) {
+    const off = (s && s.offreLiee ? String(s.offreLiee) : "").trim().toLowerCase();
+    if (!off) continue;
+    const hit = ranked.find((r) => (r.offre || "").trim().toLowerCase() === off);
+    if (hit) { recoBase = { ...hit, triggeredBy: s.titre || "" }; break; }
+  }
   // Chiffrage de la next best offer : panier de référence (médiane du portefeuille) pour son offre.
   const benchmark = meta.buBenchmark && typeof meta.buBenchmark === "object" ? meta.buBenchmark : {};
   const casTotal = Number(nt.casTotal) || 0;

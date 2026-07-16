@@ -108,7 +108,7 @@ export function Onboarding() {
       const edited: OnboardingDraft = { ...draft, plan: { ...(draft.plan ?? {}), candidateSources: chosen } };
       const res = await applyOnboardingDraft({ draft: edited, activateSources });
       toast.success(
-        `Configuration appliquée : ${res.companyName} · ${res.sourcesWritten} source(s)${res.sourcesActive ? " actives" : " inactives"} · ${res.watchlistWritten} entité(s)`
+        `Configuration appliquée : ${res.companyName} · ${res.sourcesWritten} ${res.sourcesWritten > 1 ? "sources" : "source"} ${res.sourcesActive ? (res.sourcesWritten > 1 ? "actives" : "active") : (res.sourcesWritten > 1 ? "inactives" : "inactive")} · ${res.watchlistWritten} ${res.watchlistWritten > 1 ? "entités" : "entité"}`
       );
       setDraft(null);
     } catch (e) {
@@ -240,7 +240,7 @@ export function Onboarding() {
           {/* Sources candidates */}
           <Card>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
-              <Eyebrow color={T.gold}>Sources candidates — {includedCount}/{sources.length} retenue(s)</Eyebrow>
+              <Eyebrow color={T.gold}>Sources candidates — {includedCount}/{sources.length} {includedCount > 1 ? "retenues" : "retenue"}</Eyebrow>
               <span style={{ fontSize: 11, color: T.faint }}>décochez celles à écarter</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>

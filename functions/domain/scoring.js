@@ -134,7 +134,10 @@ const SUBTYPE_BUSINESS = {
 // client ni géo local n'est pas une opportunité NT — c'est de la brève tech. Sans ancrage on décote,
 // pour ne pas laisser le cyber/sourcing mondial trôner devant un mouvement d'un compte suivi
 // (audit pertinence 2026-07, biais sectoriel résiduel).
-const ANCHOR_REQUIRED_SUBTYPES = new Set(["vulnerability", "cve", "supply"]);
+// `regulation` ajouté (passe finale 2026-07) : les leviers réglementaires MONÉTISABLES pour NT sont
+// exclusivement LOCAUX (RGSSI, BCEAO, ARTCI, AMF-UMOA…). Une réglementation hors-zone, sans compte
+// suivi ni géo CI/UEMOA, n'est pas une opportunité — elle doit être décotée comme une CVE mondiale.
+const ANCHOR_REQUIRED_SUBTYPES = new Set(["vulnerability", "cve", "supply", "regulation"]);
 const UNANCHORED_DECOTE = 0.6;
 // Défauts géographiques Neurones (CI/UEMOA/Afrique). Externalisables par le profil client (Phase 0
 // produit) via `cfg.anchorGeoMarkers` / `cfg.localGeoMarkers`.
