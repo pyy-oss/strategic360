@@ -158,7 +158,7 @@ function DecisionDuJour({
               <>💰 <span style={{ color: T.gold }}>{fmt(moneyXof)} XOF</span> de pipeline attribuable à la veille</>
             ) : null}
             {urgent && (
-              <>{(declencheeXof > 0 || moneyXof > 0) ? " · " : "⏱️ "}<span style={{ color: T.clay }}>{urgent.count} signal{urgent.count > 1 ? "aux" : ""} business imminent{urgent.count > 1 ? "s" : ""}</span></>
+              <>{(declencheeXof > 0 || moneyXof > 0) ? " · " : "⏱️ "}<span style={{ color: T.clay }}>{urgent.count} {urgent.count > 1 ? "signaux" : "signal"} business imminent{urgent.count > 1 ? "s" : ""}</span></>
             )}
           </div>
           {reco && (
@@ -577,7 +577,7 @@ function WatchlistPanel({ entries, loading, signalCounts }: { entries: import(".
                   <button
                     key={w.id}
                     onClick={() => navigate(`/veille/fil?ent=${encodeURIComponent(w.name)}`)}
-                    title={`${nSignals} signal${nSignals > 1 ? "aux" : ""} rattaché${nSignals > 1 ? "s" : ""} — voir les signaux de « ${w.name} » · ${w.priority}${w.geo ? ` · ${w.geo}` : ""}`}
+                    title={`${nSignals} ${nSignals > 1 ? "signaux" : "signal"} rattaché${nSignals > 1 ? "s" : ""} — voir les signaux de « ${w.name} » · ${w.priority}${w.geo ? ` · ${w.geo}` : ""}`}
                     style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, padding: "8px 11px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${prioColor(w.priority)}`, opacity: w.active ? 1 : 0.55, border: "none", cursor: "pointer", textAlign: "left", width: "100%" }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
