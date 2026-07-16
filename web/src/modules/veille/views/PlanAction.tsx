@@ -395,11 +395,22 @@ export function PlanAction() {
     else if (v === "Abandonné") setOutcomeFor({ title: a.t, result: "loss" });
   };
 
+  // Jitter DÉTERMINISTE seedé sur l'id (passe finale 2026-07) : impact/urgence sont des entiers 1-5,
+  // donc plusieurs actions se superposaient EXACTEMENT sur la matrice (illisible dès 2 actions au même
+  // couple). On décale chaque bulle de ±0.12 de façon stable (pas de Math.random qui bougerait à
+  // chaque rendu), sans changer les axes entiers.
+  const jitter = (seed: string, spread = 0.12): number => {
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    return ((h % 1000) / 1000 - 0.5) * 2 * spread;
+  };
   const acts = actions
     .map((a) => ({
       ...a,
       imp: a.impact,
       urg: a.urgence,
+      impJ: a.impact + jitter(a.id + "i"),
+      urgJ: a.urgence + jitter(a.id + "u"),
       eff: a.effort,
       t: a.title,
       ech: a.echeance,
@@ -451,15 +462,17 @@ export function PlanAction() {
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{ left: 6, right: 20, top: 10, bottom: 20 }}>
                   <CartesianGrid stroke={T.line} />
-                  <XAxis type="number" dataKey="urg" name="Urgence" domain={[0, 6]} ticks={[1, 2, 3, 4, 5]} tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Urgence →", position: "insideBottom", offset: -8, fill: T.dim, fontSize: 11 }} />
-                  <YAxis type="number" dataKey="imp" name="Impact" domain={[0, 6]} ticks={[1, 2, 3, 4, 5]} tick={{ fill: T.faint, fontSize: 10 }} label={{ value: "Impact →", angle: -90, position: "insideLeft", fill: T.dim, fontSize: 11 }} />
+                  <XAxis type="number" dataKey="urgJ" name="Urgence" domain={[0, 6]} ticks={[1, 2, 3, 4, 5]} tick={{ fill: T.dim, fontSize: 10 }} label={{ value: "Urgence →", position: "insideBottom", offset: -8, fill: T.dim, fontSize: 11 }} />
+                  <YAxis type="number" dataKey="impJ" name="Impact" domain={[0, 6]} ticks={[1, 2, 3, 4, 5]} tick={{ fill: T.dim, fontSize: 10 }} label={{ value: "Impact →", angle: -90, position: "insideLeft", fill: T.dim, fontSize: 11 }} />
                   <ZAxis type="number" dataKey="ev" range={[120, 1000]} />
                   <ReferenceLine x={3.5} stroke={T.faint} />
                   <ReferenceLine y={3.5} stroke={T.faint} />
                   <Tooltip content={<Tip />} cursor={{ stroke: T.faint }} />
-                  <Scatter data={acts.map((a) => ({ ...a, n: a.t }))}>
+                  {/* Clic sur une bulle → défile vers la ligne de l'action dans le tableau ci-dessous. */}
+                  <Scatter data={acts.map((a) => ({ ...a, n: a.t }))} cursor="pointer"
+                    onClick={(p: { id?: string }) => { const el = p && p.id ? document.getElementById(`act-row-${p.id}`) : null; el?.scrollIntoView({ behavior: "smooth", block: "center" }); }}>
                     {acts.map((a, i) => (
-                      <Cell key={i} fill={a.q.c} />
+                      <Cell key={i} fill={a.q.c} fillOpacity={0.75} stroke={a.q.c} strokeWidth={1} />
                     ))}
                   </Scatter>
                 </ScatterChart>
@@ -498,7 +511,7 @@ export function PlanAction() {
                 </thead>
                 <tbody>
                   {acts.map((a, i) => (
-                    <tr key={a.id} style={{ borderTop: `1px solid ${T.line}` }}>
+                    <tr key={a.id} id={`act-row-${a.id}`} style={{ borderTop: `1px solid ${T.line}` }}>
                       <td style={{ padding: "8px", color: T.gold, fontFamily: "'Bricolage Grotesque'", fontWeight: 700 }}>{i + 1}</td>
                       <td style={{ padding: "8px", color: T.ink }}>
                         {a.t}

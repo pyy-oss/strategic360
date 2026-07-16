@@ -287,13 +287,6 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
     (s) => s.ent ?? s.businessAngle?.buyer
   );
   const cell = (imp: string, st: string) => items.filter((s) => s.impact === imp && s.stance === st).length;
-  const intro = (
-    {
-      dg: "Situation, menaces et opportunités majeures, décisions en attente — l'essentiel pour arbitrer.",
-      strategie: "Signaux prioritaires reliés aux cadres et aux initiatives.",
-      innovation: "Signaux technologiques et d'innovation à fort potentiel.",
-    } as Record<string, string>
-  )[lens];
   // Canari IA (m14 audit intégral) : on alerte si le dernier check a ÉCHOUÉ, mais AUSSI s'il est
   // PÉRIMÉ — le canari tourne quotidiennement, donc un checkedAt vieux de > 30 h signale que le
   // planificateur lui-même est à l'arrêt (panne silencieuse : sans ça, un ancien ok:true restait
@@ -325,12 +318,9 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
           asOf={(exec?.updatedAt as { toMillis?: () => number } | undefined) ?? null}
         />
       </div>
-      <div style={{ fontSize: 12, color: T.plum, marginBottom: 14, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 12px" }}>
-        🎯 {intro}
-      </div>
-      <div style={{ marginBottom: 14 }}>
-        <VeilleAttributionPanel />
-      </div>
+      {/* HIÉRARCHIE (passe finale 2026-07) : hero « Décision du jour » PUIS les 4 KPI directement,
+          au-dessus de la ligne de flottaison. Le panneau d'attribution (détail de preuve) passe SOUS
+          les KPI ; le bandeau d'intro générique est supprimé (boilerplate qui repoussait les chiffres). */}
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
         <Freshness at={(exec?.updatedAt as { toMillis?: () => number } | undefined) ?? null} label="Chiffres synchronisés" />
       </div>
@@ -338,9 +328,9 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
         <KpiCard title="Ouvrir le Copilote (comptes suivis)" onClick={() => setView("copilote")}>
           <Kpi
             label="Exposition comptes suivis"
-            value={<>{exec && exec.pipelineInfluenced != null ? fmt(exec.pipelineInfluenced) : "—"}<TrendArrow delta={dPipeline} /></>}
+            value={<>{exec && exec.pipelineInfluenced != null ? <>{fmt(exec.pipelineInfluenced)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></> : "—"}<TrendArrow delta={dPipeline} /></>}
             accent={T.emerald}
-            sub="value-at-stake · comptes en veille / watchlist (≠ pipeline actif) ▸"
+            sub="valeur en jeu · comptes en veille / watchlist (≠ pipeline actif) ▸"
           />
         </KpiCard>
         <KpiCard title="Voir les menaces dans le Fil" onClick={() => navigate("/veille/fil?st=threat")}>
@@ -367,6 +357,10 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
             sub="initiatives stratégiques ▸"
           />
         </KpiCard>
+      </div>
+      {/* Preuve de ROI (détail) sous les KPI, plus au-dessus (passe finale 2026-07). */}
+      <div style={{ marginBottom: 14 }}>
+        <VeilleAttributionPanel />
       </div>
       {isExec && historyThin && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12, color: T.dim, background: T.panel, border: `1px dashed ${T.line}`, borderRadius: 8, padding: "8px 12px", marginBottom: 14 }}>
