@@ -470,7 +470,22 @@ const TENANT_TIMEZONE = process.env.TENANT_TIMEZONE || "Africa/Abidjan";
 // paramétrable MAX_INSTANCES). Aucun minInstances : les fonctions restent à scale-to-zéro (pas
 // d'instance chaude facturée 24/7). Chaque fonction peut toujours surcharger ce défaut.
 const MAX_INSTANCES = Math.max(1, Number(process.env.MAX_INSTANCES) || 10);
-setGlobalOptions({ maxInstances: MAX_INSTANCES });
+
+// CPU par fonction (maîtrise du quota Cloud Run « Total CPU allocation, per project per region »).
+// Par défaut firebase-functions alloue 1 vCPU/fonction (<=2Go RAM) : sur un projet NEUF plafonné à
+// 20 vCPU/région (non augmentable en self-service), les ~39 fonctions x 1 vCPU ne rentrent pas.
+// FUNCTION_CPU (ex. 0.25 sur sentinel-360) abaisse le CPU par défaut pour tenir sous le plafond. Non
+// défini (ancien projet) => aucun changement (défaut Cloud Run = 1). cpu<1 impose concurrency=1
+// (contrainte firebase-functions), pose sans effet notable pour un outil interne à faible trafic.
+const FUNCTION_CPU = process.env.FUNCTION_CPU ? Number(process.env.FUNCTION_CPU) : undefined;
+// cpuAtLeast(floor) : quand FUNCTION_CPU est défini, renvoie max(FUNCTION_CPU, floor) — le plancher
+// couvre la contrainte Cloud Run « mémoire élevée => CPU minimal » (1Go≈0.5, 2Go≈1 vCPU). Sinon
+// undefined (défaut Cloud Run). À poser en `cpu` sur les fonctions à forte mémoire (1Go/2Go).
+const cpuAtLeast = (floor) => (FUNCTION_CPU === undefined ? undefined : Math.max(FUNCTION_CPU, floor));
+setGlobalOptions({
+  maxInstances: MAX_INSTANCES,
+  ...(FUNCTION_CPU === undefined ? {} : { cpu: FUNCTION_CPU, concurrency: 1 }),
+});
 
 // Cadence des pipelines planifiés (maîtrise des coûts Vertex/Cloud Run — réglable EN DIRECT depuis
 // l'app, sans redéploiement). La config vit dans `config/runtime` ({ paused, intervals{key:minutes},
@@ -1388,7 +1403,7 @@ async function runSyncSources(db) {
  */
 // 2 GiB : le rendu headless (kind "web-js") lance Chromium, gourmand en mémoire. Les sources
 // web-js sont peu nombreuses (portails anti-bot) mais le navigateur doit tenir dans l'instance.
-exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "2GiB" }, async () => {
+exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "2GiB", cpu: cpuAtLeast(1) }, async () => {
   const db = firestoreDb();
   if (!(await gateScheduledPipeline(db, "sync"))) return; // pause/throttle (config/runtime) — avant tout appel Vertex
   await runSyncSources(db);
@@ -1400,7 +1415,7 @@ exports.syncSources = onSchedule({ schedule: "0 6 * * *", timeZone: TENANT_TIMEZ
  * Exec-gated, same pattern as classifyAI/generateBriefing/exportPdf.
  * Roadmap: V7 IA & sync (added post-deploy for real-data onboarding).
  */
-exports.syncSourcesNow = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "2GiB" }, async (request) => {
+exports.syncSourcesNow = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "2GiB", cpu: cpuAtLeast(1) }, async (request) => {
   requireExecCaller(request, "lancer une synchronisation de la veille");
   const result = await runSyncSources(firestoreDb());
   return result;
@@ -1541,7 +1556,7 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
 }
 
 /** evaluateIntelItemsNow — callable exec-gated : évalue à la demande les signaux en attente. */
-exports.evaluateIntelItemsNow = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "1GiB" }, async (request) => {
+exports.evaluateIntelItemsNow = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "1GiB", cpu: cpuAtLeast(0.5) }, async (request) => {
   requireExecCaller(request, "évaluer les signaux de veille");
   const result = await runEvaluateIntelItems(firestoreDb());
   logger.info(`evaluateIntelItemsNow: caller=${request.auth.uid} result=${JSON.stringify(result)}`);
@@ -1554,7 +1569,7 @@ exports.evaluateIntelItemsNow = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "1GiB" 
  * La synchro quotidienne évalue déjà dans la foulée ; ce cron garantit qu'un signal ne stagne jamais.
  */
 exports.evaluateIntelItemsScheduled = onSchedule(
-  { schedule: "every 60 minutes", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "1GiB" },
+  { schedule: "every 60 minutes", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "1GiB", cpu: cpuAtLeast(0.5) },
   async () => {
     const db = firestoreDb();
     if (!(await gateScheduledPipeline(db, "evaluate"))) return; // pause/throttle — avant tout appel Vertex
@@ -3211,7 +3226,7 @@ exports.copiloteChat = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
  * production n'est touché ici (c'est `applyOnboardingDraft`, P4, après revue humaine). Exec-gated :
  * paramétrer l'outil pour une entreprise est une opération d'administration/déploiement.
  * ------------------------------------------------------------------------------------------- */
-exports.onboardCompany = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "1GiB" }, async (request) => {
+exports.onboardCompany = onCall({ ...HEAVY_CALLABLE_OPTS, memory: "1GiB", cpu: cpuAtLeast(0.5) }, async (request) => {
   requireExecCaller(request, "générer la configuration de veille d'une entreprise (onboarding)");
   const { url, docsText, hints, maxPages, validateSources } = request.data || {};
   if (typeof url !== "string" || !/^https?:\/\//i.test(url.trim())) {
