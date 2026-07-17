@@ -13,6 +13,7 @@ build/
 # Non-secret Cloud Functions deploy config (FIRESTORE_DATABASE_ID/STORAGE_BUCKET_NAME — see
 # functions/.env.example) is intentionally versioned per Firebase's own .env convention.
 !functions/.env.propulse-business-87f7a
+!functions/.env.sentinel-360
 
 # Firebase
 .firebase/

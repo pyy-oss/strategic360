@@ -215,10 +215,15 @@ compte dédié `github-deploy-strategic360` comme recommandé ci-dessus. Comprom
   clé d'un compte de service dédié (étapes 1-4 ci-dessus) referme cette fenêtre d'exposition sans
   toucher au reste de la configuration.
 
-### Déployer plutôt dans un projet Firebase dédié (alternative)
+### Migrer vers un projet Firebase/GCP dédié
 
-Si un projet Firebase séparé est préférable (isolation complète, y compris Auth), il suffit de :
-remettre `.firebaserc` sur le nouveau `project-id`, retirer `hosting.target`/`firestore.database`/
-`storage.bucket` de `firebase.json` (ou les adapter au nouveau projet), et laisser
-`FIRESTORE_DATABASE_ID`/`STORAGE_BUCKET_NAME` vides (comportement par défaut du code — voir
-`functions/.env.example`).
+La migration vers un projet dédié (isolation complète, y compris Auth, et lecture cross-projet de la
+base sœur `nt360`) est une opération à part entière, avec des bloquants à lever AVANT la bascule
+(client Firestore cross-projet, IAM, custom claims RBAC non transportés par l'Auth, hash scrypt,
+buckets globalement uniques, provisioning Vertex, App Check à ré-enregistrer…).
+
+La procédure détaillée, l'ordre critique et les points go/no-go sont dans **[`docs/MIGRATION.md`](docs/MIGRATION.md)**.
+
+> ATTENTION : ne PAS laisser `FIRESTORE_DATABASE_ID`/`STORAGE_BUCKET_NAME` vides — depuis l'audit
+> 2026-07 (M2), les Functions refusent de démarrer sans base nommée (fail-fast). Le nouveau projet
+> doit avoir une base Firestore **nommée** (`strategic360`) et son propre `functions/.env.<project-id>`.
