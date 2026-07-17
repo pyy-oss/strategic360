@@ -1,21 +1,21 @@
-name: Deploy (propulse-business-87f7a / strategic360)
+name: Deploy (sentinel-360 / strategic360)
 
-# Manual trigger ONLY (workflow_dispatch), by design: this deploys into a Firebase project shared
-# with other apps. Auto-deploying on every push to main would be one bad merge away from breaking
-# a shared production project. Once confidence is established, this can be changed to also run
-# `on: push: branches: [main]` — see README.md § Déploiement.
+# Manual trigger ONLY (workflow_dispatch), by design: auto-deploying on every push to main would be
+# one bad merge away from breaking production. Once confidence is established, this can be changed to
+# also run `on: push: branches: [main]` — see README.md § Déploiement.
 #
+# Deploie dans le projet Firebase DEDIE "sentinel-360" (migration 2026-07 — voir docs/MIGRATION.md).
 # Consumes ONE repository secret: GCP_SA_KEY_STRATEGIC360 (a Firebase/GCP service account JSON
 # key, base64-free — paste the raw JSON file content). See README.md § Déploiement > "Créer le
 # secret GitHub Actions" for how to create the service account and add this secret. This workflow
-# only ever deploys the resources this app owns (hosting site "strategic360", Firestore database
-# "strategic360", Storage bucket "strategic360", Functions codebase "veille") — see firebase.json.
+# only ever deploys the resources this app owns (hosting site "sentinelnt-360", Firestore database
+# "sentinel360", Storage bucket "sentinel-360.firebasestorage.app", Functions codebase "veille").
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Tapez "deploy" pour confirmer un déploiement dans le projet partagé propulse-business-87f7a'
+        description: 'Tapez "deploy" pour confirmer un déploiement dans le projet dédié sentinel-360'
         required: true
 
 # Durcissement (audit 2026-07) : ce workflow s'authentifie via le service account GCP — il n'a
@@ -54,20 +54,20 @@ jobs:
       - name: Build web app
         working-directory: web
         env:
-          VITE_FIREBASE_API_KEY: AIzaSyBHxv2ThBh66hRc1Lp_boTlzeB8LA37FF8
-          VITE_FIREBASE_AUTH_DOMAIN: propulse-business-87f7a.firebaseapp.com
-          VITE_FIREBASE_PROJECT_ID: propulse-business-87f7a
-          VITE_FIREBASE_STORAGE_BUCKET: strategic360
-          VITE_FIREBASE_MESSAGING_SENDER_ID: "952738555565"
-          VITE_FIREBASE_APP_ID: "1:952738555565:web:c35c403f8c40f88367c824"
-          VITE_FIREBASE_FIRESTORE_DATABASE_ID: strategic360
+          VITE_FIREBASE_API_KEY: AIzaSyCykx2RuRoxsI9YTUL3xvRZp2_UcZ_P4c4
+          VITE_FIREBASE_AUTH_DOMAIN: sentinel-360.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: sentinel-360
+          VITE_FIREBASE_STORAGE_BUCKET: sentinel-360.firebasestorage.app
+          VITE_FIREBASE_MESSAGING_SENDER_ID: "876373263153"
+          VITE_FIREBASE_APP_ID: "1:876373263153:web:09d412dfcf265259d6e610"
+          VITE_FIREBASE_FIRESTORE_DATABASE_ID: sentinel360
           # App Check site key : pré-câblé sur le secret GitHub VITE_FIREBASE_APPCHECK_SITE_KEY.
           # Tant que le secret n'existe pas, ${{ ... }} vaut "" → App Check reste désactivé côté client
           # (le code gère la clé vide : avertissement, aucune contrainte). Pour activer App Check :
           # 1) enregistrer une clé reCAPTCHA v3 dans Firebase Console > App Check pour cette app web ;
           # 2) ajouter sa valeur comme secret repo VITE_FIREBASE_APPCHECK_SITE_KEY et redéployer ;
           # 3) vérifier que les clients envoient des jetons, PUIS passer APPCHECK_ENFORCE=true dans
-          #    functions/.env.propulse-business-87f7a (sinon tous les callables rejettent les requêtes).
+          #    functions/.env.sentinel-360 (sinon tous les callables rejettent les requêtes).
           VITE_FIREBASE_APPCHECK_SITE_KEY: ${{ secrets.VITE_FIREBASE_APPCHECK_SITE_KEY }}
         # npm ci (audit 2026-07, M2 CI/CD) : installe EXACTEMENT le package-lock testé en CI —
         # npm install résolvait des versions flottantes et pouvait déployer des deps non testées.
@@ -102,7 +102,7 @@ jobs:
         # `--only …functions:veille` limite l'effet au codebase de CETTE app (projet partagé).
         run: >
           firebase deploy
-          --project propulse-business-87f7a
+          --project sentinel-360
           --only hosting:strategic360,firestore,functions:veille
           --non-interactive
           --force
@@ -124,7 +124,7 @@ jobs:
           for svc in applyonboardingdraft backfillkpihistory classifyai copiloteadmin copilotechat copilotegenerate dedupeintelitemsnow enrichnow evaluateintelitemsnow exportpdf generatebriefing listcopiloteaccounts onboardcompany setpermissionsmatrix setpipelineconfig setuserrole synccopiloteaccountsnow syncinternalquantinow syncsourcesnow; do
             gcloud run services add-iam-policy-binding "$svc" \
               --region=europe-west1 \
-              --project=propulse-business-87f7a \
+              --project=sentinel-360 \
               --member=allUsers \
               --role=roles/run.invoker \
               2>&1 || echo "::warning::binding run.invoker impossible pour $svc"
@@ -135,7 +135,7 @@ jobs:
         continue-on-error: true
         run: >
           firebase deploy
-          --project propulse-business-87f7a
+          --project sentinel-360
           --only storage
           --non-interactive
 

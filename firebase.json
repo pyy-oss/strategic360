@@ -6,12 +6,12 @@
     "rewrites": [{ "source": "**", "destination": "/index.html" }]
   },
   "firestore": {
-    "database": "strategic360",
+    "database": "sentinel360",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
   "storage": {
-    "bucket": "strategic360",
+    "bucket": "sentinel-360.firebasestorage.app",
     "rules": "storage.rules"
   },
   "functions": [

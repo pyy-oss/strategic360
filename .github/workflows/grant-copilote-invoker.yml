@@ -42,7 +42,7 @@ jobs:
             echo "===== $svc ====="
             gcloud run services add-iam-policy-binding "$svc" \
               --region=europe-west1 \
-              --project=propulse-business-87f7a \
+              --project=sentinel-360 \
               --member=allUsers \
               --role=roles/run.invoker \
               2>&1
@@ -54,6 +54,6 @@ jobs:
             echo "===== $svc policy ====="
             gcloud run services get-iam-policy "$svc" \
               --region=europe-west1 \
-              --project=propulse-business-87f7a \
+              --project=sentinel-360 \
               2>&1 || true
           done

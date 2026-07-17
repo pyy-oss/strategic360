@@ -38,7 +38,7 @@ jobs:
             echo "===== $svc ====="
             gcloud logging read \
               "resource.type=\"cloud_run_revision\" resource.labels.service_name=\"$svc\"" \
-              --project=propulse-business-87f7a \
+              --project=sentinel-360 \
               --limit=60 \
               --format="table(timestamp, severity, textPayload)" \
               --freshness=30m \

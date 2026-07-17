@@ -1,4 +1,4 @@
-name: Set user role (propulse-business-87f7a / strategic360)
+name: Set user role (sentinel-360 / strategic360)
 
 # Manual trigger only. Assigns a `role` custom claim to a user by email, using the same
 # GCP_SA_KEY_STRATEGIC360 credentials as deploy.yml — see functions/adminSetUserRole.js for the
@@ -72,11 +72,11 @@ jobs:
       - name: Assign role
         working-directory: functions
         env:
-          GCLOUD_PROJECT: propulse-business-87f7a
-          FIRESTORE_DATABASE_ID: strategic360
+          GCLOUD_PROJECT: sentinel-360
+          FIRESTORE_DATABASE_ID: sentinel360
           # Firebase web API keys are not secret (see functions/adminSetUserRole.js's header
-          # comment) — safe as a plain literal here, matching functions/.env.propulse-business-87f7a.
-          FIREBASE_WEB_API_KEY: AIzaSyBHxv2ThBh66hRc1Lp_boTlzeB8LA37FF8
+          # comment) — safe as a plain literal here, matching functions/.env.sentinel-360.
+          FIREBASE_WEB_API_KEY: AIzaSyCykx2RuRoxsI9YTUL3xvRZp2_UcZ_P4c4
           TARGET_EMAIL: ${{ github.event.inputs.email }}
           TARGET_ROLE: ${{ github.event.inputs.role }}
         run: node adminSetUserRole.js

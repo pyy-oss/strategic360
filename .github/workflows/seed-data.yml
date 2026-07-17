@@ -1,4 +1,4 @@
-name: Seed data (propulse-business-87f7a / strategic360)
+name: Seed data (sentinel-360 / strategic360)
 
 # Manual trigger only. Runs functions/seed.js against the real "strategic360" named Firestore
 # database — idempotent (check-before-insert per collection, see seed.js's own comments), so
@@ -52,6 +52,6 @@ jobs:
       - name: Run seed.js
         working-directory: functions
         env:
-          GCLOUD_PROJECT: propulse-business-87f7a
-          FIRESTORE_DATABASE_ID: strategic360
+          GCLOUD_PROJECT: sentinel-360
+          FIRESTORE_DATABASE_ID: sentinel360
         run: node seed.js

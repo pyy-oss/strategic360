@@ -1,4 +1,4 @@
-name: Run generateBriefingWeekly now (propulse-business-87f7a / strategic360)
+name: Run generateBriefingWeekly now (sentinel-360 / strategic360)
 
 # Manual trigger only. Force-runs the weekly executive-briefing generation immediately instead of
 # waiting for Friday 07:00 Africa/Abidjan. Same scheduler-force-run pattern as run-enrich-now.yml.
@@ -37,17 +37,17 @@ jobs:
         run: |
           set -e
           JOB=$(gcloud scheduler jobs list \
-            --project=propulse-business-87f7a \
+            --project=sentinel-360 \
             --location=europe-west1 \
             --format="value(name)" \
             --filter="name:firebase-schedule-generateBriefingWeekly" | head -n1)
           if [ -z "$JOB" ]; then
             echo "::error::Aucun job Cloud Scheduler trouvé pour generateBriefingWeekly — vérifier le déploiement (functions:veille)."
-            gcloud scheduler jobs list --project=propulse-business-87f7a --location=europe-west1
+            gcloud scheduler jobs list --project=sentinel-360 --location=europe-west1
             exit 1
           fi
           echo "Running $JOB"
-          gcloud scheduler jobs run "$JOB" --project=propulse-business-87f7a --location=europe-west1
+          gcloud scheduler jobs run "$JOB" --project=sentinel-360 --location=europe-west1
 
       - name: Wait for the function to run (Pub/Sub trigger is asynchronous)
         run: sleep 45
@@ -56,7 +56,7 @@ jobs:
         run: |
           echo "--- Logs generateBriefingWeekly ---"
           gcloud functions logs read generateBriefingWeekly \
-            --project=propulse-business-87f7a \
+            --project=sentinel-360 \
             --region=europe-west1 \
             --gen2 \
             --limit=100 \
@@ -64,7 +64,7 @@ jobs:
           echo "--- Repli : gcloud logging read ---"
           gcloud logging read \
             'resource.type="cloud_run_revision" resource.labels.service_name="generatebriefingweekly"' \
-            --project=propulse-business-87f7a \
+            --project=sentinel-360 \
             --limit=50 \
             --format="table(timestamp, severity, textPayload)" \
             --freshness=10m \

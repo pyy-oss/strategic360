@@ -1,4 +1,4 @@
-name: Run syncCopiloteAccounts now (propulse-business-87f7a / strategic360)
+name: Run syncCopiloteAccounts now (sentinel-360 / strategic360)
 
 # Manual trigger only. Force-runs the syncCopiloteAccounts scheduled Cloud Function immediately,
 # instead of waiting for its daily 05:45 Africa/Abidjan slot — pré-remplit la collection
@@ -44,17 +44,17 @@ jobs:
         run: |
           set -e
           JOB=$(gcloud scheduler jobs list \
-            --project=propulse-business-87f7a \
+            --project=sentinel-360 \
             --location=europe-west1 \
             --format="value(name)" \
             --filter="name:firebase-schedule-syncCopiloteAccounts" | head -n1)
           if [ -z "$JOB" ]; then
             echo "::error::Aucun job Cloud Scheduler trouvé pour syncCopiloteAccounts — vérifier qu'il est bien déployé (functions:veille) et lister les jobs existants pour ajuster le filtre."
-            gcloud scheduler jobs list --project=propulse-business-87f7a --location=europe-west1
+            gcloud scheduler jobs list --project=sentinel-360 --location=europe-west1
             exit 1
           fi
           echo "Running $JOB"
-          gcloud scheduler jobs run "$JOB" --project=propulse-business-87f7a --location=europe-west1
+          gcloud scheduler jobs run "$JOB" --project=sentinel-360 --location=europe-west1
 
       - name: Wait for the function to run (Pub/Sub trigger is asynchronous)
         run: sleep 30
@@ -63,7 +63,7 @@ jobs:
         run: |
           echo "--- Logs syncCopiloteAccounts (dernières exécutions) ---"
           gcloud functions logs read syncCopiloteAccounts \
-            --project=propulse-business-87f7a \
+            --project=sentinel-360 \
             --region=europe-west1 \
             --gen2 \
             --limit=100 \
@@ -71,7 +71,7 @@ jobs:
           echo "--- Repli : gcloud logging read ---"
           gcloud logging read \
             'resource.type="cloud_run_revision" resource.labels.service_name="synccopiloteaccounts"' \
-            --project=propulse-business-87f7a \
+            --project=sentinel-360 \
             --limit=50 \
             --format="table(timestamp, severity, textPayload)" \
             --freshness=10m \
