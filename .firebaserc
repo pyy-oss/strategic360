@@ -5,7 +5,7 @@
   "targets": {
     "sentinel-360": {
       "hosting": {
-        "strategic360": ["strategic360"]
+        "strategic360": ["sentinelnt-360"]
       }
     }
   }

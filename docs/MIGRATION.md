@@ -75,7 +75,9 @@ NO-GO si le client cross-projet ne se construit pas.
    silence → tous les callables renvoient `internal`. Exempter le projet ou changer de stratégie.
 10. **App Check** : enregistrer la web app, créer une **NOUVELLE clé reCAPTCHA v3**
     (`VITE_FIREBASE_APPCHECK_SITE_KEY`), autoriser les domaines Hosting, **mode monitor** d'abord.
-11. **Hosting** : `firebase hosting:sites:create strategic360` + `firebase target:apply hosting strategic360 strategic360`.
+11. **Hosting** : site `sentinelnt-360` — `firebase hosting:sites:create sentinelnt-360` +
+    `firebase target:apply hosting strategic360 sentinelnt-360` (l'alias de cible `strategic360`
+    de firebase.json pointe vers le site `sentinelnt-360`). Déjà câblé dans `.firebaserc`.
 
 **À récupérer AVANT l'étape 4** : les 4 paramètres de hash scrypt de l'ancien projet (B5 — Console
 Auth > paramètres de hash, ou Admin API) : `base64_signer_key`, `base64_salt_separator`, `rounds`, `mem_cost`.
