@@ -1,0 +1,61 @@
+name: Reset profil -> Neurones (propulse-business-87f7a / strategic360)
+
+# Declenchement manuel uniquement. Remet la configuration d'identite/veille sur le socle canonique
+# "Neurones Technologies" apres une surcharge d'onboarding de test (profil "Orange Cote d'Ivoire").
+# Voir functions/resetProfileToNeurones.js. Ne touche QUE config/profile, config/veilleTaxonomy,
+# config/scoring, config/offerMapping, config/sourceAuthority et frameworks/companyContext ;
+# jamais config/permissions (RBAC), ni les donnees metier.
+#
+#   mode=report (defaut) : LECTURE SEULE, diagnostique et n'ecrit rien.
+#   mode=apply           : supprime les docs config/* contamines + reecrit le contexte entreprise.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tapez "reset" pour confirmer'
+        required: true
+      mode:
+        description: 'report (lecture seule) ou apply (applique le reset)'
+        required: false
+        default: 'report'
+
+# GITHUB_TOKEN reduit a la lecture : ce workflow s'authentifie via le service account GCP et n'ecrit
+# jamais dans GitHub.
+permissions:
+  contents: read
+
+jobs:
+  reset:
+    name: Reset profil sur Neurones
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Refuse to run without explicit confirmation
+        if: ${{ github.event.inputs.confirm != 'reset' }}
+        run: |
+          echo "Le champ 'confirm' doit valoir exactement 'reset'. Annule."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install functions dependencies
+        working-directory: functions
+        run: npm install
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
+
+      - name: Run resetProfileToNeurones.js
+        working-directory: functions
+        env:
+          GCLOUD_PROJECT: propulse-business-87f7a
+          FIRESTORE_DATABASE_ID: strategic360
+          RESET_MODE: ${{ github.event.inputs.mode }}
+        run: node resetProfileToNeurones.js
