@@ -8,7 +8,7 @@ Migration de l'app **Sentinel** (`strategic360`) du projet Firebase PARTAGÉ
 | App Sentinel | `propulse-business-87f7a` | **`sentinel-360`** (n° 876373263153) |
 | App sœur nt360 (données internes) | `propulse-business-87f7a`, base nommée `nt360` | **`neurones-360`** (n° 165643317476), base nommée `nt360` — migrée en parallèle |
 | Accès nt360 | même projet (`getFirestore("nt360")`) | **cross-projet, lecture seule** (IAM) |
-| Base Firestore de l'app | nommée `strategic360` | nommée `strategic360` (à re-créer) |
+| Base Firestore de l'app | nommée `strategic360` | nommée `sentinel360` (à re-créer) |
 | Région | europe-west1 | europe-west1 (inchangée) |
 
 > Fondé sur l'audit pré-migration 2026-07 (63 findings vérifiés). Le modèle d'autorisation
@@ -52,7 +52,8 @@ NO-GO si le client cross-projet ne se construit pas.
 
 1. **Projet + facturation** : lier un compte de facturation (prérequis Vertex/Functions).
 2. **Emplacements IMMUABLES** (une erreur ici impose de recréer le projet) :
-   - Créer la base Firestore **nommée `strategic360`** (PAS `(default)`) en **europe-west1**.
+   - Créer la base Firestore **nommée `sentinel360`** (PAS `(default)`) en **europe-west1** :
+     `gcloud firestore databases create --database=sentinel360 --location=europe-west1 --type=firestore-native`.
    - Fixer App Engine / Cloud Scheduler en **europe-west1**.
 3. **Activer les APIs** : `firestore`, `cloudfunctions`, `run`, `cloudbuild`, `artifactregistry`,
    `aiplatform` (Vertex), `firebaseappcheck`, `identitytoolkit` (Auth), `storage` + `firebasestorage`,
@@ -122,10 +123,11 @@ rebrancher le quanti après.
 1. **Geler** : pauser les pipelines (`setPipelineConfig` `paused=true`, honoré par
    `gateScheduledPipeline`), passer le front en lecture seule, geler les inscriptions Auth. L'export
    managé = snapshot cohérent ; toute écriture postérieure est PERDUE.
-2. **Firestore** : `gcloud firestore export --database=strategic360 gs://…` → transférer l'export vers
-   un bucket lisible par le SA d'import de `sentinel-360` (grant cross-compte `storage.objectViewer`
-   OU recopie gsutil/Storage Transfer) → `gcloud firestore import --database=strategic360` →
-   `firebase deploy --only firestore:indexes` (les 7 index composites NE SONT PAS dans l'export).
+2. **Firestore** : `gcloud firestore export --database=strategic360 gs://…` (ANCIEN projet, base
+   `strategic360`) → transférer l'export vers un bucket lisible par le SA d'import de `sentinel-360`
+   (grant cross-compte `storage.objectViewer` OU recopie gsutil/Storage Transfer) →
+   `gcloud firestore import --database=sentinel360 --project=sentinel-360` (NOUVELLE base `sentinel360`)
+   → `firebase deploy --only firestore:indexes` (les 7 index composites NE SONT PAS dans l'export).
 3. **config/permissions** : si base neuve, re-seeder (`seed.js`) AVANT toute connexion (sinon
    `matrix()` deny généralisé). `firebase deploy --only firestore:rules`.
 4. **Auth** : `firebase auth:export` → filtrer le sous-ensemble strategic360 (heuristique :

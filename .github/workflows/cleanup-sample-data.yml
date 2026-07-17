@@ -50,5 +50,5 @@ jobs:
         working-directory: functions
         env:
           GCLOUD_PROJECT: sentinel-360
-          FIRESTORE_DATABASE_ID: strategic360
+          FIRESTORE_DATABASE_ID: sentinel360
         run: node cleanupSampleData.js

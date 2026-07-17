@@ -73,7 +73,7 @@ jobs:
         working-directory: functions
         env:
           GCLOUD_PROJECT: sentinel-360
-          FIRESTORE_DATABASE_ID: strategic360
+          FIRESTORE_DATABASE_ID: sentinel360
           # Firebase web API keys are not secret (see functions/adminSetUserRole.js's header
           # comment) — safe as a plain literal here, matching functions/.env.sentinel-360.
           FIREBASE_WEB_API_KEY: AIzaSyCykx2RuRoxsI9YTUL3xvRZp2_UcZ_P4c4

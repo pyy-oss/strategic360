@@ -6,7 +6,7 @@
     "rewrites": [{ "source": "**", "destination": "/index.html" }]
   },
   "firestore": {
-    "database": "strategic360",
+    "database": "sentinel360",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
