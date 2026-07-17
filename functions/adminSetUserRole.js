@@ -20,7 +20,7 @@
  *   GCLOUD_PROJECT / GOOGLE_CLOUD_PROJECT — GCP project id (set by google-github-actions/auth)
  *   FIRESTORE_DATABASE_ID  — named Firestore database (e.g. "strategic360"); "(default)" if unset
  *   TARGET_EMAIL           — the user's email address
- *   TARGET_ROLE             — one of the 8 roles (see VALID_ROLES below)
+ *   TARGET_ROLE             — one of the 13 roles (see VALID_ROLES below)
  *   FIREBASE_WEB_API_KEY    — optional. Firebase web API keys are NOT secret (Google's own docs:
  *                             they identify the project, security is enforced by Auth/Rules/App
  *                             Check, not by hiding the key) — safe to keep in a committed env

@@ -49,7 +49,7 @@ const { generateJson, DEFAULT_MODEL } = require("./domain/vertex");
 const { AGENTS: COPILOTE_AGENTS, buildChatPrompt, parseChatResponse } = require("./domain/copilote");
 const { DEFAULT_BACKFILL_DAYS, dayRangeUTC, computeKpiBackfillPoints, mergeHistoryPoints } = require("./domain/kpiBackfill");
 const PDFDocument = require("pdfkit");
-const { v1: firestoreAdminV1 } = require("@google-cloud/firestore");
+const { v1: firestoreAdminV1, Firestore } = require("@google-cloud/firestore");
 
 initializeApp();
 
@@ -2001,7 +2001,7 @@ function toMillis(v) {
  * est préservé). Les métriques à état mutable (traitées, high non traitées, win-rate, OKR, pipeline)
  * restent null sur les points reconstruits — ne PAS inventer d'historique.
  */
-exports.backfillKpiHistory = onCall(async (request) => {
+exports.backfillKpiHistory = onCall(CALLABLE_OPTS, async (request) => {
   requireExecCaller(request, "reconstruire l'historique des KPIs");
   const db = firestoreDb();
   const days = Math.min(Math.max(Number(request.data?.days) || DEFAULT_BACKFILL_DAYS, 1), KPI_HISTORY_CAP);
@@ -3396,6 +3396,25 @@ exports.applyOnboardingDraft = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
  * ------------------------------------------------------------------------------------------- */
 
 const NT360_DATABASE_ID = process.env.NT360_DATABASE_ID || "nt360";
+// Projet HÔTE de la base nt360. Vide (défaut) = même projet que le runtime — comportement projet
+// partagé actuel, aucune régression. Renseigné (ex. "neurones-360" après migration) = la base nt360
+// vit dans un AUTRE projet Google Cloud : on lit en cross-projet via un client Firestore explicitement
+// projeté (ADC — le compte de service runtime doit détenir roles/datastore.viewer sur ce projet).
+const NT360_PROJECT_ID = process.env.NT360_PROJECT_ID || "";
+let cachedNt360Db = null;
+/**
+ * nt360Firestore() -> handle Firestore de la base nt360 (LECTURE SEULE par convention — ne jamais
+ * écrire au travers). Sans NT360_PROJECT_ID : la base nommée nt360 du projet courant (getFirestore).
+ * Avec NT360_PROJECT_ID : un client `@google-cloud/firestore` ciblant {projectId, databaseId:"nt360"}
+ * dans l'autre projet (accès cross-projet post-migration).
+ */
+function nt360Firestore() {
+  if (!NT360_PROJECT_ID) return getFirestore(NT360_DATABASE_ID);
+  if (!cachedNt360Db) {
+    cachedNt360Db = new Firestore({ projectId: NT360_PROJECT_ID, databaseId: NT360_DATABASE_ID });
+  }
+  return cachedNt360Db;
+}
 
 const {
   mapOrders: nt360MapOrders,
@@ -3420,7 +3439,7 @@ const {
 } = require("./domain/nt360");
 
 async function runInternalQuantiSync(db) {
-  const src = getFirestore(NT360_DATABASE_ID); // READ-ONLY — never write through this handle
+  const src = nt360Firestore(); // READ-ONLY — never write through this handle (cross-projet si NT360_PROJECT_ID)
 
   const [ordersSnap, oppsSnap, invoicesSnap, bcLinesSnap, objectivesSnap, configSnap] = await Promise.all([
     src.collection("orders").get(),
@@ -3521,7 +3540,7 @@ const AUTO_OPP_MAX = 60;          // nombre max de leads proactifs par synchro (
  * sont JAMAIS touchés. Clé = slug(client) → déduplique avec les comptes créés à la main.
  */
 async function runSyncCopiloteAccounts(db) {
-  const src = getFirestore(NT360_DATABASE_ID); // READ-ONLY
+  const src = nt360Firestore(); // READ-ONLY (cross-projet si NT360_PROJECT_ID)
   const [ordersSnap, oppsSnap] = await Promise.all([
     src.collection("orders").get(),
     src.collection("opportunities").get(),
