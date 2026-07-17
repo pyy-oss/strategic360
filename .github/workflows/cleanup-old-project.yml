@@ -116,7 +116,7 @@ jobs:
             echo "[REPORT] a supprimer: base $DB_NAME"
           fi
 
-      - name: Storage buckets (PII: imports/exports/backups)
+      - name: "Storage buckets (PII: imports/exports/backups)"
         run: |
           set +e
           MODE="${{ github.event.inputs.mode }}"
