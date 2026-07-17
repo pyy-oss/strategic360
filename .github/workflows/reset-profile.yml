@@ -1,4 +1,4 @@
-name: Reset profil -> Neurones (propulse-business-87f7a / strategic360)
+name: Reset profil -> Neurones (sentinel-360 / strategic360)
 
 # Declenchement manuel uniquement. Remet la configuration d'identite/veille sur le socle canonique
 # "Neurones Technologies" apres une surcharge d'onboarding de test (profil "Orange Cote d'Ivoire").
@@ -55,7 +55,7 @@ jobs:
       - name: Run resetProfileToNeurones.js
         working-directory: functions
         env:
-          GCLOUD_PROJECT: propulse-business-87f7a
+          GCLOUD_PROJECT: sentinel-360
           FIRESTORE_DATABASE_ID: strategic360
           RESET_MODE: ${{ github.event.inputs.mode }}
         run: node resetProfileToNeurones.js

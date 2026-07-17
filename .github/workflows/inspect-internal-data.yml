@@ -1,4 +1,4 @@
-name: Inspect internal data (propulse-business-87f7a — READ ONLY)
+name: Inspect internal data (sentinel-360 — READ ONLY)
 
 # Manual trigger only. READ-ONLY inventory of the sibling apps' Firestore data in the shared
 # project (databases, root collections, field names/types) so strategic360 can wire its quanti
@@ -57,12 +57,12 @@ jobs:
           credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
 
       - name: List Firestore databases in the project
-        run: gcloud firestore databases list --project=propulse-business-87f7a --format="table(name, type, locationId)" || true
+        run: gcloud firestore databases list --project=sentinel-360 --format="table(name, type, locationId)" || true
 
       - name: Run inspectInternalData.js (read-only)
         working-directory: functions
         env:
-          GCLOUD_PROJECT: propulse-business-87f7a
+          GCLOUD_PROJECT: sentinel-360
           INSPECT_DATABASE_IDS: ${{ github.event.inputs.databases }}
           INSPECT_MODE: ${{ github.event.inputs.mode }}
           INSPECT_PATH: ${{ github.event.inputs.path }}

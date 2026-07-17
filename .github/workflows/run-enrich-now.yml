@@ -1,4 +1,4 @@
-name: Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360)
+name: Run enrichStrategicArtifacts now (sentinel-360 / strategic360)
 
 # Manual trigger only. Force-runs the enrichStrategicArtifacts scheduled Cloud Function
 # immediately, instead of waiting for its weekly Monday 05:00 Africa/Abidjan slot — useful for
@@ -41,17 +41,17 @@ jobs:
         run: |
           set -e
           JOB=$(gcloud scheduler jobs list \
-            --project=propulse-business-87f7a \
+            --project=sentinel-360 \
             --location=europe-west1 \
             --format="value(name)" \
             --filter="name:firebase-schedule-enrichStrategicArtifacts" | head -n1)
           if [ -z "$JOB" ]; then
             echo "::error::Aucun job Cloud Scheduler trouvé pour enrichStrategicArtifacts — vérifier qu'il est bien déployé (functions:veille) et lister les jobs existants pour ajuster le filtre."
-            gcloud scheduler jobs list --project=propulse-business-87f7a --location=europe-west1
+            gcloud scheduler jobs list --project=sentinel-360 --location=europe-west1
             exit 1
           fi
           echo "Running $JOB"
-          gcloud scheduler jobs run "$JOB" --project=propulse-business-87f7a --location=europe-west1
+          gcloud scheduler jobs run "$JOB" --project=sentinel-360 --location=europe-west1
 
       # AI enrichment does up to 3 sequential Gemini calls (SWOT/PESTEL, radar, battlecards) —
       # give it longer than syncSources before reading logs.
@@ -62,7 +62,7 @@ jobs:
         run: |
           echo "--- Logs enrichStrategicArtifacts (dernières exécutions) ---"
           gcloud functions logs read enrichStrategicArtifacts \
-            --project=propulse-business-87f7a \
+            --project=sentinel-360 \
             --region=europe-west1 \
             --gen2 \
             --limit=100 \
@@ -70,7 +70,7 @@ jobs:
           echo "--- Repli : gcloud logging read ---"
           gcloud logging read \
             'resource.type="cloud_run_revision" resource.labels.service_name="enrichstrategicartifacts"' \
-            --project=propulse-business-87f7a \
+            --project=sentinel-360 \
             --limit=50 \
             --format="table(timestamp, severity, textPayload)" \
             --freshness=10m \

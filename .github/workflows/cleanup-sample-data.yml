@@ -1,4 +1,4 @@
-name: Cleanup sample data (propulse-business-87f7a / strategic360)
+name: Cleanup sample data (sentinel-360 / strategic360)
 
 # Manual trigger only. One-shot purge of the maquette-derived FICTIONAL business records that the
 # original seed.js wrote (decisions, initiatives, strategicThemes, battlecards, winLoss, scenarios,
@@ -49,6 +49,6 @@ jobs:
       - name: Run cleanupSampleData.js
         working-directory: functions
         env:
-          GCLOUD_PROJECT: propulse-business-87f7a
+          GCLOUD_PROJECT: sentinel-360
           FIRESTORE_DATABASE_ID: strategic360
         run: node cleanupSampleData.js

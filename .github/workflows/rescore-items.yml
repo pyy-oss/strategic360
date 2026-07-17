@@ -1,4 +1,4 @@
-name: Rescore intelItems (propulse-business-87f7a / strategic360)
+name: Rescore intelItems (sentinel-360 / strategic360)
 
 # Manual trigger only. One-shot: réapplique computePriorityScore à tous les intelItems non
 # archivés (nécessaire après un changement de barème de scoring — sinon le fil mélange ancien et
@@ -46,6 +46,6 @@ jobs:
       - name: Run rescoreAll.js
         working-directory: functions
         env:
-          GCLOUD_PROJECT: propulse-business-87f7a
+          GCLOUD_PROJECT: sentinel-360
           FIRESTORE_DATABASE_ID: strategic360
         run: node rescoreAll.js

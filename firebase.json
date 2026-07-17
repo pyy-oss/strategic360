@@ -11,7 +11,7 @@
     "indexes": "firestore.indexes.json"
   },
   "storage": {
-    "bucket": "strategic360",
+    "bucket": "sentinel-360.firebasestorage.app",
     "rules": "storage.rules"
   },
   "functions": [

@@ -1,9 +1,9 @@
 {
   "projects": {
-    "default": "propulse-business-87f7a"
+    "default": "sentinel-360"
   },
   "targets": {
-    "propulse-business-87f7a": {
+    "sentinel-360": {
       "hosting": {
         "strategic360": ["strategic360"]
       }
