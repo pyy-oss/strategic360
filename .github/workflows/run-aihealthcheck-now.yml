@@ -1,0 +1,67 @@
+name: Run aiHealthCheck now (sentinel-360 / strategic360)
+
+# Manual trigger only. Force-runs the aiHealthCheck scheduled Cloud Function immediately (au lieu
+# d'attendre son creneau quotidien 06:15 Africa/Abidjan) — canari Vertex AI : la fonction fait un
+# generateJson('{"ok":true}') et ecrit summaries/aiHealth {ok, lastError}. Utile pour VALIDER que
+# Vertex AI repond sur un projet (ex. apres migration vers sentinel-360) AVANT d'ouvrir aux
+# utilisateurs. Declenche le job Cloud Scheduler auto-cree par Firebase pour un onSchedule v2
+# (nomme "firebase-schedule-aiHealthCheck-<region>"), qui exige roles/cloudscheduler.admin (ou
+# cloudscheduler.jobs.run) sur le compte de service.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tapez "health" pour confirmer'
+        required: true
+
+# GITHUB_TOKEN reduit a la lecture : ce workflow s'authentifie via le service account GCP.
+permissions:
+  contents: read
+
+jobs:
+  run-health:
+    name: Force-run aiHealthCheck
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Refuse to run without explicit confirmation
+        if: ${{ github.event.inputs.confirm != 'health' }}
+        run: |
+          echo "Le champ 'confirm' doit valoir exactement 'health'. Annule."
+          exit 1
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_STRATEGIC360 }}
+
+      - name: Find and run the aiHealthCheck scheduler job
+        run: |
+          set -e
+          JOB=$(gcloud scheduler jobs list \
+            --project=sentinel-360 \
+            --location=europe-west1 \
+            --format="value(name)" \
+            --filter="name:firebase-schedule-aiHealthCheck" | head -n1)
+          if [ -z "$JOB" ]; then
+            echo "::error::Aucun job Cloud Scheduler trouve pour aiHealthCheck — verifier qu'il est bien deploye."
+            gcloud scheduler jobs list --project=sentinel-360 --location=europe-west1
+            exit 1
+          fi
+          echo "Running $JOB"
+          gcloud scheduler jobs run "$JOB" --project=sentinel-360 --location=europe-west1
+
+      - name: Wait for the function to run (Pub/Sub trigger is asynchronous)
+        run: sleep 30
+
+      - name: Fetch aiHealthCheck logs
+        run: |
+          echo "--- Logs aiHealthCheck (derniere execution) ---"
+          gcloud logging read \
+            'resource.type="cloud_run_revision" resource.labels.service_name="aihealthcheck"' \
+            --project=sentinel-360 \
+            --limit=50 \
+            --format="table(timestamp, severity, textPayload)" \
+            --freshness=10m \
+            2>&1 || echo "::warning::Lecture des logs impossible (role logging.viewer manquant ?)."
