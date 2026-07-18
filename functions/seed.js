@@ -140,6 +140,19 @@ const SOURCES_SEED = [
   { name: "BCEAO — Appels d'offres", kind: "web", url: "https://www.bceao.int/fr/appels_offres", axis: "clients_prospects", active: true },
   { name: "Banque mondiale — projets Côte d'Ivoire", kind: "web", url: "https://projects.worldbank.org/en/projects-operations/projects-list?countrycode_exact=CI", axis: "clients_prospects", active: true },
   { name: "UEMOA — Appels d'offres", kind: "web", url: "https://www.uemoa.int/appel-d-offre", axis: "clients_prospects", active: true },
+  // Élargissement RÉGIONAL des portails AO (audit pertinence 2026-07, levier 3) : UEMOA/CEDEAO +
+  // bailleurs, pour piloter la croissance au-delà de la CI. Une source dont l'URL change/casse se
+  // désactive d'elle-même après échecs consécutifs (non bloquant) — voir la santé des sources dans Détection.
+  { name: "Sénégal — Marchés publics (DCMP/SYGMAP)", kind: "web-js", url: "https://www.marchespublics.sn/", axis: "clients_prospects", active: true },
+  { name: "ARMP Sénégal — régulation & avis", kind: "web", url: "https://www.armp.sn/", axis: "clients_prospects", active: true },
+  { name: "Bénin — ARMP (marchés publics)", kind: "web", url: "https://armp.bj/", axis: "clients_prospects", active: true },
+  { name: "Burkina Faso — ARCOP (marchés publics)", kind: "web", url: "https://www.arcop.bf/", axis: "clients_prospects", active: true },
+  { name: "Mali — DGMP-DSP (marchés publics)", kind: "web", url: "https://dgmp.gouv.ml/", axis: "clients_prospects", active: true },
+  { name: "Togo — ARCOP (marchés publics)", kind: "web", url: "https://arcop.tg/", axis: "clients_prospects", active: true },
+  { name: "Niger — ARMP (marchés publics)", kind: "web", url: "https://www.armp-niger.org/", axis: "clients_prospects", active: true },
+  { name: "BOAD — Appels d'offres", kind: "web", url: "https://www.boad.org/appels-doffres/", axis: "clients_prospects", active: true },
+  { name: "AFD — Appels d'offres & consultations", kind: "web", url: "https://www.afd.fr/fr/appels-offres", axis: "clients_prospects", active: true },
+  { name: "UNGM — avis de marchés (agences ONU)", kind: "web-js", url: "https://www.ungm.org/Public/Notice", axis: "clients_prospects", active: true },
   // Concurrents (audit 2026-07, Action 3.2 — aucune source n'existait sur cet axe)
   { name: "CIO Mag (RSS)", kind: "rss", url: "https://cio-mag.com/feed/", axis: "concurrents", active: true },
   { name: "Agence Ecofin — Numérique (RSS)", kind: "rss", url: "https://www.agenceecofin.com/actualites-numerique?format=feed", axis: "concurrents", active: true },
