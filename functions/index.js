@@ -46,7 +46,7 @@ const { selectDigestSignals, buildDigestPayload, hasDigestContent, DEFAULT_MIN_S
 const { buildBriefingPrompt, buildBriefingCritiquePrompt, parseBriefingResponse } = require("./domain/briefing");
 const { buildBriefingPdf } = require("./domain/pdf");
 const { generateJson, DEFAULT_MODEL } = require("./domain/vertex");
-const { TENDER_ENRICH_SUBTYPES, buildTenderEnrichPrompt, parseTenderEnrichResponse, mergeBusinessAngle, isoDeadline } = require("./domain/tenderEnrich");
+const { TENDER_ENRICH_SUBTYPES, buildTenderEnrichPrompt, parseTenderEnrichResponse, mergeBusinessAngle, isoDeadline, aoProvenanceRejectReason } = require("./domain/tenderEnrich");
 const { AGENTS: COPILOTE_AGENTS, buildChatPrompt, parseChatResponse } = require("./domain/copilote");
 const { DEFAULT_BACKFILL_DAYS, dayRangeUTC, computeKpiBackfillPoints, mergeHistoryPoints } = require("./domain/kpiBackfill");
 const PDFDocument = require("pdfkit");
@@ -1683,6 +1683,15 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
   try {
   await runInBatches(items, AI_CONCURRENCY, async (it) => {
     try {
+      // PORTE DE PROVENANCE AO (Phase 1 fiabilisation AO) : un appel d'offres sans URL source n'est
+      // ni vérifiable ni actionnable → rejet DÉTERMINISTE avant le jugement LLM (coût évité). Ne
+      // concerne que les subtypes AO ; les autres signaux passent au juge normalement.
+      const aoReject = aoProvenanceRejectReason(it);
+      if (aoReject) {
+        await db.doc(`intelItems/${it.id}`).update({ status: "rejected", evalScore: 0, evalReason: aoReject, evalFailed: false, updatedAt: stamp() });
+        rejected += 1;
+        return;
+      }
       // Jugement de pertinence : température 0 (verdict reproductible) + modèle d'extraction configurable
       // (GEMINI_MODEL_EXTRACTION, coûts) — non défini → modèle par défaut (inchangé).
       const parsed = parseEvaluateResponse(await generateJson(buildEvaluatePrompt(it, companyContext, evalIdentity), { temperature: 0, model: process.env.GEMINI_MODEL_EXTRACTION }));

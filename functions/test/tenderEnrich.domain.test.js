@@ -5,6 +5,8 @@ import {
   parseTenderEnrichResponse,
   mergeBusinessAngle,
   isoDeadline,
+  isAoSubtype,
+  aoProvenanceRejectReason,
 } from "../domain/tenderEnrich.js";
 
 describe("tenderEnrich — prompt", () => {
@@ -50,4 +52,37 @@ describe("tenderEnrich — isoDeadline", () => {
 
 describe("tenderEnrich — constantes", () => {
   it("couvre les sous-types AO", () => { expect(TENDER_ENRICH_SUBTYPES).toEqual(["tender", "funding", "budget"]); });
+});
+
+describe("tenderEnrich — isAoSubtype", () => {
+  it("reconnaît les subtypes AO (insensible à la casse)", () => {
+    expect(isAoSubtype("tender")).toBe(true);
+    expect(isAoSubtype("FUNDING")).toBe(true);
+    expect(isAoSubtype("budget")).toBe(true);
+  });
+  it("ignore les autres subtypes et les valeurs absentes", () => {
+    expect(isAoSubtype("trend")).toBe(false);
+    expect(isAoSubtype("")).toBe(false);
+    expect(isAoSubtype(undefined)).toBe(false);
+  });
+});
+
+describe("tenderEnrich — porte de provenance AO", () => {
+  it("rejette un AO sans URL source", () => {
+    const r = aoProvenanceRejectReason({ subtype: "tender", url: "", businessAngle: { tenderRef: "AOOR N°2026-005" } });
+    expect(r).toMatch(/sans URL/i);
+  });
+  it("rejette un AO dont l'URL n'est que des espaces", () => {
+    expect(aoProvenanceRejectReason({ subtype: "funding", url: "   " })).toBeTruthy();
+  });
+  it("laisse passer un AO avec URL source", () => {
+    expect(aoProvenanceRejectReason({ subtype: "tender", url: "https://boad.org/avis/123" })).toBeNull();
+  });
+  it("n'affecte PAS les signaux non-AO (même sans URL)", () => {
+    expect(aoProvenanceRejectReason({ subtype: "trend", url: "" })).toBeNull();
+    expect(aoProvenanceRejectReason({ subtype: "vulnerability" })).toBeNull();
+  });
+  it("tolère une entrée non-objet", () => {
+    expect(aoProvenanceRejectReason(null)).toBeNull();
+  });
 });
