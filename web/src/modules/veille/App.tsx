@@ -74,12 +74,13 @@ import { Onboarding } from "./views/Onboarding";
 import { useIsExec, usePermissions, ROLE_LABEL, type Role } from "../../lib/rbac";
 import { VIEW_MODULE } from "./data";
 import { Reglages } from "./views/Reglages";
+import { Integrations } from "./views/Integrations";
 
 const VIEW_KEYS = NAV.map(([k]) => k);
 /** Vues réservées aux profils exécutifs (paramétrage produit) — masquées de la nav aux autres. */
 const EXEC_ONLY_VIEWS = new Set(["onboarding"]);
-/** Vues réservées à la Direction (édition des droits RBAC). */
-const DIRECTION_ONLY_VIEWS = new Set(["reglages"]);
+/** Vues réservées à la Direction (édition des droits RBAC, utilisateurs, intégrations). */
+const DIRECTION_ONLY_VIEWS = new Set(["reglages", "integrations"]);
 
 /** App shell — header (logo + lens pill selector) + nav tab bar + view switcher + footer.
  * Ported from the maquette's `export default function App()`. The active view now comes from
@@ -207,6 +208,7 @@ export default function VeilleApp() {
       {view === "equipe" && <Equipe />}
       {view === "onboarding" && <Onboarding />}
       {view === "reglages" && <Reglages />}
+      {view === "integrations" && <Integrations />}
 
       <footer style={{ marginTop: 22, paddingTop: 14, borderTop: `1px solid ${T.line}`, fontSize: 11.5, color: T.faint, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <span>Sentinel · données réelles (Firestore) · IA Gemini avec revue humaine</span>

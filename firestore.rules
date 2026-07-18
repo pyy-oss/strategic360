@@ -232,5 +232,14 @@ service cloud.firestore {
       allow read: if canRead('finance');
       allow write: if false;
     }
+
+    // — Webhooks / intégrations tierces —
+    // Ces docs contiennent des SECRETS partagés (HMAC) : jamais lisibles côté client, même par la
+    // Direction. Toute la gestion passe par les callables `webhookAdmin` (secrets masqués) et le
+    // endpoint `webhookInbound`, qui écrivent via l'Admin SDK (les règles ne s'y appliquent pas).
+    match /webhookEndpoints/{id}      { allow read, write: if false; }
+    match /webhookInboundSources/{id} { allow read, write: if false; }
+    match /webhookDeliveries/{id}     { allow read, write: if false; }
+    match /webhookInboundLog/{id}     { allow read, write: if false; }
   }
 }
