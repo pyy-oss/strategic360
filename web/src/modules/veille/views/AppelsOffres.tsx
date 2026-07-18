@@ -18,16 +18,17 @@ import { useCopiloteAccounts, type CopiloteAccount } from "../lib/copilote";
  * Trié par proximité d'échéance effective (imminent d'abord) puis score. Données réelles Firestore.
  */
 
-const AO_SUBTYPES = new Set(["tender", "funding", "budget"]);
-// Détection AO RÉSILIENTE (fix 2026-07) : les portails de marchés publics produisent des intitulés
-// courts que le classifieur ne tague pas toujours en subtype "tender" — la vue restait alors vide
-// alors que des AO existaient dans le Fil. On reconnaît donc un AO par le subtype, OU une référence
-// de portail extraite, OU un vocabulaire d'appel d'offres/financement dans le titre/résumé.
-const AO_KEYWORDS = /appel\s?s?\s?(?:d['’ ]?)?offres?|avis\s?(?:d['’ ]?)?appel|dossier\s?(?:d['’ ]?)?appel|march[ée]s?\s+publics?|manifestation\s?(?:d['’ ]?)?int[ée]r|sollicitation\s+de\s+prix|demande\s+de\s+propositions?|appel\s+à\s+(?:candidat|projet|manifestation)|attribution\s+d[eu]\s+march[ée]|\bA\.?O\.?\b|\bRFP\b|\bRFQ\b|\bDAO\b|financement|subvention|\bgrant\b|bailleur/i;
+// Un VRAI appel d'offres se distingue d'une simple actu « qui parle » de financement/marché par un
+// signal fort : une RÉFÉRENCE de portail extraite (ex. « AOOR N°2026-005/MESRI »), OU un INTITULÉ
+// d'avis d'appel d'offres (2026-07 : le classifieur sur-taguait des news en subtype tender/funding
+// → la vue se remplissait de commentaires au lieu d'AO réels. On filtre donc sur la forme de l'avis,
+// pas sur le subtype ni sur des mots-clés noyés dans le corps du texte).
+const AO_NOTICE_RE = /\bappel\s?s?\s+(?:d['’ ]?)?offres?\b|avis\s+(?:d['’ ]?)?appel|manifestation\s+(?:d['’ ]?)?int[ée]r[êe]ts?|sollicitation\s+de\s+prix|demande\s+de\s+(?:propositions?|cotations?|prix)|appel\s+à\s+(?:candidatures?|projets?|manifestation)|\b(?:A\.?A\.?O|A\.?O\.?O\.?R?|A\.?O\.?[NIR]|A\.?M\.?I|D\.?A\.?O|D\.?R\.?P|R\.?F\.?[PQ])\b/i;
 function isAoItem(s: IntelItem): boolean {
-  if (AO_SUBTYPES.has(s.subtype ?? "")) return true;
+  // Réf de portail = signal le plus fiable (un avis officiel en a une).
   if (s.businessAngle?.tenderRef) return true;
-  return AO_KEYWORDS.test(`${s.title || ""} ${s.summary || ""}`);
+  // Sinon, l'intitulé doit être un avis d'appel d'offres (pas une actu générale).
+  return AO_NOTICE_RE.test(s.title || "");
 }
 const PROX_ORDER: Record<string, number> = { imminent: 0, court: 1, moyen: 2, horizon: 3 };
 const PROX_COLOR: Record<string, string> = { imminent: T.clay, court: T.gold, moyen: T.steel, horizon: T.faint };
@@ -74,7 +75,14 @@ function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
     <tr style={{ borderTop: `1px solid ${T.line}`, opacity: past ? 0.6 : 1 }}>
       <td style={{ padding: "8px 8px", color: T.ink, maxWidth: 320 }}>
         <div style={{ fontWeight: 600 }}>{it.title}</div>
-        {it.soWhat && <div style={{ fontSize: 11, color: T.dim, marginTop: 2 }}>{it.soWhat}</div>}
+        {it.soWhat && (
+          <div
+            title={it.soWhat}
+            style={{ fontSize: 11, color: T.dim, marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+          >
+            {it.soWhat}
+          </div>
+        )}
         {ba.tenderRef && <div style={{ fontSize: 10.5, color: T.faint, marginTop: 2 }}>Réf : {ba.tenderRef}</div>}
       </td>
       <td style={{ padding: "8px 8px", color: T.ink }}>
