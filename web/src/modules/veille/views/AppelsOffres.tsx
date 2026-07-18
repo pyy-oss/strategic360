@@ -80,47 +80,41 @@ function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
   };
   const openInFil = () => { const n = new URLSearchParams(sp); n.set("q", it.title.slice(0, 40)); setSp(n); };
 
+  // Carte responsive (2026-07) : remplace la ligne de tableau large (illisible/tronquée sur mobile —
+  // « décalé ») par un bloc empilé où TOUT est visible sans défilement horizontal.
+  const chip = (bg: string, color: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: bg, color, whiteSpace: "nowrap" });
   return (
-    <tr style={{ borderTop: `1px solid ${T.line}`, opacity: past ? 0.6 : 1 }}>
-      <td style={{ padding: "8px 8px", color: T.ink, maxWidth: 320 }}>
-        <div style={{ fontWeight: 600 }}>{it.title}</div>
-        {it.soWhat && (
-          <div
-            title={it.soWhat}
-            style={{ fontSize: 11, color: T.dim, marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
-          >
-            {it.soWhat}
-          </div>
-        )}
-        {ba.tenderRef && <div style={{ fontSize: 10.5, color: T.faint, marginTop: 2 }}>Réf : {ba.tenderRef}</div>}
-        {/* Provenance visible (2026-07) : source cliquable + date pour vérifier d'un coup d'œil qu'un
-            AO est bien sourcé. Sans URL → alerte « source non tracée » (rempart anti-item non vérifiable). */}
-        <div style={{ fontSize: 10, marginTop: 3, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          {it.url
-            ? <a href={it.url} target="_blank" rel="noreferrer" style={{ color: T.steel, textDecoration: "none" }}>🔗 {it.sourceName || "Source"}</a>
-            : <span style={{ color: T.clay, fontWeight: 600 }} title="Aucune URL de source : cet item n'est pas vérifiable en un clic.">⚠ Source non tracée</span>}
-          {it.date && <span style={{ color: T.faint }}>· {it.date}</span>}
-          {it.sourceRating && <span style={{ color: T.faint }}>· {it.sourceRating}</span>}
-        </div>
-      </td>
-      <td style={{ padding: "8px 8px", color: T.ink }}>
-        {buyer}
-        {account
-          ? <div style={{ fontSize: 10, marginTop: 2 }}><span style={{ color: T.emerald, fontWeight: 700 }}>● client connu</span>{account.tier ? <span style={{ color: T.faint }}> · {account.tier}</span> : null}{bus ? <span style={{ color: T.faint }}> · {bus}</span> : null}</div>
-          : bus ? <div style={{ fontSize: 10.5, color: T.faint }}>{bus}</div> : null}
-      </td>
-      <td style={{ padding: "8px 8px", color: ba.estAmount ? T.emerald : T.faint, whiteSpace: "nowrap" }}>{ba.estAmount || "n.c."}</td>
-      <td style={{ padding: "8px 8px", whiteSpace: "nowrap" }}>
-        <span style={{ color: PROX_COLOR[prox] || T.dim, fontWeight: 600 }}>{PROX[prox]?.l || prox}</span>
-        {deadline && <div style={{ fontSize: 10.5, color: past ? T.clay : T.faint }}>{deadline}{past ? " (dépassée)" : ""}</div>}
-      </td>
-      <td style={{ padding: "8px 8px", textAlign: "center", color: T.ink }}>{Math.round(it.priorityScore ?? 0)}</td>
-      <td style={{ padding: "8px 8px", textAlign: "right", whiteSpace: "nowrap" }}>
-        {it.url && <a href={it.url} target="_blank" rel="noreferrer" className="pill" style={{ fontSize: 10.5, padding: "2px 8px", textDecoration: "none" }}>Portail ↗</a>}{" "}
-        <button className="pill" style={{ fontSize: 10.5, padding: "2px 8px" }} onClick={openInFil}>Fil</button>{" "}
-        <button className="pill on" style={{ fontSize: 10.5, padding: "2px 8px" }} disabled={busy} onClick={() => void createLinkedAction()}>{busy ? "…" : "Action"}</button>
-      </td>
-    </tr>
+    <div style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: "12px 14px", background: T.panel2, opacity: past ? 0.6 : 1, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+        <div style={{ fontWeight: 700, color: T.ink, fontSize: 13.5, lineHeight: 1.3 }}>{it.title}</div>
+        <span title="Score de priorité" style={{ ...chip(T.line, T.dim), flexShrink: 0 }}>{Math.round(it.priorityScore ?? 0)}</span>
+      </div>
+      {it.soWhat && (
+        <div title={it.soWhat} style={{ fontSize: 12, color: T.dim, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{it.soWhat}</div>
+      )}
+      {/* Chips clés : acheteur + client connu, montant, échéance — toujours visibles, jamais coupés. */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+        <span style={chip(T.line, T.ink)}>{buyer}</span>
+        {account && <span style={chip(T.emerald + "22", T.emerald)}>● client connu{account.tier ? ` · ${account.tier}` : ""}</span>}
+        <span style={chip(ba.estAmount ? T.emerald + "22" : T.line, ba.estAmount ? T.emerald : T.faint)}>💰 {ba.estAmount || "montant n.c."}</span>
+        <span style={chip((PROX_COLOR[prox] || T.dim) + "22", PROX_COLOR[prox] || T.dim)}>{PROX[prox]?.l || prox}{deadline ? ` · ${deadline}${past ? " (dépassée)" : ""}` : ""}</span>
+        {bus && !account && <span style={chip(T.line, T.faint)}>{bus}</span>}
+      </div>
+      {ba.tenderRef && <div style={{ fontSize: 10.5, color: T.faint }}>Réf : {ba.tenderRef}</div>}
+      {/* Provenance vérifiable. */}
+      <div style={{ fontSize: 10.5, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        {it.url
+          ? <a href={it.url} target="_blank" rel="noreferrer" style={{ color: T.steel, textDecoration: "none" }}>🔗 {it.sourceName || "Source"}</a>
+          : <span style={{ color: T.clay, fontWeight: 600 }}>⚠ Source non tracée</span>}
+        {it.date && <span style={{ color: T.faint }}>· {it.date}</span>}
+        {it.sourceRating && <span style={{ color: T.faint }}>· {it.sourceRating}</span>}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {it.url && <a href={it.url} target="_blank" rel="noreferrer" className="pill" style={{ fontSize: 11, padding: "3px 10px", textDecoration: "none" }}>Portail ↗</a>}
+        <button className="pill" style={{ fontSize: 11, padding: "3px 10px" }} onClick={openInFil}>Voir dans le Fil</button>
+        <button className="pill on" style={{ fontSize: 11, padding: "3px 10px" }} disabled={busy} onClick={() => void createLinkedAction()}>{busy ? "…" : "Créer une action"}</button>
+      </div>
+    </div>
   );
 }
 
@@ -241,27 +235,16 @@ export function AppelsOffres() {
       </div>
 
       <LoadError error={error} what="les appels d'offres" style={{ marginTop: 12 }} />
-      <div className="tbl-scroll" style={{ marginTop: 12 }}>
-        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12, minWidth: 720 }}>
-          <thead>
-            <tr>
-              {["Appel d'offres", "Acheteur", "Montant est.", "Échéance", "Score", ""].map((h) => (
-                <th key={h} style={{ textAlign: h === "Score" ? "center" : "left", padding: "6px 8px", color: T.dim, whiteSpace: "nowrap" }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {paged.pageItems.map((it) => <AoRow key={it.id} it={it} account={matchAccount(it)} />)}
-            {!loading && !error && !rows.length && (
-              <tr><td colSpan={6} style={{ padding: "18px 14px", color: T.dim, fontSize: 12.5 }}>
-                {aoItems.length
-                  ? <>Aucun AO ne correspond à ces filtres. <button className="pill" onClick={() => { setWithAmount(false); setWithDeadline(false); setProxFilter("all"); setZone("all"); setQ(""); }} style={{ fontSize: 11, padding: "2px 9px" }}>Réinitialiser les filtres</button></>
-                  : <>Pas encore d'appel d'offres capté.{isExec ? <> Lancez une synchro (Radar de détection) puis <button className="pill" disabled={enriching} onClick={() => void enrich()} style={{ fontSize: 11, padding: "2px 9px" }}>{enriching ? "Enrichissement…" : "Enrichir les AO"}</button> pour compléter montant &amp; échéance.</> : " Ils apparaîtront après la prochaine synchro des portails de marchés publics."}</>}
-              </td></tr>
-            )}
-            {loading && !items.length && <tr><td colSpan={6} style={{ padding: 14, color: T.dim, fontSize: 12.5 }}>Chargement…</td></tr>}
-          </tbody>
-        </table>
+      <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+        {paged.pageItems.map((it) => <AoRow key={it.id} it={it} account={matchAccount(it)} />)}
+        {!loading && !error && !rows.length && (
+          <div style={{ padding: "18px 14px", color: T.dim, fontSize: 12.5 }}>
+            {aoItems.length
+              ? <>Aucun AO ne correspond à ces filtres. <button className="pill" onClick={() => { setWithAmount(false); setWithDeadline(false); setProxFilter("all"); setZone("all"); setQ(""); setOnlyClients(false); }} style={{ fontSize: 11, padding: "2px 9px" }}>Réinitialiser les filtres</button></>
+              : <>Pas encore d'appel d'offres capté.{isExec ? <> Lancez une synchro (Radar de détection) puis <button className="pill" disabled={enriching} onClick={() => void enrich()} style={{ fontSize: 11, padding: "2px 9px" }}>{enriching ? "Enrichissement…" : "Enrichir les AO"}</button> pour compléter montant &amp; échéance.</> : " Ils apparaîtront après la prochaine synchro des portails de marchés publics."}</>}
+          </div>
+        )}
+        {loading && !items.length && <div style={{ padding: 14, color: T.dim, fontSize: 12.5 }}>Chargement…</div>}
       </div>
       <Pager {...paged} />
     </Card>
