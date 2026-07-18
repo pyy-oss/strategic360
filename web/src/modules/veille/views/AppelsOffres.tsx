@@ -134,6 +134,7 @@ export function AppelsOffres() {
   const [withDeadline, setWithDeadline] = useState(false);
   const [proxFilter, setProxFilter] = useState("all");
   const [zone, setZone] = useState("all");
+  const [onlyClients, setOnlyClients] = useState(false);
   const [q, setQ] = useState("");
   const norm = (v: string) => v.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 
@@ -169,17 +170,21 @@ export function AppelsOffres() {
         return (
           (!withAmount || !!ba.estAmount) &&
           (!withDeadline || !!deadlineOf(s)) &&
+          (!onlyClients || !!matchAccount(s)) &&
           (proxFilter === "all" || prox === proxFilter) &&
           (zone === "all" || s.geo === zone) &&
           (!q || norm(`${s.title} ${s.summary || ""} ${ba.buyer || ""} ${s.ent || ""} ${ba.tenderRef || ""}`).includes(norm(q)))
         );
       })
       .sort((a, b) => {
+        // « Mes clients d'abord » : un AO rattaché à un compte connu remonte en tête (à imminence égale).
+        const ca = matchAccount(a) ? 1 : 0;
+        const cb = matchAccount(b) ? 1 : 0;
         const pa = PROX_ORDER[effectiveProx(a) ?? a.prox ?? "horizon"] ?? 3;
         const pb = PROX_ORDER[effectiveProx(b) ?? b.prox ?? "horizon"] ?? 3;
-        return pa - pb || (b.priorityScore ?? 0) - (a.priorityScore ?? 0) || (b.date ?? "").localeCompare(a.date ?? "");
+        return cb - ca || pa - pb || (b.priorityScore ?? 0) - (a.priorityScore ?? 0) || (b.date ?? "").localeCompare(a.date ?? "");
       }),
-    [aoItems, withAmount, withDeadline, proxFilter, zone, q]
+    [aoItems, withAmount, withDeadline, onlyClients, proxFilter, zone, q] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const kpiOuverts = aoItems.filter((s) => !isPastDue(s)).length;
@@ -230,6 +235,9 @@ export function AppelsOffres() {
         )}
         <button className={withAmount ? "pill on" : "pill"} onClick={() => setWithAmount((v) => !v)} style={{ fontSize: 11, padding: "3px 9px" }}>Montant chiffré</button>
         <button className={withDeadline ? "pill on" : "pill"} onClick={() => setWithDeadline((v) => !v)} style={{ fontSize: 11, padding: "3px 9px" }}>Avec échéance</button>
+        {accIndex.length > 0 && (
+          <button className={onlyClients ? "pill on" : "pill"} onClick={() => setOnlyClients((v) => !v)} title="N'afficher que les AO émis par un compte connu du Copilote" style={{ fontSize: 11, padding: "3px 9px" }}>● Mes clients</button>
+        )}
       </div>
 
       <LoadError error={error} what="les appels d'offres" style={{ marginTop: 12 }} />
