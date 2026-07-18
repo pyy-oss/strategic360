@@ -132,7 +132,12 @@ const SOURCES_SEED = [
   { name: "AMF-UMOA — Instructions", kind: "web", url: "https://www.amf-umoa.org/reglementation/instruction", axis: "reglementaire", active: true },
   { name: "Ministère de la Transition Numérique — publications", kind: "web", url: "https://telecom.gouv.ci/new/publications/sous-categorie/1", axis: "reglementaire", active: true },
   { name: "Africa Cybersecurity Magazine", kind: "rss", url: "https://cybersecuritymag.africa/feed/", axis: "reglementaire", active: true },
-  // AO & financements (audit 2026-07, Actions 3.1 + 3.4 — remplace SIGMAP/ARMP sénégalais/BAD racine)
+  // AO & financements (audit 2026-07, Actions 3.1 + 3.4 — remplace SIGMAP/ARMP sénégalais/BAD racine).
+  // BEST-EFFORT ASSUMÉ (constat 2026-07-18) : SIGOMAP/marchespublics.ci sont des SPA sous WAF + INSCRIPTION
+  // obligatoire (depuis nov. 2023), SANS API/RSS publique. Le rendu headless n'en tire souvent que la page
+  // d'accueil (« Accès au portail… »), écartée à juste titre par l'évaluateur — d'où un rendement faible.
+  // On les GARDE en filet best-effort (elles produisent parfois un avis), mais le canal AO PRIMAIRE est
+  // désormais l'API World Bank élargie à toute l'UEMOA (structurée, joignable, une URL par avis).
   { name: "SIGOMAP — portail officiel des marchés publics CI", kind: "web-js", url: "https://www.sigomap.gouv.ci", axis: "clients_prospects", active: true },
   { name: "DGMP — marchespublics.ci (avis d'AO)", kind: "web-js", url: "https://www.marchespublics.ci/appel_offre", axis: "clients_prospects", active: true },
   { name: "ARCOP — Autorité de Régulation de la Commande Publique (ex-ANRMP)", kind: "web-js", url: "https://arcop.ci/", axis: "clients_prospects", active: true },
@@ -222,6 +227,18 @@ const SOURCES_SEED = [
   // corrigé après validation live 2026-07). format=json + apilang=en.
   { name: "Banque Mondiale — Avis d'AO Côte d'Ivoire (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=20&order=desc&srt=noticedate&countryname_exact=Cote%20d%27Ivoire", axis: "clients_prospects", active: true },
   { name: "Banque Mondiale — Avis d'AO Sénégal (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Senegal", axis: "clients_prospects", active: true },
+  // Couverture UEMOA complète (2026-07-18) : le portail national CI (SIGOMAP/marchespublics.ci) est
+  // désormais un SPA sous WAF + INSCRIPTION obligatoire, sans API/RSS publique → non scrapable de façon
+  // fiable. L'API World Bank Procurement Notices (structurée, une URL/pays/échéance/réf par avis, JOIGNABLE)
+  // est le substitut : on l'élargit PAYS PAR PAYS pour toute l'UEMOA (la requête région seule ne renvoyait
+  // que les 20 avis les plus récents de toute l'Afrique de l'Ouest+Centrale → couverture superficielle).
+  // Un libellé pays légèrement inexact renvoie 0 ligne (sans erreur) et geoFromCountry reste le filet.
+  { name: "Banque Mondiale — Avis d'AO Bénin (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Benin", axis: "clients_prospects", active: true },
+  { name: "Banque Mondiale — Avis d'AO Burkina Faso (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Burkina%20Faso", axis: "clients_prospects", active: true },
+  { name: "Banque Mondiale — Avis d'AO Mali (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Mali", axis: "clients_prospects", active: true },
+  { name: "Banque Mondiale — Avis d'AO Niger (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Niger", axis: "clients_prospects", active: true },
+  { name: "Banque Mondiale — Avis d'AO Togo (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Togo", axis: "clients_prospects", active: true },
+  { name: "Banque Mondiale — Avis d'AO Guinée-Bissau (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Guinea-Bissau", axis: "clients_prospects", active: true },
   { name: "Banque Mondiale — Avis d'AO Afrique de l'Ouest (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=20&order=desc&srt=noticedate&regionname_exact=Western%20and%20Central%20Africa", axis: "clients_prospects", active: true },
   // BAD (AfDB) — flux RSS procurement : URL correctes mais le WAF Cloudflare de la BAD renvoie 403,
   // Y COMPRIS via le rendu headless (défi anti-bot HTML servi à la place du flux, validation prod

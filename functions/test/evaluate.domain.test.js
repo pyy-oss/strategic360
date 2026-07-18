@@ -40,6 +40,9 @@ describe("evaluate — porte de pertinence des signaux de veille", () => {
     expect(p).toContain("152 M XOF");
     expect(p).toContain("AO-2026-07");
     expect(p).toMatch(/GÉNÉRIQUE/); // consigne de pénalisation du générique
+    // Recall (2026-07) : un AO IT/télécom/cyber en zone, même petit acheteur, doit être noté haut.
+    expect(p).toMatch(/CŒUR DE MÉTIER/);
+    expect(p).toMatch(/cellule d'exécution/);
   });
 
   it("généricisation : sans identité → défaut Neurones ; avec profil client → identité/marché du client", () => {
