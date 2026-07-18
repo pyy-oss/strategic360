@@ -4,7 +4,7 @@ import { usePaged, Pager } from "../components/Pager";
 import { Select, DateField, Input, Textarea } from "../../../design/fields";
 import { Modal, useToast } from "../../../design/overlay";
 import { T, AX, IMP, STANCE, PROX } from "../../../design/tokens";
-import { Card, Badge } from "../../../design/ui";
+import { Card, Badge, LoadError } from "../../../design/ui";
 import { useCan } from "../../../lib/rbac";
 import { BUSINESS_SUBTYPES, DETECTION_SUBTYPE_LABELS, PUBLISHED_STATUSES, createIntelItem, updateIntelItem, useIntelItems, type IntelAxis, type IntelImpact, type IntelStance, type IntelItem, type IntelStatus } from "../lib/intel";
 import { createAction } from "../lib/execution";
@@ -160,7 +160,7 @@ export function Fil({ lens = "dg", weights }: { lens?: string; weights?: LensWei
   const [showForm, setShowForm] = useState(false);
   const clearEnt = () => { const n = new URLSearchParams(sp); n.delete("ent"); setSp(n, { replace: true }); };
   const norm = (v: string) => v.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-  const { items, loading } = useIntelItems();
+  const { items, loading, error } = useIntelItems();
   const { canWrite } = useCan("veille");
   const isExec = useIsExec();
 
@@ -279,10 +279,11 @@ export function Fil({ lens = "dg", weights }: { lens?: string; weights?: LensWei
 
       {canWrite && <NewItemPanel open={showForm} onClose={() => setShowForm(false)} />}
 
+      <LoadError error={error} what="les fiches de veille" style={{ marginBottom: 10 }} />
       {loading && items.length === 0 && (
         <div style={{ fontSize: 12.5, color: T.dim, marginBottom: 10 }}>Chargement du fil de veille…</div>
       )}
-      {!loading && rows.length === 0 && (
+      {!loading && !error && rows.length === 0 && (
         <div style={{ fontSize: 12.5, color: T.dim, marginBottom: 10 }}>
           Aucune fiche de veille pour ces filtres. {canWrite ? "Utilisez « + Nouvelle fiche » pour en saisir une." : ""}
         </div>

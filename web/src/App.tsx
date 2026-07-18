@@ -3,7 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import VeilleApp from "./modules/veille/App";
 import Login from "./modules/auth/Login";
 import { AuthProvider, RequireAuth, RequireCan, useAuthClaims } from "./lib/AuthProvider";
-import { ToastProvider } from "./design/overlay";
+import { ToastProvider, ConfirmProvider } from "./design/overlay";
 
 /** Role-aware landing: commercial roles work from the Copilote first; everyone else from the radar.
  * Waits for claims to resolve so the redirect targets the right home instead of flashing the radar. */
@@ -23,6 +23,7 @@ export default function App() {
   return (
     <AuthProvider>
       <ToastProvider>
+      <ConfirmProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<Landing />} />
@@ -38,6 +39,7 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to="/veille/radar" replace />} />
       </Routes>
+      </ConfirmProvider>
       </ToastProvider>
     </AuthProvider>
   );

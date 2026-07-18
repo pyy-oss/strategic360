@@ -151,10 +151,10 @@ function NewWinLossPanel({ open, onClose }: { open: boolean; onClose: () => void
         </div>
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 10, marginBottom: 10 }}>
           <div>
-            <label style={labelStyle}>Montant (XOF)</label>
+            <label style={labelStyle}>Montant (FCFA)</label>
             <Input inputMode="decimal" placeholder="ex : 45000000" value={form.amount} onChange={(v) => set("amount", v)} />
             {form.amount.trim() && Number.isFinite(Number(form.amount.replace(/[ ]/g, "").replace(",", "."))) && (
-              <div style={{ fontSize: 10.5, color: T.dim, marginTop: 3 }}>= {Number(form.amount.replace(/[ ]/g, "").replace(",", ".")).toLocaleString("fr-FR")} XOF</div>
+              <div style={{ fontSize: 10.5, color: T.dim, marginTop: 3 }}>= {Number(form.amount.replace(/[ ]/g, "").replace(",", ".")).toLocaleString("fr-FR")} FCFA</div>
             )}
           </div>
           <div>

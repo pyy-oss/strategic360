@@ -351,7 +351,7 @@ function OutcomeCaptureModal({ outcome, onClose }: { outcome: { title: string; r
       </div>
       <div style={{ display: "grid", gap: 10, marginBottom: 12 }}>
         <div>
-          <label style={labelStyle}>Montant (XOF)</label>
+          <label style={labelStyle}>Montant (FCFA)</label>
           <Input value={montant} onChange={setMontant} placeholder="ex: 45000000" />
         </div>
         <div>

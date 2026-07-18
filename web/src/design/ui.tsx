@@ -85,6 +85,51 @@ export const Badge: React.FC<BadgeProps> = ({ children, c }) => (
   </span>
 );
 
+/**
+ * Bandeau d'ERREUR de chargement (audit UX 2026-07) — à afficher quand un abonnement Firestore
+ * échoue (permission refusée, index manquant, réseau). Sans lui, les vues retombaient sur l'état
+ * « aucun résultat », faisant passer une PANNE pour une absence de données. Message distinct + tonalité
+ * d'alerte pour lever l'ambiguïté. `error` null → n'affiche rien (usage : {error && <LoadError error={error}/>}).
+ */
+export interface LoadErrorProps {
+  error: Error | null | undefined;
+  what?: string; // ex. "les fiches de veille"
+  style?: React.CSSProperties;
+}
+export const LoadError: React.FC<LoadErrorProps> = ({ error, what, style }) => {
+  if (!error) return null;
+  const denied = /permission|insufficient|denied/i.test(error.message || "");
+  return (
+    <div
+      role="alert"
+      style={{
+        display: "flex",
+        gap: 9,
+        alignItems: "flex-start",
+        background: T.clay + "18",
+        border: `1px solid ${T.clay}55`,
+        borderRadius: 12,
+        padding: "11px 13px",
+        fontSize: 12.5,
+        color: T.ink,
+        ...style,
+      }}
+    >
+      <span aria-hidden style={{ color: T.clay, fontSize: 15, lineHeight: 1.1, flexShrink: 0 }}>⚠</span>
+      <div>
+        <div style={{ fontWeight: 600, color: T.clay }}>
+          Impossible de charger {what || "les données"}.
+        </div>
+        <div style={{ color: T.dim, marginTop: 3 }}>
+          {denied
+            ? "Accès refusé — votre profil n'a peut-être pas les droits sur cette section."
+            : "Une erreur est survenue (réseau ou service). Réessayez ; si cela persiste, contactez un administrateur."}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export interface TipProps {
   active?: boolean;
   payload?: Array<{ payload?: any }>;

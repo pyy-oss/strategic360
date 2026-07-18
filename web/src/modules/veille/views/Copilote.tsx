@@ -273,7 +273,7 @@ export function Copilote() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                 <Eyebrow color={T.emerald}>Réserve de valeur non captée</Eyebrow>
                 <span style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 17, fontWeight: 700, color: T.emerald }}>
-                  ≈ {fmtC((account.nt360?.whitespacePotential ?? 0) + (account.nt360?.upsellHeadroom ?? 0))} XOF
+                  ≈ {fmtC((account.nt360?.whitespacePotential ?? 0) + (account.nt360?.upsellHeadroom ?? 0))} FCFA
                 </span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
@@ -298,7 +298,7 @@ export function Copilote() {
             <div style={{ marginTop: 12, background: `${T.plum}14`, borderRadius: 10, padding: "10px 13px", borderLeft: `3px solid ${T.plum}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                 <Eyebrow color={T.plum}>Passer au récurrent (managé / OPEX)</Eyebrow>
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: T.plum }}>ARR ≈ {fmtC(account.nt360.managedReco.arr)} XOF</span>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: T.plum }}>ARR ≈ {fmtC(account.nt360.managedReco.arr)} FCFA</span>
               </div>
               <div style={{ fontSize: 12, color: T.dim, marginTop: 6, lineHeight: 1.45 }}>
                 Ce compte n'achète que du projet ponctuel. Proposer <b style={{ color: T.ink }}>{account.nt360.managedReco.offre}</b> en offre managée transforme un CA one-shot en revenu récurrent.
@@ -335,7 +335,7 @@ export function Copilote() {
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
                 {(account.nt360?.eventOffers ?? []).map((e, i) => (
                   <div key={i} style={{ fontSize: 12, color: T.ink, lineHeight: 1.45 }}>
-                    <b>{e.kind === "upsell" ? "Upsell" : "Cross-sell"} {e.offre}</b> {e.montant > 0 ? <span style={{ color: T.emerald, fontVariantNumeric: "tabular-nums" }}>({fmtC(e.montant)} XOF)</span> : null}
+                    <b>{e.kind === "upsell" ? "Upsell" : "Cross-sell"} {e.offre}</b> {e.montant > 0 ? <span style={{ color: T.emerald, fontVariantNumeric: "tabular-nums" }}>({fmtC(e.montant)} FCFA)</span> : null}
                     <div style={{ fontSize: 11, color: T.dim, marginTop: 1 }}>↳ déclenché par : {e.event}</div>
                   </div>
                 ))}
@@ -448,7 +448,7 @@ function Money({ label, value, accent }: { label: string; value: number; accent?
     <div>
       <Eyebrow>{label}</Eyebrow>
       <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 24, fontWeight: 700, color: accent || T.ink, marginTop: 6, fontVariantNumeric: "tabular-nums", lineHeight: 1.05 }}>
-        {fmtC(value)} <span style={{ fontSize: 13, color: T.dim, fontWeight: 600 }}>XOF</span>
+        {fmtC(value)} <span style={{ fontSize: 13, color: T.dim, fontWeight: 600 }}>FCFA</span>
       </div>
     </div>
   );
@@ -491,7 +491,7 @@ function DealRow({ nom, bu, etape, montant, probability, closingDate, dealRef }:
           {closingDate ? <span style={{ fontSize: 11, color: overdue ? T.clay : soon ? T.emerald : T.dim, fontWeight: overdue || soon ? 700 : 400 }}>clôture {closingDate}{overdue ? " · dépassée → requalifier" : soon ? " · sous 14 j" : ""}</span> : null}
         </div>
       </div>
-      <span style={{ fontSize: 13, color: T.gold, fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", fontFamily: "'Bricolage Grotesque',sans-serif" }}>{fmtC(montant)} XOF</span>
+      <span style={{ fontSize: 13, color: T.gold, fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", fontFamily: "'Bricolage Grotesque',sans-serif" }}>{fmtC(montant)} FCFA</span>
     </div>
   );
 }
@@ -674,7 +674,7 @@ function PortfolioDashboard({
         <div style={{ display: "flex", alignItems: "center", gap: 10, background: `${T.clay}18`, border: `1px solid ${T.clay}55`, borderRadius: 10, padding: "10px 13px" }}>
           <span style={{ fontSize: 18 }}>⚠️</span>
           <span style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.45 }}>
-            <b style={{ color: T.clay }}>Récurrent en train de s'éteindre :</b> {churn.comptes} compte{churn.comptes > 1 ? "s" : ""} avec des offres dormantes ≈ <b>{fmt(churn.montant)} XOF</b>/an à relancer. Voir « À traiter cette semaine ».
+            <b style={{ color: T.clay }}>Récurrent en train de s'éteindre :</b> {churn.comptes} compte{churn.comptes > 1 ? "s" : ""} avec des offres dormantes ≈ <b>{fmt(churn.montant)} FCFA</b>/an à relancer. Voir « À traiter cette semaine ».
           </span>
         </div>
       )}
@@ -682,9 +682,9 @@ function PortfolioDashboard({
         <Eyebrow color={T.gold}>Portefeuille commercial — vue d'ensemble</Eyebrow>
         <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginTop: 12 }}>
           <Kpi label="Comptes actifs" value={accounts.length} accent={T.steel} />
-          <Kpi label="CAS réalisé" value={<>{fmt(totalCas)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></>} accent={T.emerald} />
-          <Kpi label="Pipeline pondéré" value={<>{fmt(totalPipe)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></>} accent={T.gold} />
-          <Kpi label="Réserve cross-sell + upsell" value={<>{fmt(reserveTotale)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></>} accent={T.emerald} />
+          <Kpi label="CAS réalisé" value={<>{fmt(totalCas)} <span style={{ fontSize: 13, color: T.dim }}>FCFA</span></>} accent={T.emerald} />
+          <Kpi label="Pipeline pondéré" value={<>{fmt(totalPipe)} <span style={{ fontSize: 13, color: T.dim }}>FCFA</span></>} accent={T.gold} />
+          <Kpi label="Réserve cross-sell + upsell" value={<>{fmt(reserveTotale)} <span style={{ fontSize: 13, color: T.dim }}>FCFA</span></>} accent={T.emerald} />
         </div>
       </Card>
 

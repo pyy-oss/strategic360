@@ -247,5 +247,9 @@ service cloud.firestore {
     match /webhookInboundSources/{id} { allow read, write: if false; }
     match /webhookDeliveries/{id}     { allow read, write: if false; }
     match /webhookInboundLog/{id}     { allow read, write: if false; }
+    // Anti-rejeu du endpoint entrant : une entrée par signature vue (Admin SDK uniquement).
+    match /webhookNonces/{id}         { allow read, write: if false; }
+    // Verrous de run (quantiSync, etc.) : écrits transactionnellement par l'Admin SDK.
+    match /runLocks/{id}              { allow read, write: if false; }
   }
 }
