@@ -84,6 +84,15 @@ function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
           </div>
         )}
         {ba.tenderRef && <div style={{ fontSize: 10.5, color: T.faint, marginTop: 2 }}>Réf : {ba.tenderRef}</div>}
+        {/* Provenance visible (2026-07) : source cliquable + date pour vérifier d'un coup d'œil qu'un
+            AO est bien sourcé. Sans URL → alerte « source non tracée » (rempart anti-item non vérifiable). */}
+        <div style={{ fontSize: 10, marginTop: 3, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          {it.url
+            ? <a href={it.url} target="_blank" rel="noreferrer" style={{ color: T.steel, textDecoration: "none" }}>🔗 {it.sourceName || "Source"}</a>
+            : <span style={{ color: T.clay, fontWeight: 600 }} title="Aucune URL de source : cet item n'est pas vérifiable en un clic.">⚠ Source non tracée</span>}
+          {it.date && <span style={{ color: T.faint }}>· {it.date}</span>}
+          {it.sourceRating && <span style={{ color: T.faint }}>· {it.sourceRating}</span>}
+        </div>
       </td>
       <td style={{ padding: "8px 8px", color: T.ink }}>
         {buyer}
