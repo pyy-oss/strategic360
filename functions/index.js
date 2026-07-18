@@ -1342,10 +1342,14 @@ async function runSyncSources(db) {
         const raw = await fetchSource(source.url);
         let json;
         try { json = JSON.parse(raw); } catch { throw new Error("wb-procnotices: réponse non-JSON"); }
-        const notices = parseWorldBankProcNotices(json, { maxItems: 15 });
+        // Filtre géographique CÔTÉ CLIENT (validation live 2026-07) : l'API World Bank ignore le
+        // paramètre pays (countryname_exact) et renvoie des avis mondiaux (Éthiopie, Pakistan…). On
+        // ne garde donc que ceux dont le pays est reconnu comme UEMOA/CEDEAO (geoFromCountry non nul) —
+        // déterministe, sans dépendre du paramètre d'URL. Économise aussi les appels Vertex sur le hors-cible.
+        const notices = parseWorldBankProcNotices(json, { maxItems: 40 }).filter((nt) => nt.geo);
         yielded = notices.length > 0;
         const settled = await Promise.allSettled(
-          notices.map(async (nt) => {
+          notices.slice(0, 15).map(async (nt) => {
             if (existingIds.has(intelItemId({ url: nt.url }))) { skippedKnown += 1; return false; }
             const classified = await classifyRawText(`${nt.title}\n${nt.description}`, watchlistEntities, { ...context, url: nt.url, defaultDate: nt.publishedDate }, clientProfile);
             if (!classified) return false;
