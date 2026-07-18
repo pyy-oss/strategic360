@@ -227,19 +227,22 @@ const SOURCES_SEED = [
   // corrigé après validation live 2026-07). format=json + apilang=en.
   { name: "Banque Mondiale — Avis d'AO Côte d'Ivoire (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=20&order=desc&srt=noticedate&countryname_exact=Cote%20d%27Ivoire", axis: "clients_prospects", active: true },
   { name: "Banque Mondiale — Avis d'AO Sénégal (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Senegal", axis: "clients_prospects", active: true },
-  // Couverture UEMOA complète (2026-07-18) : le portail national CI (SIGOMAP/marchespublics.ci) est
-  // désormais un SPA sous WAF + INSCRIPTION obligatoire, sans API/RSS publique → non scrapable de façon
-  // fiable. L'API World Bank Procurement Notices (structurée, une URL/pays/échéance/réf par avis, JOIGNABLE)
-  // est le substitut : on l'élargit PAYS PAR PAYS pour toute l'UEMOA (la requête région seule ne renvoyait
-  // que les 20 avis les plus récents de toute l'Afrique de l'Ouest+Centrale → couverture superficielle).
-  // Un libellé pays légèrement inexact renvoie 0 ligne (sans erreur) et geoFromCountry reste le filet.
-  { name: "Banque Mondiale — Avis d'AO Bénin (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Benin", axis: "clients_prospects", active: true },
-  { name: "Banque Mondiale — Avis d'AO Burkina Faso (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Burkina%20Faso", axis: "clients_prospects", active: true },
-  { name: "Banque Mondiale — Avis d'AO Mali (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Mali", axis: "clients_prospects", active: true },
-  { name: "Banque Mondiale — Avis d'AO Niger (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Niger", axis: "clients_prospects", active: true },
-  { name: "Banque Mondiale — Avis d'AO Togo (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Togo", axis: "clients_prospects", active: true },
-  { name: "Banque Mondiale — Avis d'AO Guinée-Bissau (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Guinea-Bissau", axis: "clients_prospects", active: true },
-  { name: "Banque Mondiale — Avis d'AO Afrique de l'Ouest (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=20&order=desc&srt=noticedate&regionname_exact=Western%20and%20Central%20Africa", axis: "clients_prospects", active: true },
+  // Couverture UEMOA (révisé 2026-07-18, APRÈS validation prod) : le portail national CI
+  // (SIGOMAP/marchespublics.ci) est un SPA sous WAF + inscription, sans API/RSS publique → non scrapable.
+  // On voulait élargir l'API World Bank pays par pays pour toute l'UEMOA — MAIS la validation montre que
+  // l'endpoint procnotices IGNORE le filtre pays (`countryname_exact`) : chaque requête pays renvoie le
+  // MÊME flux MONDIAL (Éthiopie/Inde/Pakistan en tête), dédoublonné → 0 avis distinct (les 6 sources pays
+  // n'ont produit AUCUNE ligne AO après 3 synchros). Elles sont donc REDONDANTES → désactivées.
+  // Le vrai levier : le flux étant mondial trié par date, on ÉLARGIT LA FENÊTRE (rows) d'UNE requête et on
+  // laisse geoFromCountry extraire les avis ouest-africains (UEMOA/CEDEAO) — plus d'AO en zone qu'avec 6
+  // requêtes pays identiques. rows relevé à 200 sur la requête région (parseur plafonné à 40 après filtre géo).
+  { name: "Banque Mondiale — Avis d'AO Bénin (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Benin", axis: "clients_prospects", active: false },
+  { name: "Banque Mondiale — Avis d'AO Burkina Faso (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Burkina%20Faso", axis: "clients_prospects", active: false },
+  { name: "Banque Mondiale — Avis d'AO Mali (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Mali", axis: "clients_prospects", active: false },
+  { name: "Banque Mondiale — Avis d'AO Niger (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Niger", axis: "clients_prospects", active: false },
+  { name: "Banque Mondiale — Avis d'AO Togo (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Togo", axis: "clients_prospects", active: false },
+  { name: "Banque Mondiale — Avis d'AO Guinée-Bissau (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Guinea-Bissau", axis: "clients_prospects", active: false },
+  { name: "Banque Mondiale — Avis d'AO Afrique de l'Ouest (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=200&order=desc&srt=noticedate&regionname_exact=Western%20and%20Central%20Africa", axis: "clients_prospects", active: true },
   // BAD (AfDB) — flux RSS procurement : URL correctes mais le WAF Cloudflare de la BAD renvoie 403,
   // Y COMPRIS via le rendu headless (défi anti-bot HTML servi à la place du flux, validation prod
   // 2026-07-18). Mur externe irrécupérable depuis nos IP cloud. Laissées INACTIVES et documentées :
