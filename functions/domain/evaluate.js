@@ -67,6 +67,7 @@ ${ctx ? `Contexte entreprise :\n${ctx}\n` : ""}
 FONDE ton jugement sur l'ACTIONNABILITÉ, pas seulement sur le titre :
 - Un ACHETEUR identifié (compte/institution nommé), un BUDGET/montant, une ÉCHÉANCE ou une référence d'AO = fort signe de pertinence, même si le titre est sobre.
 - Un « so-what » ou une action recommandée GÉNÉRIQUE (« suivre l'évolution », « rester attentif », « surveiller la tendance ») SANS cible ni échéance = signe de faible actionnabilité : baisse la note en conséquence.
+- CŒUR DE MÉTIER : un appel d'offres / une consultation EN ZONE (${abbr} et son marché) portant sur du MATÉRIEL ou des SERVICES informatiques, télécoms, réseau, cybersécurité, cloud, data center, logiciel/SI ou formation IT — même émis par une petite cellule d'exécution de projet, même à montant modeste — est PERTINENT (c'est exactement ce que ${abbr} vend) : ne l'écarte pas comme « trop petit » ou « acheteur secondaire », note-le haut s'il est OUVERT (échéance non dépassée) et ouvrable (URL/référence).
 
 SIGNAL À ÉVALUER :
 Titre : ${coerce(c.title)}
