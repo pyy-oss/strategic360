@@ -47,6 +47,7 @@ const { buildBriefingPrompt, buildBriefingCritiquePrompt, parseBriefingResponse 
 const { buildBriefingPdf } = require("./domain/pdf");
 const { generateJson, DEFAULT_MODEL } = require("./domain/vertex");
 const { TENDER_ENRICH_SUBTYPES, buildTenderEnrichPrompt, parseTenderEnrichResponse, mergeBusinessAngle, isoDeadline, aoProvenanceRejectReason } = require("./domain/tenderEnrich");
+const { parseWorldBankProcNotices } = require("./domain/donorFeeds");
 const { AGENTS: COPILOTE_AGENTS, buildChatPrompt, parseChatResponse } = require("./domain/copilote");
 const { DEFAULT_BACKFILL_DAYS, dayRangeUTC, computeKpiBackfillPoints, mergeHistoryPoints } = require("./domain/kpiBackfill");
 const PDFDocument = require("pdfkit");
@@ -1333,7 +1334,40 @@ async function runSyncSources(db) {
       let yielded = false; // la source a-t-elle produit du CONTENU exploitable (indépendamment du dédoublonnage) ?
       let kindUpgrade = null; // "web-js" si une source `web` s'est avérée anti-bot/JS (mémorisé après succès)
 
-      if (source.kind === "rss" || source.kind === "newsletter" || source.kind === "portal") {
+      if (source.kind === "wb-procnotices") {
+        // BAILLEUR STRUCTURÉ (Phase 2 fiabilisation AO) : API JSON World Bank Procurement Notices.
+        // Chaque avis porte sa provenance (URL, pays, échéance, référence) → on la FORCE après la
+        // classification IA (le LLM apporte l'analyse business/soWhat/pertinence, mais ne réécrit
+        // JAMAIS la provenance factuelle issue de l'API). subtype forcé "tender" (ce sont des avis).
+        const raw = await fetchSource(source.url);
+        let json;
+        try { json = JSON.parse(raw); } catch { throw new Error("wb-procnotices: réponse non-JSON"); }
+        const notices = parseWorldBankProcNotices(json, { maxItems: 15 });
+        yielded = notices.length > 0;
+        const settled = await Promise.allSettled(
+          notices.map(async (nt) => {
+            if (existingIds.has(intelItemId({ url: nt.url }))) { skippedKnown += 1; return false; }
+            const classified = await classifyRawText(`${nt.title}\n${nt.description}`, watchlistEntities, { ...context, url: nt.url, defaultDate: nt.publishedDate }, clientProfile);
+            if (!classified) return false;
+            // Provenance factuelle = source de vérité (jamais réécrite par le modèle).
+            classified.url = nt.url;
+            classified.subtype = "tender";
+            if (nt.geo) classified.geo = nt.geo;
+            const ba = classified.businessAngle && typeof classified.businessAngle === "object" ? classified.businessAngle : {};
+            classified.businessAngle = {
+              ...ba,
+              tenderRef: ba.tenderRef || nt.tenderRef || null,
+              deadline: ba.deadline || nt.deadline || null,
+              buyer: ba.buyer || nt.country || null,
+            };
+            const iso = isoDeadline(nt.deadline);
+            if (iso && !classified.dueDate) classified.dueDate = iso;
+            const { written } = await upsertClassifiedItem(db, classified, dedupeIndex);
+            return written;
+          })
+        );
+        created = settled.filter((s) => s.status === "fulfilled" && s.value).length;
+      } else if (source.kind === "rss" || source.kind === "newsletter" || source.kind === "portal") {
         // Repli anti-bot pour les FLUX (audit sources 2026-07) : un flux bloqué en 403 (Cloudflare)
         // est retenté UNE fois via le navigateur headless en mode RAW (corps brut du flux, UA réel),
         // qui franchit les 403 simples que le fetch HTTP prend. Les flux restent en kind "rss" (pas

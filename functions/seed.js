@@ -214,6 +214,13 @@ const SOURCES_SEED = [
   // Couverture régionale réelle (M11 audit) : filiale Burkina, expansion Sénégal/UEMOA.
   { name: "Direction Générale des Marchés Publics — Burkina Faso", kind: "web", url: "https://www.dgmp.gov.bf/", axis: "clients_prospects", active: true },
   { name: "ARCEP Burkina Faso — actualités", kind: "web", url: "https://www.arcep.bf/actualites/", axis: "reglementaire", active: true },
+  // BAILLEURS — flux STRUCTURÉS (fiabilisation AO 2026-07) : l'API JSON World Bank Procurement Notices
+  // fournit des avis avec URL + pays + échéance + référence par avis (contrairement aux portails
+  // nationaux JS qui se scrapent mal). C'est là que se trouvent les gros AO ICT/infra financés en
+  // CI/UEMOA. kind "wb-procnotices" → parseur dédié (domain/donorFeeds.js), provenance forcée.
+  { name: "Banque Mondiale — Avis d'AO Côte d'Ivoire (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v3/procnotices?format=json&rows=20&order=desc&srt=noticedate&countryname_exact=Cote%20d%27Ivoire", axis: "clients_prospects", active: true },
+  { name: "Banque Mondiale — Avis d'AO Sénégal (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v3/procnotices?format=json&rows=15&order=desc&srt=noticedate&countryname_exact=Senegal", axis: "clients_prospects", active: true },
+  { name: "Banque Mondiale — Avis d'AO Afrique de l'Ouest (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v3/procnotices?format=json&rows=20&order=desc&srt=noticedate&regionname_exact=Western%20and%20Central%20Africa", axis: "clients_prospects", active: true },
   // (Doublon retiré — audit 2026-07 : marchespublics.sn est déjà couvert par « Sénégal — Marchés
   // publics (DCMP/SYGMAP) » en kind web-js plus haut. Deux entrées même URL = double fetch/IA.)
   { name: "Sénégal — Sika Finance / actu UEMOA", kind: "rss", url: "https://www.sikafinance.com/rss/actualites_bourse_brvm", axis: "clients_prospects", active: true },
