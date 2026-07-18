@@ -197,6 +197,7 @@ export const NAV: [string, string][] = [
   ["equipe", "Pilotage équipe"],
   ["onboarding", "Onboarding client"],
   ["reglages", "Réglages & Droits"],
+  ["integrations", "Intégrations & API"],
 ];
 
 /**
@@ -225,5 +226,5 @@ export const NAV_GROUPS: { label: string; home: string; items: string[] }[] = [
   { label: "Action", home: "copilote", items: ["copilote", "equipe", "plan", "execution"] },
   // Groupe EXEC/DG uniquement (paramétrage produit) — App.tsx masque onboarding aux non-exec et
   // reglages (éditeur de droits RBAC) à tous sauf la Direction.
-  { label: "Config", home: "onboarding", items: ["onboarding", "reglages"] },
+  { label: "Config", home: "onboarding", items: ["onboarding", "reglages", "integrations"] },
 ];

@@ -11,10 +11,10 @@
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue, FieldPath } = require("firebase-admin/firestore");
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { onDocumentWritten, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
 const { getStorage } = require("firebase-admin/storage");
 const logger = require("firebase-functions/logger");
@@ -535,6 +535,123 @@ function firestoreDb() {
 /** Storage bucket handle scoped to STORAGE_BUCKET_NAME — same rationale as db() above. */
 function defaultBucket() {
   return STORAGE_BUCKET_NAME ? getStorage().bucket(STORAGE_BUCKET_NAME) : getStorage().bucket();
+}
+
+/* ------------------------------------------------------------------------------------------- *
+ * WEBHOOKS — intégrations tierces (sortants + entrants). Module PUR domain/webhooks.js pour la
+ * signature HMAC + les validateurs ; ici l'implémentation (Firestore + réseau). Collections :
+ *   webhookEndpoints/{id}        — endpoints SORTANTS (url, events[], secret, active, …)
+ *   webhookInboundSources/{id}   — sources ENTRANTES (label, actions[], secret, active, …)
+ *   webhookDeliveries/{auto}     — journal des livraisons sortantes (succès/échec, statut, essais)
+ *   webhookInboundLog/{auto}     — journal des requêtes entrantes (action, source, résultat)
+ * Toutes réservées à la Direction (règles Firestore) ; JAMAIS d'écriture cliente directe — tout
+ * passe par les callables webhookAdmin/userAdmin. Les secrets ne quittent le serveur qu'UNE fois,
+ * à la création/rotation (jamais relus en clair ensuite : maskSecret).
+ * ------------------------------------------------------------------------------------------- */
+const nodeCrypto = require("node:crypto");
+const {
+  OUTBOUND_EVENTS: WH_OUTBOUND_EVENTS,
+  INBOUND_ACTIONS: WH_INBOUND_ACTIONS,
+  SIGNATURE_HEADER: WH_SIG_HEADER,
+  TIMESTAMP_HEADER: WH_TS_HEADER,
+  EVENT_HEADER: WH_EVENT_HEADER,
+  signPayload: whSign,
+  verifySignature: whVerify,
+  generateSecret: whGenerateSecret,
+  maskSecret: whMaskSecret,
+  sanitizeEndpoint: whSanitizeEndpoint,
+  sanitizeInboundSource: whSanitizeInboundSource,
+  endpointMatchesEvent: whEndpointMatchesEvent,
+  buildEventEnvelope: whBuildEnvelope,
+} = require("./domain/webhooks");
+
+/** Seuil de score à partir duquel un signal de veille déclenche l'événement sortant `intel.signal`. */
+const WEBHOOK_SIGNAL_MIN_SCORE = Number(process.env.WEBHOOK_SIGNAL_MIN_SCORE) || 70;
+const WEBHOOK_DELIVERY_TIMEOUT_MS = 8000;
+const WEBHOOK_MAX_ATTEMPTS = 3;
+
+/** POST signé vers un endpoint, avec réessais bornés (backoff court). Best-effort, ne lève jamais. */
+async function deliverToEndpoint(endpoint, envelope) {
+  const body = JSON.stringify(envelope);
+  const ts = Math.floor(Date.now() / 1000);
+  const signature = whSign(body, endpoint.secret, ts);
+  let lastError = null;
+  let status = 0;
+  let attempts = 0;
+  for (let attempt = 1; attempt <= WEBHOOK_MAX_ATTEMPTS; attempt += 1) {
+    attempts = attempt;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), WEBHOOK_DELIVERY_TIMEOUT_MS);
+      const res = await fetch(endpoint.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [WH_SIG_HEADER]: signature,
+          [WH_TS_HEADER]: String(ts),
+          [WH_EVENT_HEADER]: envelope.type,
+        },
+        body,
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timer));
+      status = res.status;
+      if (res.ok) { lastError = null; break; }
+      lastError = `HTTP ${res.status}`;
+    } catch (e) {
+      lastError = e && e.message ? e.message : String(e);
+    }
+    if (attempt < WEBHOOK_MAX_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, 500 * attempt));
+    }
+  }
+  return { ok: !lastError, status, error: lastError, attempts };
+}
+
+/**
+ * dispatchWebhookEvent(db, eventType, data) — fan-out d'un événement vers tous les endpoints actifs
+ * abonnés. Garde SSRF : l'URL de chaque endpoint est revérifiée (checkPublicHttpUrl) au moment de
+ * l'envoi — un endpoint pointant vers une IP interne est bloqué et journalisé. Best-effort : ne
+ * lève jamais (un webhook cassé ne doit pas faire échouer l'écriture métier qui l'a déclenché).
+ */
+async function dispatchWebhookEvent(db, eventType, data) {
+  try {
+    const snap = await db.collection("webhookEndpoints").where("active", "==", true).get();
+    const targets = [];
+    snap.forEach((d) => {
+      const ep = { id: d.id, ...d.data() };
+      if (whEndpointMatchesEvent(ep, eventType) && ep.url && ep.secret) targets.push(ep);
+    });
+    if (!targets.length) return;
+    const envelope = whBuildEnvelope(eventType, data, {
+      id: `evt_${nodeCrypto.randomUUID()}`,
+      timestamp: new Date().toISOString(),
+    });
+    await Promise.allSettled(
+      targets.map(async (ep) => {
+        const guard = checkPublicHttpUrl(ep.url);
+        const result = guard.ok
+          ? await deliverToEndpoint(ep, envelope)
+          : { ok: false, status: 0, error: `URL bloquée: ${guard.reason}`, attempts: 0 };
+        await db.collection("webhookDeliveries").add({
+          endpointId: ep.id,
+          event: eventType,
+          url: ep.url,
+          ok: result.ok,
+          status: result.status,
+          error: result.error || null,
+          attempts: result.attempts,
+          ts: FieldValue.serverTimestamp(),
+        });
+        await db
+          .doc(`webhookEndpoints/${ep.id}`)
+          .set({ lastDeliveryOk: result.ok, lastDeliveryAt: FieldValue.serverTimestamp(), lastError: result.error || null }, { merge: true })
+          .catch(() => {});
+      })
+    );
+    logger.info(`dispatchWebhookEvent: ${eventType} → ${targets.length} endpoint(s)`);
+  } catch (e) {
+    logger.error(`dispatchWebhookEvent(${eventType}) FAILED: ${e.message}`);
+  }
 }
 
 /* ------------------------------------------------------------------------------------------- *
@@ -1679,6 +1796,25 @@ exports.onIntelItemWrite = onDocumentWritten({ document: "intelItems/{id}", regi
       // recalculer sur un état intermédiaire.
       await after.ref.update({ priorityScore: computed });
       logger.info(`onIntelItemWrite: ${after.ref.path} priorityScore=${computed}`);
+      // Webhook sortant : un signal FRANCHIT le seuil « fort score » vers le haut → notifier une
+      // seule fois (crossing), et seulement s'il est publié (pas pending/rejected/archived).
+      const prevScore = typeof item.priorityScore === "number" ? item.priorityScore : 0;
+      if (
+        computed >= WEBHOOK_SIGNAL_MIN_SCORE &&
+        prevScore < WEBHOOK_SIGNAL_MIN_SCORE &&
+        PUBLISHED_STATUSES.has(item.status)
+      ) {
+        await dispatchWebhookEvent(db, "intel.signal", {
+          id: after.ref.id,
+          title: item.title || null,
+          score: computed,
+          axis: item.axis || null,
+          impact: item.impact || null,
+          stance: item.stance || null,
+          url: item.url || null,
+          summary: item.summary || null,
+        });
+      }
       return;
     }
   }
@@ -1712,6 +1848,22 @@ exports.onIntelItemWrite = onDocumentWritten({ document: "intelItems/{id}", regi
   } catch (err) {
     logger.error(`onIntelItemWrite: agrégats FAILED pour ${event.document} — ${err.message}`, { err });
     throw err;
+  }
+
+  // Webhook sortant : un signal est CRÉÉ directement à fort score (son score n'a pas eu à être
+  // recalculé par la passe précédente, donc la branche « crossing » ne s'est pas déclenchée). On
+  // notifie ici, uniquement pour une vraie création (!before) et un item publié.
+  if (!b && a && typeof a.priorityScore === "number" && a.priorityScore >= WEBHOOK_SIGNAL_MIN_SCORE && PUBLISHED_STATUSES.has(a.status)) {
+    await dispatchWebhookEvent(db, "intel.signal", {
+      id: after.ref.id,
+      title: a.title || null,
+      score: a.priorityScore,
+      axis: a.axis || null,
+      impact: a.impact || null,
+      stance: a.stance || null,
+      url: a.url || null,
+      summary: a.summary || null,
+    });
   }
 });
 
@@ -2144,6 +2296,15 @@ async function runGenerateBriefing(db, generatedBy) {
 
   const ref = await db.collection("briefings").add({ ...briefing, createdAt: FieldValue.serverTimestamp() });
   logger.info(`runGenerateBriefing: created briefings/${ref.id} generatedBy=${generatedBy}`);
+  // Webhook sortant : nouveau briefing produit → notifier les apps tierces abonnées.
+  await dispatchWebhookEvent(db, "briefing.created", {
+    id: ref.id,
+    title: briefing.title || null,
+    period: briefing.period || briefing.cadence || null,
+    status: briefing.status || null,
+    summary: briefing.summary || briefing.tldr || null,
+    generatedBy,
+  });
   return { id: ref.id, status: briefing.status };
 }
 
@@ -3389,6 +3550,14 @@ exports.applyOnboardingDraft = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   invalidateCompanyContextCache();
 
   logger.info(`applyOnboardingDraft: config écrite (${built.profileDoc.companyName}) — ${sourcesWritten} sources${activateSources ? " actives" : " inactives"}, ${watchlistWritten} entités.`);
+  // Webhook sortant : onboarding appliqué → événement de cycle de vie.
+  await dispatchWebhookEvent(db, "account.event", {
+    kind: "onboarding.completed",
+    companyName: built.profileDoc.companyName || null,
+    sourcesWritten,
+    watchlistWritten,
+    sourcesActive: activateSources,
+  });
   return {
     ok: true,
     companyName: built.profileDoc.companyName,
@@ -4229,4 +4398,319 @@ exports.setPermissionsMatrix = onCall(CALLABLE_OPTS, async (request) => {
   });
   logger.info(`setPermissionsMatrix: caller=${request.auth.uid} roles=${Object.keys(clean).join(",")}`);
   return { ok: true, roles: Object.keys(clean) };
+});
+
+/* ============================================================================================= *
+ * INTÉGRATIONS TIERCES — gestion des utilisateurs (rôles), webhooks sortants & entrants.
+ * ============================================================================================= */
+
+/**
+ * onActionCreated — trigger : une action (créée côté client dans `actions/{id}`, cf.
+ * web/.../lib/execution.ts) déclenche l'événement sortant `action.created`. C'est le point d'émission
+ * pour ce type d'événement car les actions ne sont pas créées côté serveur.
+ */
+exports.onActionCreated = onDocumentCreated(
+  { document: "actions/{id}", region: "europe-west1", database: FIRESTORE_DATABASE_ID },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const a = snap.data() || {};
+    await dispatchWebhookEvent(firestoreDb(), "action.created", {
+      id: snap.id,
+      title: a.title || a.action || a.label || null,
+      dueDate: a.dueDate || a.quand || null,
+      owner: a.owner || a.assignee || null,
+      status: a.status || null,
+      accountId: a.accountId || a.compte || null,
+    });
+  }
+);
+
+/**
+ * userAdmin — callable (DIRECTION uniquement) : gestion des utilisateurs de l'app par le CLAIM `role`
+ * (l'Auth Firebase est PARTAGÉE entre apps du projet → on ne touche jamais l'activation globale du
+ * compte, cf. décision produit). Actions : `list` (comptes portant un rôle connu de cette app),
+ * `invite` (crée si besoin + assigne + e-mail de mot de passe), `assign`, `revoke`.
+ */
+exports.userAdmin = onCall(CALLABLE_OPTS, async (request) => {
+  if (request.auth?.token?.role !== "direction") {
+    throw new HttpsError("permission-denied", "Réservé à la Direction.");
+  }
+  const db = firestoreDb();
+  const auth = getAuth();
+  const action = request.data?.action;
+  const audit = (act, entityId, detail) =>
+    db.collection("auditLog").add({ uid: request.auth.uid, action: act, module: "config", entity: "users", entityId: entityId || null, detail: detail || {}, ts: FieldValue.serverTimestamp() });
+
+  if (action === "list") {
+    // Auth PARTAGÉE : n'exposer QUE les comptes portant un claim `role` connu de CETTE app.
+    const users = [];
+    let pageToken;
+    do {
+      const res = await auth.listUsers(1000, pageToken);
+      for (const u of res.users) {
+        const role = u.customClaims?.role;
+        if (typeof role === "string" && VALID_ROLES.includes(role)) {
+          users.push({
+            uid: u.uid, email: u.email || null, displayName: u.displayName || null, role,
+            disabled: !!u.disabled, lastSignIn: u.metadata?.lastSignInTime || null, createdAt: u.metadata?.creationTime || null,
+          });
+        }
+      }
+      pageToken = res.pageToken;
+    } while (pageToken);
+    users.sort((x, y) => (x.email || "").localeCompare(y.email || ""));
+    return { users };
+  }
+
+  if (action === "assign" || action === "revoke") {
+    const email = typeof request.data?.email === "string" ? request.data.email.trim().toLowerCase() : "";
+    let uid = typeof request.data?.uid === "string" ? request.data.uid : "";
+    if (!uid && email) {
+      try { uid = (await auth.getUserByEmail(email)).uid; } catch { throw new HttpsError("not-found", "Utilisateur introuvable."); }
+    }
+    if (!uid) throw new HttpsError("invalid-argument", "uid ou email requis.");
+    if (uid === request.auth.uid && action === "revoke") {
+      throw new HttpsError("failed-precondition", "Vous ne pouvez pas révoquer votre propre accès.");
+    }
+    const existing = (await auth.getUser(uid)).customClaims || {};
+    if (action === "assign") {
+      const role = request.data?.role;
+      if (!VALID_ROLES.includes(role)) throw new HttpsError("invalid-argument", `role doit être l'un de : ${VALID_ROLES.join(", ")}.`);
+      await auth.setCustomUserClaims(uid, { ...existing, role });
+      await audit("assignRole", uid, { role });
+      return { ok: true, uid, role };
+    }
+    const next = { ...existing };
+    delete next.role; // révocation par-app = retrait du claim role (le compte Auth global reste intact)
+    await auth.setCustomUserClaims(uid, next);
+    await audit("revokeRole", uid, {});
+    return { ok: true, uid, role: null };
+  }
+
+  if (action === "invite") {
+    const email = typeof request.data?.email === "string" ? request.data.email.trim().toLowerCase() : "";
+    const role = request.data?.role;
+    if (!email || !/.+@.+\..+/.test(email)) throw new HttpsError("invalid-argument", "email valide requis.");
+    if (!VALID_ROLES.includes(role)) throw new HttpsError("invalid-argument", `role doit être l'un de : ${VALID_ROLES.join(", ")}.`);
+    let user;
+    let created = false;
+    try { user = await auth.getUserByEmail(email); }
+    catch (e) { if (e.code !== "auth/user-not-found") throw e; user = await auth.createUser({ email, emailVerified: false }); created = true; }
+    const existing = user.customClaims || {};
+    await auth.setCustomUserClaims(user.uid, { ...existing, role });
+    // E-mail « définissez votre mot de passe » via Identity Toolkit (clé web NON secrète). Aucun mot de
+    // passe ne transite jamais. Nécessite FIREBASE_WEB_API_KEY (functions/.env) — sinon on saute l'e-mail.
+    const apiKey = process.env.FIREBASE_WEB_API_KEY;
+    const hasPassword = (user.providerData || []).some((p) => p.providerId === "password");
+    let emailSent = false;
+    if (apiKey && !hasPassword) {
+      try {
+        const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`, {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestType: "PASSWORD_RESET", email }),
+        });
+        emailSent = res.ok;
+      } catch { emailSent = false; }
+    }
+    await audit("inviteUser", user.uid, { role, created, emailSent });
+    return { ok: true, uid: user.uid, email, role, created, passwordEmailSent: emailSent };
+  }
+
+  throw new HttpsError("invalid-argument", "action inconnue (list|invite|assign|revoke).");
+});
+
+/**
+ * webhookAdmin — callable (DIRECTION uniquement) : CRUD des endpoints sortants et des sources
+ * entrantes + lecture des journaux de livraison. Les secrets ne sont renvoyés EN CLAIR qu'à la
+ * création/rotation (ensuite masqués). Aucune écriture cliente directe de ces collections (règles).
+ */
+exports.webhookAdmin = onCall(CALLABLE_OPTS, async (request) => {
+  if (request.auth?.token?.role !== "direction") {
+    throw new HttpsError("permission-denied", "Réservé à la Direction.");
+  }
+  const db = firestoreDb();
+  const action = request.data?.action;
+  const audit = (act, entityId, detail) =>
+    db.collection("auditLog").add({ uid: request.auth.uid, action: act, module: "config", entity: "webhooks", entityId: entityId || null, detail: detail || {}, ts: FieldValue.serverTimestamp() });
+
+  // -------- endpoints SORTANTS --------
+  if (action === "listEndpoints") {
+    const snap = await db.collection("webhookEndpoints").get();
+    return { endpoints: snap.docs.map((d) => { const e = d.data(); return { id: d.id, url: e.url, events: e.events || [], label: e.label || "", active: e.active !== false, secretMasked: whMaskSecret(e.secret), lastDeliveryOk: e.lastDeliveryOk ?? null, lastDeliveryAt: e.lastDeliveryAt || null, lastError: e.lastError || null }; }) };
+  }
+  if (action === "upsertEndpoint") {
+    const clean = whSanitizeEndpoint(request.data?.endpoint);
+    const guard = checkPublicHttpUrl(clean.url);
+    if (!guard.ok) throw new HttpsError("invalid-argument", `URL invalide : ${guard.reason}`);
+    if (!clean.events.length) throw new HttpsError("invalid-argument", "Sélectionnez au moins un événement.");
+    const id = request.data?.id;
+    if (id) {
+      await db.doc(`webhookEndpoints/${id}`).set({ ...clean, updatedAt: FieldValue.serverTimestamp(), updatedBy: request.auth.uid }, { merge: true });
+      await audit("upsertWebhookEndpoint", id, { events: clean.events });
+      return { ok: true, id };
+    }
+    const secret = whGenerateSecret();
+    const ref = await db.collection("webhookEndpoints").add({ ...clean, secret, createdAt: FieldValue.serverTimestamp(), createdBy: request.auth.uid });
+    await audit("createWebhookEndpoint", ref.id, { events: clean.events });
+    return { ok: true, id: ref.id, secret }; // secret renvoyé UNE seule fois
+  }
+  if (action === "rotateEndpointSecret") {
+    const id = request.data?.id; if (!id) throw new HttpsError("invalid-argument", "id requis.");
+    const secret = whGenerateSecret();
+    await db.doc(`webhookEndpoints/${id}`).set({ secret, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await audit("rotateWebhookEndpointSecret", id, {});
+    return { ok: true, id, secret };
+  }
+  if (action === "deleteEndpoint") {
+    const id = request.data?.id; if (!id) throw new HttpsError("invalid-argument", "id requis.");
+    await db.doc(`webhookEndpoints/${id}`).delete();
+    await audit("deleteWebhookEndpoint", id, {});
+    return { ok: true, id };
+  }
+
+  // -------- sources ENTRANTES --------
+  if (action === "listInboundSources") {
+    const snap = await db.collection("webhookInboundSources").get();
+    return { sources: snap.docs.map((d) => { const s = d.data(); return { id: d.id, label: s.label || "", actions: s.actions || [], active: s.active !== false, secretMasked: whMaskSecret(s.secret), lastSeenAt: s.lastSeenAt || null }; }) };
+  }
+  if (action === "upsertInboundSource") {
+    const clean = whSanitizeInboundSource(request.data?.source);
+    if (!clean.actions.length) throw new HttpsError("invalid-argument", "Sélectionnez au moins une action.");
+    const id = request.data?.id;
+    if (id) {
+      await db.doc(`webhookInboundSources/${id}`).set({ ...clean, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      await audit("upsertInboundSource", id, { actions: clean.actions });
+      return { ok: true, id };
+    }
+    const secret = whGenerateSecret();
+    const ref = await db.collection("webhookInboundSources").add({ ...clean, secret, createdAt: FieldValue.serverTimestamp(), createdBy: request.auth.uid });
+    await audit("createInboundSource", ref.id, { actions: clean.actions });
+    return { ok: true, id: ref.id, secret };
+  }
+  if (action === "rotateInboundSecret") {
+    const id = request.data?.id; if (!id) throw new HttpsError("invalid-argument", "id requis.");
+    const secret = whGenerateSecret();
+    await db.doc(`webhookInboundSources/${id}`).set({ secret, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await audit("rotateInboundSecret", id, {});
+    return { ok: true, id, secret };
+  }
+  if (action === "deleteInboundSource") {
+    const id = request.data?.id; if (!id) throw new HttpsError("invalid-argument", "id requis.");
+    await db.doc(`webhookInboundSources/${id}`).delete();
+    await audit("deleteInboundSource", id, {});
+    return { ok: true, id };
+  }
+
+  // -------- journaux --------
+  if (action === "listDeliveries") {
+    const snap = await db.collection("webhookDeliveries").orderBy("ts", "desc").limit(50).get();
+    return { deliveries: snap.docs.map((d) => ({ id: d.id, ...d.data() })) };
+  }
+  if (action === "listInboundLog") {
+    const snap = await db.collection("webhookInboundLog").orderBy("ts", "desc").limit(50).get();
+    return { log: snap.docs.map((d) => ({ id: d.id, ...d.data() })) };
+  }
+  if (action === "events") {
+    return { outbound: WH_OUTBOUND_EVENTS, inbound: WH_INBOUND_ACTIONS };
+  }
+
+  throw new HttpsError("invalid-argument", "action inconnue.");
+});
+
+/**
+ * webhookInbound — endpoint HTTPS PUBLIC (onRequest) : reçoit les requêtes des apps tierces.
+ * Protégé par SIGNATURE HMAC par source (jamais par l'accès réseau) — modèle « Stripe webhook » :
+ * l'invocation publique est normale, la sécurité est la signature. En-têtes attendus :
+ *   x-sentinel-source     : id de la source (webhookInboundSources/{id})
+ *   x-sentinel-signature  : sha256=<hmac de `${ts}.${body}`>
+ *   x-sentinel-timestamp  : epoch (s), fenêtre anti-rejeu 300 s
+ *   x-sentinel-action     : ingest | action | sync | pull (ou ?action=, ou body.action ; GET ⇒ pull)
+ * L'action doit être autorisée pour la source. Limite de charge 64 Ko. Tout est journalisé.
+ */
+exports.webhookInbound = onRequest({ region: "europe-west1", timeoutSeconds: 540, memory: "512MiB", cors: false }, async (req, res) => {
+  const db = firestoreDb();
+  const started = Date.now();
+  const sourceId = String(req.get("x-sentinel-source") || req.query.source || "").trim();
+  const signature = req.get(WH_SIG_HEADER);
+  const timestamp = req.get(WH_TS_HEADER);
+  const rawBody = req.rawBody ? req.rawBody.toString("utf8") : "";
+  const method = (req.method || "GET").toUpperCase();
+  const fail = async (code, msg, act) => {
+    try { await db.collection("webhookInboundLog").add({ sourceId: sourceId || null, action: act || null, ok: false, status: code, error: msg, ts: FieldValue.serverTimestamp() }); } catch { /* best-effort */ }
+    res.status(code).json({ ok: false, error: msg });
+  };
+  try {
+    if (rawBody.length > 64 * 1024) return void (await fail(413, "Charge trop volumineuse (max 64 Ko)."));
+    if (!sourceId) return void (await fail(400, "Source manquante (en-tête x-sentinel-source)."));
+    const srcSnap = await db.doc(`webhookInboundSources/${sourceId}`).get();
+    if (!srcSnap.exists) return void (await fail(404, "Source inconnue."));
+    const src = srcSnap.data();
+    if (src.active === false) return void (await fail(403, "Source désactivée."));
+    const signedBody = method === "GET" ? "" : rawBody;
+    if (!whVerify({ body: signedBody, secret: src.secret, signature, timestamp })) {
+      return void (await fail(401, "Signature invalide ou expirée."));
+    }
+
+    let payload = {};
+    if (method !== "GET" && rawBody) {
+      try { payload = JSON.parse(rawBody); } catch { return void (await fail(400, "Corps JSON invalide.")); }
+    }
+    let act = String(req.get("x-sentinel-action") || req.query.action || payload.action || (method === "GET" ? "pull" : "")).trim();
+    if (!WH_INBOUND_ACTIONS.includes(act)) return void (await fail(400, `Action inconnue (${act || "—"}).`, act));
+    if (!(Array.isArray(src.actions) && src.actions.includes(act))) {
+      return void (await fail(403, `Action '${act}' non autorisée pour cette source.`, act));
+    }
+
+    let result;
+    if (act === "pull") {
+      const which = String(req.query.summary || payload.summary || "veille");
+      const allowed = { veille: "summaries/veille", veille_exec: "summaries/veille_exec", quanti: "summaries/quanti" };
+      const path = allowed[which] || allowed.veille;
+      const s = await db.doc(path).get();
+      result = { summary: allowed[which] ? which : "veille", data: s.exists ? s.data() : null };
+    } else if (act === "ingest") {
+      const item = payload.item || payload;
+      if (!item || (!item.title && !item.url)) return void (await fail(422, "item.title ou item.url requis.", act));
+      const classified = {
+        title: String(item.title || "").slice(0, 300),
+        url: item.url ? String(item.url) : "",
+        date: item.date || null,
+        axis: item.axis || "marche",
+        subtype: item.subtype || null,
+        summary: item.summary ? String(item.summary).slice(0, 2000) : "",
+        source: item.source || `webhook:${sourceId}`,
+        impact: item.impact || "moyen",
+        stance: item.stance || "neutre",
+        status: "new",
+      };
+      const r = await upsertClassifiedItem(db, classified, null);
+      result = { ingested: r.written, id: r.id };
+    } else if (act === "action") {
+      const a = payload.data || payload;
+      const doc = {
+        title: String(a.title || a.action || "Action (webhook)").slice(0, 300),
+        dueDate: a.dueDate || a.quand || null,
+        owner: a.owner || null,
+        status: a.status || "todo",
+        detail: a.detail ? String(a.detail).slice(0, 2000) : null,
+        source: `webhook:${sourceId}`,
+        createdBy: `webhook:${sourceId}`,
+        createdAt: FieldValue.serverTimestamp(),
+      };
+      const ref = await db.collection("actions").add(doc);
+      result = { actionId: ref.id };
+    } else if (act === "sync") {
+      const target = String(payload.target || req.query.target || "quanti");
+      if (target === "quanti") { await runInternalQuantiSync(db); result = { synced: "quanti" }; }
+      else if (target === "sources") { await runSyncSources(db); result = { synced: "sources" }; }
+      else return void (await fail(400, "target invalide (quanti|sources).", act));
+    }
+
+    await db.doc(`webhookInboundSources/${sourceId}`).set({ lastSeenAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
+    await db.collection("webhookInboundLog").add({ sourceId, action: act, ok: true, status: 200, ms: Date.now() - started, ts: FieldValue.serverTimestamp() });
+    res.status(200).json({ ok: true, action: act, result });
+  } catch (e) {
+    logger.error(`webhookInbound: ${e.message}`);
+    try { res.status(500).json({ ok: false, error: "Erreur interne." }); } catch { /* déjà envoyé */ }
+  }
 });
