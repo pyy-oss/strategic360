@@ -218,9 +218,11 @@ const SOURCES_SEED = [
   // fournit des avis avec URL + pays + échéance + référence par avis (contrairement aux portails
   // nationaux JS qui se scrapent mal). C'est là que se trouvent les gros AO ICT/infra financés en
   // CI/UEMOA. kind "wb-procnotices" → parseur dédié (domain/donorFeeds.js), provenance forcée.
-  { name: "Banque Mondiale — Avis d'AO Côte d'Ivoire (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v3/procnotices?format=json&rows=20&order=desc&srt=noticedate&countryname_exact=Cote%20d%27Ivoire", axis: "clients_prospects", active: true },
-  { name: "Banque Mondiale — Avis d'AO Sénégal (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v3/procnotices?format=json&rows=15&order=desc&srt=noticedate&countryname_exact=Senegal", axis: "clients_prospects", active: true },
-  { name: "Banque Mondiale — Avis d'AO Afrique de l'Ouest (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v3/procnotices?format=json&rows=20&order=desc&srt=noticedate&regionname_exact=Western%20and%20Central%20Africa", axis: "clients_prospects", active: true },
+  // Endpoint procnotices = API v2 (le v3 n'existe que pour les documents/wds — le v3 renvoyait 404,
+  // corrigé après validation live 2026-07). format=json + apilang=en.
+  { name: "Banque Mondiale — Avis d'AO Côte d'Ivoire (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=20&order=desc&srt=noticedate&countryname_exact=Cote%20d%27Ivoire", axis: "clients_prospects", active: true },
+  { name: "Banque Mondiale — Avis d'AO Sénégal (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Senegal", axis: "clients_prospects", active: true },
+  { name: "Banque Mondiale — Avis d'AO Afrique de l'Ouest (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=20&order=desc&srt=noticedate&regionname_exact=Western%20and%20Central%20Africa", axis: "clients_prospects", active: true },
   // (Doublon retiré — audit 2026-07 : marchespublics.sn est déjà couvert par « Sénégal — Marchés
   // publics (DCMP/SYGMAP) » en kind web-js plus haut. Deux entrées même URL = double fetch/IA.)
   { name: "Sénégal — Sika Finance / actu UEMOA", kind: "rss", url: "https://www.sikafinance.com/rss/actualites_bourse_brvm", axis: "clients_prospects", active: true },
@@ -280,6 +282,7 @@ async function seed() {
   const sourcesCol = db.collection("intelSources");
   let kindMigrated = 0;
   let reactivated = 0;
+  let urlFixed = 0;
   // Garde anti-doublon (audit 2026-07) : la dédup persistée se fait par NOM, donc deux entrées de
   // même URL mais nom différent créeraient deux sources fetchées/classées en double. On le signale
   // au seed pour l'attraper en revue plutôt qu'en prod.
@@ -303,13 +306,17 @@ async function seed() {
       if (!cur.sourceRating) patch.sourceRating = sourceRating;
       // Migration du `kind` défini au seed (ex. passage web → web-js pour les portails anti-bot/JS).
       if (entry.kind && cur.kind !== entry.kind) { patch.kind = entry.kind; kindMigrated += 1; }
+      // Correction d'URL (ex. endpoint API World Bank v3→v2) : le seed est la source de vérité de
+      // l'URL canonique — si elle change, on met à jour + on remet les compteurs de santé à zéro
+      // (l'ancienne URL avait pu accumuler des échecs/désactiver la source).
+      if (entry.url && cur.url !== entry.url) { patch.url = entry.url; patch.consecutiveFailures = 0; patch.consecutiveEmpty = 0; if (cur.active === false && entry.active) patch.active = true; urlFixed += 1; }
       // Réactive une source que l'auto-curation a désactivée mais que le seed veut active : on lui
       // redonne sa chance avec le nouveau moteur (fetch durci / rendu headless) et un compteur remis à 0.
       if (entry.active && cur.active === false) { patch.active = true; patch.consecutiveFailures = 0; patch.consecutiveEmpty = 0; reactivated += 1; }
       if (Object.keys(patch).length) await doc.ref.update(patch);
     }
   }
-  console.log(`Seeded intelSources (${SOURCES_SEED.length} entries; ${kindMigrated} kind migré(s) web→web-js, ${reactivated} réactivée(s)).`);
+  console.log(`Seeded intelSources (${SOURCES_SEED.length} entries; ${kindMigrated} kind migré(s) web→web-js, ${reactivated} réactivée(s), ${urlFixed} URL corrigée(s)).`);
 
   // Contexte entreprise DYNAMIQUE (frameworks/companyContext) — seedé depuis le fichier statique
   // uniquement s'il n'existe pas encore. updatedBy "ai:seed" (préfixe "ai:") laisse
