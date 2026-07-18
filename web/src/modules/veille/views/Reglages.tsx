@@ -5,6 +5,7 @@ import { useToast } from "../../../design/overlay";
 import { LENS } from "../data";
 import { DEFAULT_LENS_AXIS_BOOST, type LensWeights } from "../lib/ranking";
 import { useLensWeights, mergeWeights, setLensWeights } from "../lib/lensWeights";
+import { useClientTenderMonitors, setClientTenderMonitors } from "../lib/clientTenderMonitors";
 import type { IntelAxis } from "../lib/intel";
 import {
   usePermissions,
@@ -118,6 +119,68 @@ function LensWeightsEditor() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** Surveillance active des appels d'offres de nos clients (config/clientTenderMonitors, exec). */
+function ClientTenderMonitorsEditor() {
+  const { config, loading } = useClientTenderMonitors();
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+  const [includeText, setIncludeText] = useState<string | null>(null);
+  const [excludeText, setExcludeText] = useState<string | null>(null);
+
+  const include = includeText ?? config.include.join("\n");
+  const exclude = excludeText ?? config.exclude.join("\n");
+  const toList = (s: string) => s.split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
+
+  const save = async (patch: Parameters<typeof setClientTenderMonitors>[0]) => {
+    setSaving(true);
+    try { await setClientTenderMonitors(patch); toast.success("Surveillance AO clients enregistrée — appliquée à la prochaine synchro."); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Échec de l'enregistrement."); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Card style={{ marginTop: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <Eyebrow color={T.emerald}>Surveillance des appels d'offres de nos clients</Eyebrow>
+        <button className={config.enabled ? "pill on" : "pill"} disabled={saving || loading} onClick={() => void save({ enabled: !config.enabled })} style={{ fontSize: 11, padding: "3px 12px" }}>
+          {config.enabled ? "Activée" : "Désactivée"}
+        </button>
+      </div>
+      <div style={{ fontSize: 12, color: T.dim, marginTop: 6 }}>
+        Cherche activement les AO émis par vos comptes prioritaires (recherche par nom) et les remonte dans <b>Appels d'offres</b> avec le badge « client connu ». Appliqué à la synchro quotidienne.
+      </div>
+      {loading ? (
+        <div style={{ fontSize: 12.5, color: T.dim, marginTop: 10 }}>Chargement…</div>
+      ) : (
+        <div style={{ opacity: config.enabled ? 1 : 0.5, marginTop: 12, display: "grid", gap: 12 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, color: T.ink }}>
+            <input type="checkbox" checked={config.auto} disabled={saving || !config.enabled} onChange={(e) => void save({ auto: e.target.checked })} />
+            Sélection automatique des <b>top clients</b> par valeur (CAS / tier nt360)
+            <input type="number" min={0} max={60} value={config.max} disabled={saving || !config.enabled || !config.auto}
+              onChange={(e) => void save({ max: Math.min(60, Math.max(0, Number(e.target.value) || 0)) })}
+              style={{ width: 56, textAlign: "center", padding: "3px 4px", borderRadius: 6, border: `1px solid ${T.line}`, background: T.panel2, color: T.ink, fontSize: 12 }} />
+            comptes
+          </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 11, color: T.faint, marginBottom: 4, textTransform: "uppercase", letterSpacing: ".08em" }}>Toujours surveiller (1 par ligne)</div>
+              <textarea value={include} disabled={saving || !config.enabled} rows={4} placeholder="Ex. SNDI&#10;Groupe BSIC"
+                onChange={(e) => setIncludeText(e.target.value)} onBlur={() => { if (includeText !== null) { void save({ include: toList(includeText) }); setIncludeText(null); } }}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: `1px solid ${T.line}`, background: T.panel2, color: T.ink, fontSize: 12.5, resize: "vertical" }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: T.faint, marginBottom: 4, textTransform: "uppercase", letterSpacing: ".08em" }}>Ne jamais surveiller</div>
+              <textarea value={exclude} disabled={saving || !config.enabled} rows={4} placeholder="Ex. Client sensible"
+                onChange={(e) => setExcludeText(e.target.value)} onBlur={() => { if (excludeText !== null) { void save({ exclude: toList(excludeText) }); setExcludeText(null); } }}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: `1px solid ${T.line}`, background: T.panel2, color: T.ink, fontSize: 12.5, resize: "vertical" }} />
+            </div>
+          </div>
         </div>
       )}
     </Card>
@@ -242,6 +305,7 @@ export function Reglages() {
       </div>
     </Card>
     <LensWeightsEditor />
+    <ClientTenderMonitorsEditor />
     </>
   );
 }

@@ -41,6 +41,7 @@ const {
 } = require("./domain/onboarding");
 const { buildEvaluatePrompt, parseEvaluateResponse } = require("./domain/evaluate");
 const { planWatchlistMonitors, MONITOR_SOURCE_TAG } = require("./domain/watchlistMonitor");
+const { planClientTenderMonitors, CLIENT_AO_MONITOR_TAG } = require("./domain/clientTenderMonitor");
 const { pickRelevant } = require("./domain/retrieve");
 const { selectDigestSignals, buildDigestPayload, hasDigestContent, DEFAULT_MIN_SCORE } = require("./domain/digest");
 const { buildBriefingPrompt, buildBriefingCritiquePrompt, parseBriefingResponse } = require("./domain/briefing");
@@ -1227,6 +1228,53 @@ async function ensureWatchlistMonitorSources(db) {
   }
 }
 
+/**
+ * ensureClientTenderMonitors(db) — SURVEILLANCE ACTIVE des APPELS D'OFFRES de nos CLIENTS (2026-07) :
+ * met en phase des sources RSS de recherche Google News scopées « appels d'offres » pour les comptes
+ * PRIORITAIRES du Copilote (sélection auto par valeur/tier + liste ajustable dans config/clientTenderMonitors).
+ * Même patron que ensureWatchlistMonitorSources : ids déterministes `clientao-<slug>`, upsert en merge,
+ * désactivation (jamais suppression). Best-effort : une erreur ici ne casse pas la synchro.
+ */
+async function ensureClientTenderMonitors(db) {
+  try {
+    const [accSnap, monSnap, cfgSnap] = await Promise.all([
+      db.collection("copiloteAccounts").get(),
+      db.collection("intelSources").where("source", "==", CLIENT_AO_MONITOR_TAG).get(),
+      db.doc("config/clientTenderMonitors").get(),
+    ]);
+    const accounts = accSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const config = cfgSnap.exists ? (cfgSnap.data() || {}) : {};
+    if (config.enabled === false) {
+      // Désactivé par le DG : on éteint toutes les sources générées (sans les supprimer).
+      const off = monSnap.docs.filter((d) => (d.data() || {}).active !== false);
+      if (off.length) {
+        const b = db.batch();
+        for (const d of off) b.set(d.ref, { active: false }, { merge: true });
+        await b.commit();
+      }
+      return;
+    }
+    const existingById = {};
+    for (const d of monSnap.docs) {
+      const x = d.data() || {};
+      existingById[d.id] = { active: x.active, consecutiveFailures: x.consecutiveFailures, url: x.url, name: x.name };
+    }
+    const { upserts, deactivateIds } = planClientTenderMonitors(accounts, config, existingById, { failureThreshold: MAX_CONSECUTIVE_FAILURES });
+    if (!upserts.length && !deactivateIds.length) return;
+    const batch = db.batch();
+    for (const s of upserts) {
+      const set = { name: s.name, url: s.url, kind: s.kind, axis: s.axis || null, source: CLIENT_AO_MONITOR_TAG, clientAccount: s.clientAccount };
+      if (s.activate) set.active = true;
+      batch.set(db.doc(`intelSources/${s.id}`), set, { merge: true });
+    }
+    for (const id of deactivateIds) batch.set(db.doc(`intelSources/${id}`), { active: false }, { merge: true });
+    await batch.commit();
+    logger.info(`ensureClientTenderMonitors: ${upserts.length} source(s) AO client en phase, ${deactivateIds.length} désactivée(s).`);
+  } catch (err) {
+    logger.warn(`ensureClientTenderMonitors: échec (non bloquant) — ${err.message}`);
+  }
+}
+
 async function runSyncSources(db) {
   const statusRef = db.doc("summaries/syncStatus");
   const writeSyncStatus = (patch) => statusRef.set(patch, { merge: true }).catch(() => {});
@@ -1261,6 +1309,9 @@ async function runSyncSources(db) {
   // Verrou tenu : on peut engager les opérations coûteuses. Génère/met à jour les sources de
   // surveillance des entités watchlist AVANT de charger la liste, pour qu'elles soient crawlées dès ce run.
   await ensureWatchlistMonitorSources(db);
+  // Surveillance active des AO de nos clients prioritaires (générée AVANT le chargement des sources
+  // pour être crawlée dès ce run). Best-effort.
+  await ensureClientTenderMonitors(db);
 
   const [sourcesSnap, watchlistSnap] = await Promise.all([
     db.collection("intelSources").where("active", "==", true).get(),
@@ -3082,6 +3133,36 @@ exports.setPipelineConfig = onCall(CALLABLE_OPTS, async (request) => {
   patch.updatedAt = FieldValue.serverTimestamp();
   await firestoreDb().doc("config/runtime").set(patch, { merge: true });
   logger.info(`setPipelineConfig: caller=${request.auth.uid} patch=${JSON.stringify({ paused: patch.paused, intervals: patch.intervals })}`);
+  return { ok: true };
+});
+
+/**
+ * setClientTenderMonitors — callable exec : règle la surveillance active des AO de nos clients
+ * (config/clientTenderMonitors). `enabled` (on/off), `auto` (sélection auto par valeur), `max`
+ * (nombre de comptes auto), `include`/`exclude` (ajustement manuel par nom). Les sources générées
+ * sont (dé)posées au prochain run de synchro (ensureClientTenderMonitors). Grain module « copilote ».
+ */
+exports.setClientTenderMonitors = onCall(CALLABLE_OPTS, async (request) => {
+  requireExecCaller(request, "régler la surveillance des appels d'offres clients");
+  const d = request.data || {};
+  const patch = {};
+  if (typeof d.enabled === "boolean") patch.enabled = d.enabled;
+  if (typeof d.auto === "boolean") patch.auto = d.auto;
+  if (d.max !== undefined) {
+    const n = Number(d.max);
+    if (!Number.isFinite(n) || n < 0 || n > 60) throw new HttpsError("invalid-argument", "max doit être un entier entre 0 et 60.");
+    patch.max = Math.floor(n);
+  }
+  const cleanNames = (v) => Array.isArray(v)
+    ? [...new Set(v.map((x) => String(x || "").trim()).filter(Boolean))].slice(0, 100)
+    : undefined;
+  if (d.include !== undefined) patch.include = cleanNames(d.include) || [];
+  if (d.exclude !== undefined) patch.exclude = cleanNames(d.exclude) || [];
+  if (!Object.keys(patch).length) throw new HttpsError("invalid-argument", "Rien à régler (enabled/auto/max/include/exclude).");
+  patch.updatedBy = request.auth.uid;
+  patch.updatedAt = FieldValue.serverTimestamp();
+  await firestoreDb().doc("config/clientTenderMonitors").set(patch, { merge: true });
+  logger.info(`setClientTenderMonitors: caller=${request.auth.uid} patch=${JSON.stringify({ enabled: patch.enabled, auto: patch.auto, max: patch.max, include: patch.include?.length, exclude: patch.exclude?.length })}`);
   return { ok: true };
 });
 
