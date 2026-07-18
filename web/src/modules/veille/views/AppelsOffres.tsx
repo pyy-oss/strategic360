@@ -19,6 +19,16 @@ import { useCopiloteAccounts, type CopiloteAccount } from "../lib/copilote";
  */
 
 const AO_SUBTYPES = new Set(["tender", "funding", "budget"]);
+// Détection AO RÉSILIENTE (fix 2026-07) : les portails de marchés publics produisent des intitulés
+// courts que le classifieur ne tague pas toujours en subtype "tender" — la vue restait alors vide
+// alors que des AO existaient dans le Fil. On reconnaît donc un AO par le subtype, OU une référence
+// de portail extraite, OU un vocabulaire d'appel d'offres/financement dans le titre/résumé.
+const AO_KEYWORDS = /appel\s?s?\s?(?:d['’ ]?)?offres?|avis\s?(?:d['’ ]?)?appel|dossier\s?(?:d['’ ]?)?appel|march[ée]s?\s+publics?|manifestation\s?(?:d['’ ]?)?int[ée]r|sollicitation\s+de\s+prix|demande\s+de\s+propositions?|appel\s+à\s+(?:candidat|projet|manifestation)|attribution\s+d[eu]\s+march[ée]|\bA\.?O\.?\b|\bRFP\b|\bRFQ\b|\bDAO\b|financement|subvention|\bgrant\b|bailleur/i;
+function isAoItem(s: IntelItem): boolean {
+  if (AO_SUBTYPES.has(s.subtype ?? "")) return true;
+  if (s.businessAngle?.tenderRef) return true;
+  return AO_KEYWORDS.test(`${s.title || ""} ${s.summary || ""}`);
+}
 const PROX_ORDER: Record<string, number> = { imminent: 0, court: 1, moyen: 2, horizon: 3 };
 const PROX_COLOR: Record<string, string> = { imminent: T.clay, court: T.gold, moyen: T.steel, horizon: T.faint };
 
@@ -102,7 +112,7 @@ export function AppelsOffres() {
   const norm = (v: string) => v.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 
   const aoItems = useMemo(
-    () => items.filter((s) => AO_SUBTYPES.has(s.subtype ?? "") && PUBLISHED_STATUSES.has(s.status)),
+    () => items.filter((s) => isAoItem(s) && PUBLISHED_STATUSES.has(s.status)),
     [items]
   );
   // Corrélation AO ↔ compte nt360 (levier 5) : rapproche l'acheteur d'un compte connu du pipeline.
@@ -157,7 +167,7 @@ export function AppelsOffres() {
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <Eyebrow color={T.gold}>Détection Appels d'offres — opportunités marché (AO · financements · budgets)</Eyebrow>
+        <Eyebrow color={T.gold}>Appels d'offres &amp; financements</Eyebrow>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {isExec && (
             <button className="pill" disabled={enriching} onClick={() => void enrich()} title="Va lire la page officielle des AO pour compléter montant / échéance" style={{ fontSize: 11, padding: "3px 10px" }}>
@@ -209,8 +219,10 @@ export function AppelsOffres() {
           <tbody>
             {paged.pageItems.map((it) => <AoRow key={it.id} it={it} account={matchAccount(it)} />)}
             {!loading && !error && !rows.length && (
-              <tr><td colSpan={6} style={{ padding: 14, color: T.dim, fontSize: 12.5 }}>
-                Aucun appel d'offres détecté pour ces filtres. Les AO proviennent des portails branchés (marchés publics, UEMOA, bailleurs) via la synchro de veille — élargissez les sources dans Détection ou relancez une synchro.
+              <tr><td colSpan={6} style={{ padding: "18px 14px", color: T.dim, fontSize: 12.5 }}>
+                {aoItems.length
+                  ? <>Aucun AO ne correspond à ces filtres. <button className="pill" onClick={() => { setWithAmount(false); setWithDeadline(false); setProxFilter("all"); setZone("all"); setQ(""); }} style={{ fontSize: 11, padding: "2px 9px" }}>Réinitialiser les filtres</button></>
+                  : <>Pas encore d'appel d'offres capté.{isExec ? <> Lancez une synchro (Radar de détection) puis <button className="pill" disabled={enriching} onClick={() => void enrich()} style={{ fontSize: 11, padding: "2px 9px" }}>{enriching ? "Enrichissement…" : "Enrichir les AO"}</button> pour compléter montant &amp; échéance.</> : " Ils apparaîtront après la prochaine synchro des portails de marchés publics."}</>}
               </td></tr>
             )}
             {loading && !items.length && <tr><td colSpan={6} style={{ padding: 14, color: T.dim, fontSize: 12.5 }}>Chargement…</td></tr>}
