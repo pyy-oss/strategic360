@@ -46,6 +46,7 @@ const { selectDigestSignals, buildDigestPayload, hasDigestContent, DEFAULT_MIN_S
 const { buildBriefingPrompt, buildBriefingCritiquePrompt, parseBriefingResponse } = require("./domain/briefing");
 const { buildBriefingPdf } = require("./domain/pdf");
 const { generateJson, DEFAULT_MODEL } = require("./domain/vertex");
+const { TENDER_ENRICH_SUBTYPES, buildTenderEnrichPrompt, parseTenderEnrichResponse, mergeBusinessAngle, isoDeadline } = require("./domain/tenderEnrich");
 const { AGENTS: COPILOTE_AGENTS, buildChatPrompt, parseChatResponse } = require("./domain/copilote");
 const { DEFAULT_BACKFILL_DAYS, dayRangeUTC, computeKpiBackfillPoints, mergeHistoryPoints } = require("./domain/kpiBackfill");
 const PDFDocument = require("pdfkit");
@@ -4440,6 +4441,56 @@ exports.setLensWeights = onCall(CALLABLE_OPTS, async (request) => {
   });
   logger.info(`setLensWeights: caller=${request.auth.uid} lenses=${Object.keys(clean).join(",")}`);
   return { ok: true, lenses: Object.keys(clean) };
+});
+
+/**
+ * enrichTendersNow — callable exec-gated (levier 4) : enrichit les APPELS D'OFFRES en allant lire la
+ * PAGE OFFICIELLE (au-delà de l'extrait RSS). Pour les signaux subtype tender/funding/budget publiés,
+ * avec URL, à qui il manque le montant OU l'échéance : fetch (garde SSRF) → texte → extraction Vertex
+ * → fusion dans businessAngle SANS écraser l'existant. Borné à MAX_TENDER_ENRICH par appel (coût IA).
+ * Une échéance datée alimente dueDate (proximité). Best-effort par item (un échec n'arrête pas le lot).
+ */
+const MAX_TENDER_ENRICH = Number(process.env.MAX_TENDER_ENRICH) || 8;
+exports.enrichTendersNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  requireExecCaller(request, "enrichir les appels d'offres");
+  const db = firestoreDb();
+  const snap = await db.collection("intelItems").where("subtype", "in", TENDER_ENRICH_SUBTYPES).get();
+  const candidates = [];
+  snap.forEach((d) => {
+    const it = { id: d.id, ...d.data() };
+    const ba = it.businessAngle || {};
+    if (PUBLISHED_STATUSES.has(it.status) && it.url && (!ba.estAmount || !ba.deadline)) candidates.push(it);
+  });
+  candidates.sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
+  const batch = candidates.slice(0, MAX_TENDER_ENRICH);
+  let fetched = 0;
+  let enriched = 0;
+  await runInBatches(batch, 3, async (it) => {
+    let html;
+    try { html = await fetchSource(it.url); } catch (e) { logger.warn(`enrichTendersNow: fetch ${it.id} échoué (${e.message})`); return; }
+    fetched += 1;
+    const text = extractWebText(html, 6000);
+    let raw;
+    try {
+      raw = await vertexLimit(() => generateJson(buildTenderEnrichPrompt(it.title, text), {
+        temperature: 0,
+        model: process.env.GEMINI_MODEL_EXTRACTION || undefined,
+      }));
+    } catch (e) { logger.warn(`enrichTendersNow: IA ${it.id} échouée (${e.message})`); return; }
+    const ext = parseTenderEnrichResponse(raw);
+    const mergedBA = mergeBusinessAngle(it.businessAngle, ext);
+    const patch = { businessAngle: mergedBA };
+    if (ext.budgetIdentified && !it.budgetIdentified) patch.budgetIdentified = true;
+    const iso = isoDeadline(mergedBA.deadline);
+    if (iso && !it.dueDate) patch.dueDate = iso;
+    const baChanged = JSON.stringify(mergedBA) !== JSON.stringify(it.businessAngle || {});
+    if (baChanged || patch.dueDate || patch.budgetIdentified) {
+      await db.doc(`intelItems/${it.id}`).set({ ...patch, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      enriched += 1;
+    }
+  });
+  logger.info(`enrichTendersNow: candidats=${candidates.length} traités=${batch.length} fetch=${fetched} enrichis=${enriched}`);
+  return { candidates: candidates.length, processed: batch.length, fetched, enriched };
 });
 
 /* ============================================================================================= *

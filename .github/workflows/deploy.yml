@@ -121,7 +121,7 @@ jobs:
       - name: Ensure public invoker on all callables (idempotent)
         continue-on-error: true
         run: |
-          for svc in applyonboardingdraft backfillkpihistory classifyai copiloteadmin copilotechat copilotegenerate dedupeintelitemsnow enrichnow evaluateintelitemsnow exportpdf generatebriefing listcopiloteaccounts onboardcompany setpermissionsmatrix setpipelineconfig setuserrole synccopiloteaccountsnow syncinternalquantinow syncsourcesnow useradmin webhookadmin webhookinbound setlensweights; do
+          for svc in applyonboardingdraft backfillkpihistory classifyai copiloteadmin copilotechat copilotegenerate dedupeintelitemsnow enrichnow evaluateintelitemsnow exportpdf generatebriefing listcopiloteaccounts onboardcompany setpermissionsmatrix setpipelineconfig setuserrole synccopiloteaccountsnow syncinternalquantinow syncsourcesnow useradmin webhookadmin webhookinbound setlensweights enrichtendersnow; do
             gcloud run services add-iam-policy-binding "$svc" \
               --region=europe-west1 \
               --project=sentinel-360 \
