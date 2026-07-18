@@ -15,6 +15,18 @@
     <style>
       html, body, #root { height: 100%; margin: 0; }
       body { background: #0E1613; }
+      /* Jamais de défilement horizontal parasite (mobile) — un tableau/graphe large scrolle DANS
+         son propre conteneur, pas la page entière. */
+      html, body { max-width: 100%; overflow-x: hidden; }
+      /* Accessibilité mobile (audit 2026-07) : sur les écrans tactiles, iOS Safari zoome
+         automatiquement au focus d'un champ dont la police fait moins de 16px. Nos champs sont en
+         12.5px (densité desktop) → on force 16px sur pointeur grossier UNIQUEMENT, ce qui supprime
+         le zoom involontaire tout en gardant la densité sur desktop. `touch-action: manipulation`
+         supprime le délai de 300 ms au tap et le double-tap-zoom sur les contrôles. */
+      @media (pointer: coarse) {
+        input, textarea, select { font-size: 16px !important; }
+        button, a, [role="switch"], [role="option"], [role="button"], label { touch-action: manipulation; }
+      }
     </style>
   </head>
   <body>

@@ -214,7 +214,8 @@ const SOURCES_SEED = [
   // Couverture régionale réelle (M11 audit) : filiale Burkina, expansion Sénégal/UEMOA.
   { name: "Direction Générale des Marchés Publics — Burkina Faso", kind: "web", url: "https://www.dgmp.gov.bf/", axis: "clients_prospects", active: true },
   { name: "ARCEP Burkina Faso — actualités", kind: "web", url: "https://www.arcep.bf/actualites/", axis: "reglementaire", active: true },
-  { name: "DGMP Sénégal — marchés publics (marchespublics.sn)", kind: "web", url: "https://www.marchespublics.sn/", axis: "clients_prospects", active: true },
+  // (Doublon retiré — audit 2026-07 : marchespublics.sn est déjà couvert par « Sénégal — Marchés
+  // publics (DCMP/SYGMAP) » en kind web-js plus haut. Deux entrées même URL = double fetch/IA.)
   { name: "Sénégal — Sika Finance / actu UEMOA", kind: "rss", url: "https://www.sikafinance.com/rss/actualites_bourse_brvm", axis: "clients_prospects", active: true },
   // Menace de désintermédiation par les hyperscalers (M11 audit) : implantations directes en zone.
   { name: "AWS — What's New / Africa (RSS)", kind: "rss", url: "https://aws.amazon.com/about-aws/whats-new/recent/feed/", axis: "concurrents", active: true },
@@ -272,6 +273,16 @@ async function seed() {
   const sourcesCol = db.collection("intelSources");
   let kindMigrated = 0;
   let reactivated = 0;
+  // Garde anti-doublon (audit 2026-07) : la dédup persistée se fait par NOM, donc deux entrées de
+  // même URL mais nom différent créeraient deux sources fetchées/classées en double. On le signale
+  // au seed pour l'attraper en revue plutôt qu'en prod.
+  const seenUrls = new Map();
+  for (const s of SOURCES_SEED) {
+    const u = String(s.url || "").trim().replace(/\/+$/, "").toLowerCase();
+    if (!u) continue;
+    if (seenUrls.has(u)) console.warn(`⚠︎ SOURCES_SEED : URL en double (${s.url}) — « ${seenUrls.get(u)} » et « ${s.name} ». Fusionnez-les.`);
+    else seenUrls.set(u, s.name);
+  }
   for (const entry of SOURCES_SEED) {
     const existing = await sourcesCol.where("name", "==", entry.name).limit(1).get();
     const sourceRating = entry.sourceRating || ratingForSource(entry);
@@ -287,7 +298,7 @@ async function seed() {
       if (entry.kind && cur.kind !== entry.kind) { patch.kind = entry.kind; kindMigrated += 1; }
       // Réactive une source que l'auto-curation a désactivée mais que le seed veut active : on lui
       // redonne sa chance avec le nouveau moteur (fetch durci / rendu headless) et un compteur remis à 0.
-      if (entry.active && cur.active === false) { patch.active = true; patch.consecutiveFailures = 0; reactivated += 1; }
+      if (entry.active && cur.active === false) { patch.active = true; patch.consecutiveFailures = 0; patch.consecutiveEmpty = 0; reactivated += 1; }
       if (Object.keys(patch).length) await doc.ref.update(patch);
     }
   }

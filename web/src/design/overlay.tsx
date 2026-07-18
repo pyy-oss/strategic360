@@ -159,3 +159,78 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 export function useToast(): ToastApi {
   return useContext(ToastCtx) ?? { success: () => {}, error: () => {}, info: () => {} };
 }
+
+/* --------------------------------------- Confirm --------------------------------------- */
+
+/**
+ * Confirmation premium basée sur `Modal` (audit UX 2026-07) — remplace `window.confirm`, qui est
+ * bloquant, non stylé, incohérent avec le thème et parfois bridé sur mobile/PWA. API promise :
+ * `const ok = await confirm({ title, message, danger })`. Repli no-op → `false` (jamais d'action
+ * destructrice sans provider).
+ */
+interface ConfirmOptions {
+  title?: React.ReactNode;
+  message: React.ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+}
+type ConfirmFn = (opts: ConfirmOptions) => Promise<boolean>;
+const ConfirmCtx = createContext<ConfirmFn | null>(null);
+
+export function ConfirmProvider({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<ConfirmOptions | null>(null);
+  const resolver = useRef<((v: boolean) => void) | null>(null);
+
+  const confirm = useCallback<ConfirmFn>((opts) => {
+    setState(opts);
+    return new Promise<boolean>((resolve) => { resolver.current = resolve; });
+  }, []);
+
+  const settle = useCallback((v: boolean) => {
+    resolver.current?.(v);
+    resolver.current = null;
+    setState(null);
+  }, []);
+
+  const danger = !!state?.danger;
+  return (
+    <ConfirmCtx.Provider value={confirm}>
+      {children}
+      <Modal
+        open={state != null}
+        onClose={() => settle(false)}
+        title={state?.title ?? "Confirmer"}
+        width={440}
+        footer={
+          <>
+            <button type="button" className="pill" onClick={() => settle(false)}>{state?.cancelLabel ?? "Annuler"}</button>
+            <button
+              type="button"
+              onClick={() => settle(true)}
+              style={{
+                border: "none",
+                borderRadius: 8,
+                padding: "7px 14px",
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: "pointer",
+                color: "#0E1613",
+                background: danger ? T.clay : T.gold,
+              }}
+            >
+              {state?.confirmLabel ?? (danger ? "Supprimer" : "Confirmer")}
+            </button>
+          </>
+        }
+      >
+        <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.5 }}>{state?.message}</div>
+      </Modal>
+    </ConfirmCtx.Provider>
+  );
+}
+
+/** Accès à la confirmation premium. Hors provider : renvoie toujours `false` (sécurité par défaut). */
+export function useConfirm(): ConfirmFn {
+  return useContext(ConfirmCtx) ?? (async () => false);
+}

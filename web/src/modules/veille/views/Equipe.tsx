@@ -23,7 +23,7 @@ function CoverageCell({ owner, pipeline, target }: { owner: string; pipeline: nu
       <div style={{ fontSize: 11, color: T.dim, marginBottom: 4, fontWeight: 600 }}>Couverture vs objectif</div>
       {editing ? (
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-          <input value={val} onChange={(e) => setVal(e.target.value.replace(/[^\d]/g, ""))} placeholder="objectif XOF"
+          <input value={val} onChange={(e) => setVal(e.target.value.replace(/[^\d]/g, ""))} placeholder="objectif FCFA"
             style={{ width: 120, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 6, color: T.ink, fontSize: 12, padding: "4px 7px" }} />
           <button className="pill on" onClick={() => void save()} style={{ fontSize: 11, padding: "3px 8px" }}>OK</button>
         </div>

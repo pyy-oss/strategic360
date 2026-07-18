@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { T } from "../../../design/tokens";
 import { Eyebrow, Card } from "../../../design/ui";
-import { useToast } from "../../../design/overlay";
+import { useToast, useConfirm } from "../../../design/overlay";
 import { ROLES, ROLE_LABEL, type Role } from "../../../lib/rbac";
 import {
   OUTBOUND_EVENTS, INBOUND_ACTIONS, EVENT_LABEL, ACTION_LABEL,
@@ -61,6 +61,7 @@ function Toggle<T extends string>({ all, selected, label, onToggle }: { all: rea
 // ------------------------------------------------------------------ Utilisateurs
 function UsersTab() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [users, setUsers] = useState<AppUser[] | null>(null);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("lecture");
@@ -84,7 +85,7 @@ function UsersTab() {
     catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); }
   };
   const revoke = async (u: AppUser) => {
-    if (!confirm(`Révoquer l'accès de ${u.email} ? (le compte Firebase reste, seul le rôle de l'app est retiré)`)) return;
+    if (!(await confirm({ title: "Révoquer l'accès", danger: true, confirmLabel: "Révoquer", message: `Révoquer l'accès de ${u.email} ? Le compte Firebase reste, seul le rôle de l'app est retiré.` }))) return;
     try { await revokeUser(u.uid); toast.success("Accès révoqué."); await reload(); }
     catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); }
   };
@@ -134,6 +135,7 @@ function UsersTab() {
 // ------------------------------------------------------------------ Webhooks sortants
 function OutboundTab() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[] | null>(null);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [label, setLabel] = useState("");
@@ -165,7 +167,7 @@ function OutboundTab() {
     catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); }
   };
   const remove = async (ep: WebhookEndpoint) => {
-    if (!confirm(`Supprimer l'endpoint ${ep.label || ep.url} ?`)) return;
+    if (!(await confirm({ title: "Supprimer l'endpoint", danger: true, message: `Supprimer l'endpoint ${ep.label || ep.url} ? Les événements ne lui seront plus livrés.` }))) return;
     try { await deleteEndpoint(ep.id); toast.success("Supprimé."); await reload(); }
     catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); }
   };
@@ -228,6 +230,7 @@ function OutboundTab() {
 // ------------------------------------------------------------------ Webhooks entrants
 function InboundTab() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [sources, setSources] = useState<InboundSource[] | null>(null);
   const [log, setLog] = useState<InboundLogEntry[]>([]);
   const [label, setLabel] = useState("");
@@ -258,7 +261,7 @@ function InboundTab() {
     catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); }
   };
   const remove = async (s: InboundSource) => {
-    if (!confirm(`Supprimer la source ${s.label} ?`)) return;
+    if (!(await confirm({ title: "Supprimer la source", danger: true, message: `Supprimer la source ${s.label} ? Ses requêtes entrantes seront rejetées.` }))) return;
     try { await deleteInboundSource(s.id); toast.success("Supprimée."); await reload(); }
     catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); }
   };

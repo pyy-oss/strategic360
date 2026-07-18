@@ -52,16 +52,16 @@ export function Valeur() {
     <div>
       <div className="g3" style={{ display: "grid", gridTemplateColumns: hasThreat ? "repeat(3,1fr)" : "1fr", gap: 14, marginBottom: 14 }}>
         <Card>
-          <Kpi label="Valeur attendue — opportunités" value={liveVas ? <>{fmt(evOpp)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></> : "—"} accent={T.emerald} sub="Σ (proba × impact)" />
+          <Kpi label="Valeur attendue — opportunités" value={liveVas ? <>{fmt(evOpp)} <span style={{ fontSize: 13, color: T.dim }}>FCFA</span></> : "—"} accent={T.emerald} sub="Σ (proba × impact)" />
         </Card>
         {hasThreat && (
           <Card>
-            <Kpi label="Valeur à risque — menaces" value={<>{fmt(evThreat)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></>} accent={T.clay} sub="Σ (proba × impact)" />
+            <Kpi label="Valeur à risque — menaces" value={<>{fmt(evThreat)} <span style={{ fontSize: 13, color: T.dim }}>FCFA</span></>} accent={T.clay} sub="Σ (proba × impact)" />
           </Card>
         )}
         {hasThreat && (
           <Card>
-            <Kpi label="Valeur nette en jeu" value={<>{fmt(evOpp + evThreat)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></>} accent={T.gold} sub="valeur nette en jeu" />
+            <Kpi label="Valeur nette en jeu" value={<>{fmt(evOpp + evThreat)} <span style={{ fontSize: 13, color: T.dim }}>FCFA</span></>} accent={T.gold} sub="valeur nette en jeu" />
           </Card>
         )}
       </div>
@@ -74,7 +74,7 @@ export function Valeur() {
                 {i > 0 && <div style={{ alignSelf: "center", color: T.faint, fontSize: 16 }}>→</div>}
                 <div style={{ flex: 1, minWidth: 130, background: T.panel2, borderRadius: 9, padding: "10px 12px", borderTop: `2px solid ${s.accent}` }}>
                   <div style={{ fontSize: 10.5, color: T.faint }}>{s.label}</div>
-                  <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 18, fontWeight: 700, color: s.accent, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{fmt(s.value)} <span style={{ fontSize: 11, color: T.dim }}>XOF</span></div>
+                  <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 18, fontWeight: 700, color: s.accent, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{fmt(s.value)} <span style={{ fontSize: 11, color: T.dim }}>FCFA</span></div>
                   {s.sub && <div style={{ fontSize: 10.5, color: T.dim, marginTop: 2 }}>{s.sub}</div>}
                 </div>
               </React.Fragment>

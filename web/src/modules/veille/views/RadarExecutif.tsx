@@ -72,7 +72,7 @@ function VeilleAttributionPanel() {
     <div style={{ flex: 1, minWidth: 120, background: T.panel2, borderRadius: 9, padding: "9px 11px", borderTop: `2px solid ${color}` }}>
       <div style={{ fontSize: 10.5, color: T.faint }}>{label}</div>
       <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 20, fontWeight: 700, color, marginTop: 2 }}>{n}</div>
-      {xof != null ? <div style={{ fontSize: 10.5, color: T.dim, fontVariantNumeric: "tabular-nums" }}>{fmt(xof)} XOF</div> : null}
+      {xof != null ? <div style={{ fontSize: 10.5, color: T.dim, fontVariantNumeric: "tabular-nums" }}>{fmt(xof)} FCFA</div> : null}
     </div>
   );
 
@@ -83,8 +83,8 @@ function VeilleAttributionPanel() {
         <button className="pill" onClick={() => navigate("/veille/plan")} title="Voir les opportunités">Voir le pipeline →</button>
       </div>
       <div style={{ fontSize: 12, color: T.dim, marginTop: 6, lineHeight: 1.5 }}>
-        Pipeline OUVERT attribuable à la boucle veille → action : <b style={{ color: T.emerald }}>{fmt(a.pipelineXof)} XOF</b> sur {a.attribuables} opportunité{a.attribuables > 1 ? "s" : ""}
-        {a.declenchees > 0 ? <> — dont <b style={{ color: T.gold }}>{fmt(a.declencheesXof)} XOF</b> déclenchés par un événement de veille</> : null}.
+        Pipeline OUVERT attribuable à la boucle veille → action : <b style={{ color: T.emerald }}>{fmt(a.pipelineXof)} FCFA</b> sur {a.attribuables} opportunité{a.attribuables > 1 ? "s" : ""}
+        {a.declenchees > 0 ? <> — dont <b style={{ color: T.gold }}>{fmt(a.declencheesXof)} FCFA</b> déclenchés par un événement de veille</> : null}.
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
         {step("Attribuables", a.attribuables, a.pipelineXof, T.steel)}
@@ -95,7 +95,7 @@ function VeilleAttributionPanel() {
       {a.parSource.length > 0 && (
         <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
           {a.parSource.map((s) => (
-            <Badge key={s.source} c={T.faint}>{s.source} · {s.count} · {fmt(s.xof)} XOF</Badge>
+            <Badge key={s.source} c={T.faint}>{s.source} · {s.count} · {fmt(s.xof)} FCFA</Badge>
           ))}
         </div>
       )}
@@ -152,10 +152,10 @@ function DecisionDuJour({
                 veille). Le pipeline attribuable total passe en contexte, explicitement étiqueté —
                 fini l'amalgame « en jeu » et le doublon nu avec le panneau d'attribution ci-dessous. */}
             {declencheeXof > 0 ? (
-              <>💰 <span style={{ color: T.emerald }}>{fmt(declencheeXof)} XOF</span> déclenchés par la veille
+              <>💰 <span style={{ color: T.emerald }}>{fmt(declencheeXof)} FCFA</span> déclenchés par la veille
                 {moneyXof > declencheeXof ? <span style={{ color: T.faint, fontSize: 13, fontWeight: 600 }}> · {fmt(moneyXof)} de pipeline attribuable</span> : null}</>
             ) : moneyXof > 0 ? (
-              <>💰 <span style={{ color: T.gold }}>{fmt(moneyXof)} XOF</span> de pipeline attribuable à la veille</>
+              <>💰 <span style={{ color: T.gold }}>{fmt(moneyXof)} FCFA</span> de pipeline attribuable à la veille</>
             ) : null}
             {urgent && (
               <>{(declencheeXof > 0 || moneyXof > 0) ? " · " : "⏱️ "}<span style={{ color: T.clay }}>{urgent.count} {urgent.count > 1 ? "signaux" : "signal"} business imminent{urgent.count > 1 ? "s" : ""}</span></>
@@ -329,7 +329,7 @@ export function RadarExecutif({ lens, weights, setView }: RadarExecutifProps) {
         <KpiCard title="Ouvrir le Copilote (comptes suivis)" onClick={() => setView("copilote")}>
           <Kpi
             label="Exposition comptes suivis"
-            value={<>{exec && exec.pipelineInfluenced != null ? <>{fmt(exec.pipelineInfluenced)} <span style={{ fontSize: 13, color: T.dim }}>XOF</span></> : "—"}<TrendArrow delta={dPipeline} /></>}
+            value={<>{exec && exec.pipelineInfluenced != null ? <>{fmt(exec.pipelineInfluenced)} <span style={{ fontSize: 13, color: T.dim }}>FCFA</span></> : "—"}<TrendArrow delta={dPipeline} /></>}
             accent={T.emerald}
             sub="valeur en jeu · comptes en veille / watchlist (≠ pipeline actif) ▸"
           />

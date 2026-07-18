@@ -253,6 +253,11 @@ async function fetchSource(url) {
 /** Source health: auto-deactivate a source after this many consecutive fetch failures. */
 const MAX_CONSECUTIVE_FAILURES = 5;
 
+/** Source health: flag a source "sterile" (HTTP-ok mais zéro contenu extrait) après ce nombre de
+ * passages stériles consécutifs. Non désactivée (un portail AO peut rester légitimement calme) —
+ * simple signal de santé pour l'écran Réglages/sources. */
+const MAX_CONSECUTIVE_EMPTY = 20;
+
 // Hôtes d'agrégateurs RSS fiables où un 403/429 est un rate-limit (pas un défi anti-bot JS) : inutile
 // (et coûteux) d'y retenter en rendu headless — le navigateur reçoit la même réponse (audit final
 // pré-prod 2026-07). Concerne surtout news.google.com (jusqu'à MAX_MONITORS sources de surveillance).
@@ -582,6 +587,12 @@ async function deliverToEndpoint(endpoint, envelope) {
   for (let attempt = 1; attempt <= WEBHOOK_MAX_ATTEMPTS; attempt += 1) {
     attempts = attempt;
     try {
+      // Garde SSRF re-vérifiée à CHAQUE tentative, avec résolution DNS (pas seulement la forme) :
+      // un endpoint enregistré publiquement mais dont le DNS a été rebranché vers une IP interne
+      // (169.254.169.254, 10.x, loopback…) est refusé. redirect:"manual" : une réponse 3xx est
+      // traitée comme un échec — on ne suit JAMAIS une redirection vers une cible non contrôlée
+      // (un 302 vers l'endpoint metadata contournerait le contrôle d'URL).
+      await assertSafePublicUrl(endpoint.url);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), WEBHOOK_DELIVERY_TIMEOUT_MS);
       const res = await fetch(endpoint.url, {
@@ -593,13 +604,20 @@ async function deliverToEndpoint(endpoint, envelope) {
           [WH_EVENT_HEADER]: envelope.type,
         },
         body,
+        redirect: "manual",
         signal: controller.signal,
       }).finally(() => clearTimeout(timer));
       status = res.status;
+      if (res.status >= 300 && res.status < 400) {
+        lastError = `redirection refusée (HTTP ${res.status})`;
+        break; // déterministe : inutile de retenter
+      }
       if (res.ok) { lastError = null; break; }
       lastError = `HTTP ${res.status}`;
     } catch (e) {
       lastError = e && e.message ? e.message : String(e);
+      // Refus SSRF déterministe : ne pas retenter.
+      if (/URL refusée|SSRF/.test(lastError)) break;
     }
     if (attempt < WEBHOOK_MAX_ATTEMPTS) {
       await new Promise((r) => setTimeout(r, 500 * attempt));
@@ -1312,6 +1330,7 @@ async function runSyncSources(db) {
       const context = { sourceName: source.name, defaultSourceRating: source.sourceRating || deriveSourceRatingFromUrl(source.url, clientProfile.sourceAuthority) };
       let created = 0;
       let degraded = false;
+      let yielded = false; // la source a-t-elle produit du CONTENU exploitable (indépendamment du dédoublonnage) ?
       let kindUpgrade = null; // "web-js" si une source `web` s'est avérée anti-bot/JS (mémorisé après succès)
 
       if (source.kind === "rss" || source.kind === "newsletter" || source.kind === "portal") {
@@ -1340,6 +1359,7 @@ async function runSyncSources(db) {
         // Rééquilibrage du fil : les flux tech/cyber MONDIAUX sont prolifiques et noyaient les
         // signaux locaux — plafond réduit à 2 items/run pour l'axe tech, 5 pour les axes locaux.
         const rssItems = extractRssItems(xml, source.axis === "tech" ? 2 : 5);
+        yielded = rssItems.length > 0;
         // Classification des items d'une même source en parallèle (chaque appel Vertex est indep.).
         const settled = await Promise.allSettled(
           rssItems.map(async (rssItem) => {
@@ -1390,6 +1410,7 @@ async function runSyncSources(db) {
           } catch { /* rendu indisponible → on garde la page d'origine (marquée dégradée plus bas) */ }
         }
         if (usedRender && source.kind === "web") kindUpgrade = "web-js";
+        yielded = webItems.length > 0;
         if (webItems.length) {
           const settled = await Promise.allSettled(
             webItems.map(async (wi) => {
@@ -1411,6 +1432,7 @@ async function runSyncSources(db) {
           // Repli : page sans items structurés → texte global, ancré sur titre+date (pas l'URL).
           const rawText = extractWebText(html);
           degraded = isDegradedWebPage(rawText); // M1 : page coquille (SPA) = source dégradée
+          yielded = Boolean(rawText && !degraded);
           if (rawText && !degraded) {
             const classified = await classifyRawText(rawText, watchlistEntities, { ...context }, clientProfile);
             if (classified) {
@@ -1424,14 +1446,31 @@ async function runSyncSources(db) {
         return 0;
       }
 
+      // Santé « stérile » (audit 2026-07) : une source qui répond HTTP 200 mais ne produit AUCUN
+      // contenu exploitable (structure de portail changée, flux vidé, sélecteur cassé) reste "ok"
+      // pour toujours et gaspille silencieusement des cycles. On compte les passages stériles
+      // consécutifs (indépendamment du dédoublonnage : un `created:0` normal sur une source qui a
+      // BIEN extrait des items n'incrémente pas). Au-delà du seuil, statut "sterile" (visible dans
+      // la santé des sources) SANS désactivation — un portail AO peut légitimement rester calme.
+      const sterileRun = !degraded && !yielded;
+      const consecutiveEmpty = sterileRun ? (source.consecutiveEmpty || 0) + 1 : 0;
+      const sterile = consecutiveEmpty >= MAX_CONSECUTIVE_EMPTY;
       await sourceDoc.ref.update({
         lastFetch: FieldValue.serverTimestamp(),
-        lastStatus: degraded ? "degraded: contenu insuffisant (page probablement JS)" : "ok",
+        lastStatus: degraded
+          ? "degraded: contenu insuffisant (page probablement JS)"
+          : sterile
+            ? `sterile: aucun contenu extrait depuis ${consecutiveEmpty} passages (structure changée ?)`
+            : "ok",
         consecutiveFailures: 0,
+        consecutiveEmpty,
         // Mémorise le passage réussi en rendu headless : une source `web` anti-bot/JS devient "web-js"
         // (les runs suivants rendent directement, sans repayer un 403/coquille).
         ...(kindUpgrade ? { kind: kindUpgrade } : {}),
       });
+      if (sterile && consecutiveEmpty === MAX_CONSECUTIVE_EMPTY) {
+        logger.warn(`syncSources: source ${source.id} (${source.name}) marquée STÉRILE — ${consecutiveEmpty} passages sans contenu.`);
+      }
       return created;
     } catch (err) {
       logger.error(`syncSources: source ${source.id} (${source.kind}) failed — ${err.message}`);
@@ -3593,10 +3632,34 @@ let cachedNt360Db = null;
  * Avec NT360_PROJECT_ID : un client `@google-cloud/firestore` ciblant {projectId, databaseId:"nt360"}
  * dans l'autre projet (accès cross-projet post-migration).
  */
+// Méthodes d'écriture Firestore interdites au travers du handle nt360 : la base nt360 appartient à
+// une AUTRE app (source de vérité quanti). On ne la lit qu'en projection. Un Proxy intercepte tout
+// appel mutant (document ET niveau base) et lève — la convention « read-only » devient une garantie
+// exécutable, pas un simple commentaire (audit 2026-07).
+const NT360_FORBIDDEN_METHODS = new Set(["set", "update", "delete", "add", "create", "batch", "bulkWriter", "runTransaction"]);
+function nt360ReadOnly(target) {
+  return new Proxy(target, {
+    get(obj, prop, receiver) {
+      if (typeof prop === "string" && NT360_FORBIDDEN_METHODS.has(prop)) {
+        return () => { throw new Error(`nt360Firestore est en LECTURE SEULE : appel interdit à .${prop}()`); };
+      }
+      const value = Reflect.get(obj, prop, receiver);
+      if (typeof value === "function") {
+        return (...args) => {
+          const out = value.apply(obj, args);
+          // Enveloppe les handles chaînables (collection()/doc()) pour propager la garde en profondeur.
+          if (out && (prop === "collection" || prop === "doc" || prop === "collectionGroup")) return nt360ReadOnly(out);
+          return out;
+        };
+      }
+      return value;
+    },
+  });
+}
 function nt360Firestore() {
-  if (!NT360_PROJECT_ID) return getFirestore(NT360_DATABASE_ID);
+  if (!NT360_PROJECT_ID) return nt360ReadOnly(getFirestore(NT360_DATABASE_ID));
   if (!cachedNt360Db) {
-    cachedNt360Db = new Firestore({ projectId: NT360_PROJECT_ID, databaseId: NT360_DATABASE_ID });
+    cachedNt360Db = nt360ReadOnly(new Firestore({ projectId: NT360_PROJECT_ID, databaseId: NT360_DATABASE_ID }));
   }
   return cachedNt360Db;
 }
@@ -3624,6 +3687,23 @@ const {
 } = require("./domain/nt360");
 
 async function runInternalQuantiSync(db) {
+  // Verrou transactionnel (audit 2026-07) : le run planifié (05:30) et le forçage manuel
+  // (syncInternalQuantiNow) recalculent tous deux summaries/quanti — deux exécutions simultanées
+  // se marcheraient dessus (last-writer-wins sur le même doc). On saute proprement si un run est
+  // déjà vivant.
+  const lockPath = "runLocks/quantiSync";
+  if (!(await acquireRunLock(db, lockPath))) {
+    logger.info("runInternalQuantiSync: déjà en cours (verrou tenu) — run ignoré.");
+    return { skipped: true };
+  }
+  try {
+    return await runInternalQuantiSyncLocked(db);
+  } finally {
+    await releaseRunLock(db, lockPath);
+  }
+}
+
+async function runInternalQuantiSyncLocked(db) {
   const src = nt360Firestore(); // READ-ONLY — never write through this handle (cross-projet si NT360_PROJECT_ID)
 
   const [ordersSnap, oppsSnap, invoicesSnap, bcLinesSnap, objectivesSnap, configSnap] = await Promise.all([
@@ -3726,10 +3806,20 @@ const AUTO_OPP_MAX = 60;          // nombre max de leads proactifs par synchro (
  */
 async function runSyncCopiloteAccounts(db) {
   const src = nt360Firestore(); // READ-ONLY (cross-projet si NT360_PROJECT_ID)
-  const [ordersSnap, oppsSnap] = await Promise.all([
-    src.collection("orders").get(),
-    src.collection("opportunities").get(),
-  ]);
+  let ordersSnap;
+  let oppsSnap;
+  try {
+    [ordersSnap, oppsSnap] = await Promise.all([
+      src.collection("orders").get(),
+      src.collection("opportunities").get(),
+    ]);
+  } catch (e) {
+    // Base nt360 injoignable (projet croisé indisponible, IAM, réseau) : on n'écrase RIEN et on
+    // sort proprement — les comptes du Copilote (et leurs champs qualitatifs) restent intacts
+    // plutôt que de faire échouer tout le sync (audit 2026-07).
+    logger.error(`runSyncCopiloteAccounts: lecture nt360 impossible (${e.message}) — sync sauté.`);
+    return { skipped: true, reason: "nt360 unreachable" };
+  }
   const derived = nt360DeriveCopiloteAccounts(
     ordersSnap.docs.map((d) => d.data()),
     oppsSnap.docs.map((d) => d.data())
@@ -4762,6 +4852,30 @@ exports.webhookInbound = onRequest({ region: "europe-west1", timeoutSeconds: 540
     const signedBody = method === "GET" ? "" : rawBody;
     if (!whVerify({ body: signedBody, secret: src.secret, signature, timestamp })) {
       return void (await fail(401, "Signature invalide ou expirée."));
+    }
+
+    // Anti-rejeu (audit 2026-07) : la signature est valide 300 s. Sans nonce, un attaquant qui
+    // capture UNE requête signée mutante (ingest/action/sync) peut la rejouer autant qu'il veut
+    // dans cette fenêtre. On enregistre chaque signature vue (transaction) ; un doublon → 409.
+    // Les GET (pull, idempotents en lecture) n'ont pas besoin de cette garde.
+    if (method !== "GET" && signature) {
+      const nonceId = nodeCrypto.createHash("sha256").update(String(signature)).digest("hex");
+      let fresh = false;
+      try {
+        fresh = await db.runTransaction(async (tx) => {
+          const ref = db.doc(`webhookNonces/${nonceId}`);
+          const seen = await tx.get(ref);
+          if (seen.exists) return false;
+          // TTL applicatif : purge cron/court — au-delà de la fenêtre de signature, la donnée est inutile.
+          tx.set(ref, { sourceId, ts: FieldValue.serverTimestamp(), expiresAt: Date.now() + 600_000 });
+          return true;
+        });
+      } catch (txErr) {
+        // En cas d'indisponibilité de la transaction, on N'ouvre PAS la porte au rejeu : on rejette.
+        logger.warn(`webhookInbound: contrôle anti-rejeu indisponible (${txErr.message}).`);
+        return void (await fail(503, "Contrôle anti-rejeu momentanément indisponible."));
+      }
+      if (!fresh) return void (await fail(409, "Requête déjà traitée (rejeu détecté)."));
     }
 
     let payload = {};

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { T, PROX } from "../../../design/tokens";
-import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
+import { Eyebrow, Card, Kpi, Badge, LoadError } from "../../../design/ui";
 import { useToast } from "../../../design/overlay";
 import { usePaged, Pager } from "../components/Pager";
 import { PUBLISHED_STATUSES, useIntelItems, updateIntelItem, runEnrichTendersNow, type IntelItem } from "../lib/intel";
@@ -89,7 +89,7 @@ function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
 }
 
 export function AppelsOffres() {
-  const { items, loading } = useIntelItems();
+  const { items, loading, error } = useIntelItems();
   const { accounts } = useCopiloteAccounts();
   const isExec = useIsExec();
   const toast = useToast();
@@ -196,6 +196,7 @@ export function AppelsOffres() {
         <button className={withDeadline ? "pill on" : "pill"} onClick={() => setWithDeadline((v) => !v)} style={{ fontSize: 11, padding: "3px 9px" }}>Avec échéance</button>
       </div>
 
+      <LoadError error={error} what="les appels d'offres" style={{ marginTop: 12 }} />
       <div className="tbl-scroll" style={{ marginTop: 12 }}>
         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12, minWidth: 720 }}>
           <thead>
@@ -207,7 +208,7 @@ export function AppelsOffres() {
           </thead>
           <tbody>
             {paged.pageItems.map((it) => <AoRow key={it.id} it={it} account={matchAccount(it)} />)}
-            {!loading && !rows.length && (
+            {!loading && !error && !rows.length && (
               <tr><td colSpan={6} style={{ padding: 14, color: T.dim, fontSize: 12.5 }}>
                 Aucun appel d'offres détecté pour ces filtres. Les AO proviennent des portails branchés (marchés publics, UEMOA, bailleurs) via la synchro de veille — élargissez les sources dans Détection ou relancez une synchro.
               </td></tr>
