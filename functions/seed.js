@@ -223,11 +223,13 @@ const SOURCES_SEED = [
   { name: "Banque Mondiale — Avis d'AO Côte d'Ivoire (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=20&order=desc&srt=noticedate&countryname_exact=Cote%20d%27Ivoire", axis: "clients_prospects", active: true },
   { name: "Banque Mondiale — Avis d'AO Sénégal (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Senegal", axis: "clients_prospects", active: true },
   { name: "Banque Mondiale — Avis d'AO Afrique de l'Ouest (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=20&order=desc&srt=noticedate&regionname_exact=Western%20and%20Central%20Africa", axis: "clients_prospects", active: true },
-  // BAD (AfDB) — flux RSS procurement (structurés, une URL par avis → passent le gate provenance).
-  // Les pages HTML BAD/BCEAO/BOAD ne s'extraient pas ; le RSS Drupal (suffixe /rss, cf. flux vacancies)
-  // est le canal fiable. À valider en prod (santé des sources) et ajuster si le chemin diffère.
-  { name: "BAD — Sollicitations en cours (RSS procurement)", kind: "rss", url: "https://www.afdb.org/en/about-us/corporate-procurement/procurement-notices/current-solicitations/rss", axis: "clients_prospects", active: true },
-  { name: "BAD — Avis d'appel d'offres projets (RSS)", kind: "rss", url: "https://www.afdb.org/en/documents/project-related-procurement/procurement-notices/invitation-for-bids/rss", axis: "clients_prospects", active: true },
+  // BAD (AfDB) — flux RSS procurement : URL correctes mais le WAF Cloudflare de la BAD renvoie 403,
+  // Y COMPRIS via le rendu headless (défi anti-bot HTML servi à la place du flux, validation prod
+  // 2026-07-18). Mur externe irrécupérable depuis nos IP cloud. Laissées INACTIVES et documentées :
+  // la BAD reste couverte par « BAD — Corporate procurement », le moniteur « AO client — BAD »
+  // (Google News) et la Banque Mondiale (cofinancements). `active: false` → le seed les désactive.
+  { name: "BAD — Sollicitations en cours (RSS procurement)", kind: "rss", url: "https://www.afdb.org/en/about-us/corporate-procurement/procurement-notices/current-solicitations/rss", axis: "clients_prospects", active: false },
+  { name: "BAD — Avis d'appel d'offres projets (RSS)", kind: "rss", url: "https://www.afdb.org/en/documents/project-related-procurement/procurement-notices/invitation-for-bids/rss", axis: "clients_prospects", active: false },
   // (Doublon retiré — audit 2026-07 : marchespublics.sn est déjà couvert par « Sénégal — Marchés
   // publics (DCMP/SYGMAP) » en kind web-js plus haut. Deux entrées même URL = double fetch/IA.)
   { name: "Sénégal — Sika Finance / actu UEMOA", kind: "rss", url: "https://www.sikafinance.com/rss/actualites_bourse_brvm", axis: "clients_prospects", active: true },
@@ -287,6 +289,7 @@ async function seed() {
   const sourcesCol = db.collection("intelSources");
   let kindMigrated = 0;
   let reactivated = 0;
+  let deactivated = 0;
   let urlFixed = 0;
   // Garde anti-doublon (audit 2026-07) : la dédup persistée se fait par NOM, donc deux entrées de
   // même URL mais nom différent créeraient deux sources fetchées/classées en double. On le signale
@@ -318,10 +321,14 @@ async function seed() {
       // Réactive une source que l'auto-curation a désactivée mais que le seed veut active : on lui
       // redonne sa chance avec le nouveau moteur (fetch durci / rendu headless) et un compteur remis à 0.
       if (entry.active && cur.active === false) { patch.active = true; patch.consecutiveFailures = 0; patch.consecutiveEmpty = 0; reactivated += 1; }
+      // Désactivation pilotée par le seed (symétrique) : une source explicitement `active: false` dans
+      // le seed (ex. flux BAD bloqués en 403 par le WAF, canal irrécupérable) est désactivée en base
+      // au lieu de laisser l'auto-curation accumuler 5 échecs avant de la couper.
+      else if (entry.active === false && cur.active !== false) { patch.active = false; deactivated += 1; }
       if (Object.keys(patch).length) await doc.ref.update(patch);
     }
   }
-  console.log(`Seeded intelSources (${SOURCES_SEED.length} entries; ${kindMigrated} kind migré(s) web→web-js, ${reactivated} réactivée(s), ${urlFixed} URL corrigée(s)).`);
+  console.log(`Seeded intelSources (${SOURCES_SEED.length} entries; ${kindMigrated} kind migré(s) web→web-js, ${reactivated} réactivée(s), ${deactivated} désactivée(s), ${urlFixed} URL corrigée(s)).`);
 
   // Contexte entreprise DYNAMIQUE (frameworks/companyContext) — seedé depuis le fichier statique
   // uniquement s'il n'existe pas encore. updatedBy "ai:seed" (préfixe "ai:") laisse
