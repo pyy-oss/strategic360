@@ -24,9 +24,14 @@ import { useCopiloteAccounts, type CopiloteAccount } from "../lib/copilote";
 // → la vue se remplissait de commentaires au lieu d'AO réels. On filtre donc sur la forme de l'avis,
 // pas sur le subtype ni sur des mots-clés noyés dans le corps du texte).
 const AO_NOTICE_RE = /\bappel\s?s?\s+(?:d['’ ]?)?offres?\b|avis\s+(?:d['’ ]?)?appel|manifestation\s+(?:d['’ ]?)?int[ée]r[êe]ts?|sollicitation\s+de\s+prix|demande\s+de\s+(?:propositions?|cotations?|prix)|appel\s+à\s+(?:candidatures?|projets?|manifestation)|\b(?:A\.?A\.?O|A\.?O\.?O\.?R?|A\.?O\.?[NIR]|A\.?M\.?I|D\.?A\.?O|D\.?R\.?P|R\.?F\.?[PQ])\b/i;
+// Une VRAIE référence de dossier contient un numéro/code (ex. « AOOR N°2026-005/MESRI », « DAO 12/2026 »).
+// Un simple NOM de portail (« Portail Malien des Marchés Publics ») n'en est pas une : le classifieur
+// mettait parfois le nom de la source dans tenderRef, ce qui faisait passer des actualités pour des AO.
+const REAL_REF_RE = /\d{2,}|N[°o]\s*\d|\b[A-Z]{2,}[-/]\d/;
 function isAoItem(s: IntelItem): boolean {
-  // Réf de portail = signal le plus fiable (un avis officiel en a une).
-  if (s.businessAngle?.tenderRef) return true;
+  const ref = s.businessAngle?.tenderRef || "";
+  // Réf de dossier crédible (avec numéro/code) = signal le plus fiable.
+  if (REAL_REF_RE.test(ref)) return true;
   // Sinon, l'intitulé doit être un avis d'appel d'offres (pas une actu générale).
   return AO_NOTICE_RE.test(s.title || "");
 }
