@@ -50,6 +50,7 @@ const { generateJson, DEFAULT_MODEL } = require("./domain/vertex");
 const { TENDER_ENRICH_SUBTYPES, buildTenderEnrichPrompt, parseTenderEnrichResponse, mergeBusinessAngle, isoDeadline, aoProvenanceRejectReason } = require("./domain/tenderEnrich");
 const { parseWorldBankProcNotices } = require("./domain/donorFeeds");
 const { AGENTS: COPILOTE_AGENTS, buildChatPrompt, parseChatResponse } = require("./domain/copilote");
+const { buildMagnitudeGuide } = require("./domain/magnitude");
 const { DEFAULT_BACKFILL_DAYS, dayRangeUTC, computeKpiBackfillPoints, mergeHistoryPoints } = require("./domain/kpiBackfill");
 const PDFDocument = require("pdfkit");
 const { v1: firestoreAdminV1, Firestore } = require("@google-cloud/firestore");
@@ -3395,6 +3396,16 @@ async function assembleCopiloteContext(db, accountId) {
     whitespaceValue, // [{offre, montant}] chiffré depuis les paniers de référence réels
     whitespacePotential, // somme du potentiel cross-sell chiffrable
   };
+  // APPRÉCIATION RELATIVE des montants (2026-07) : deal médian du portefeuille = médiane des paniers
+  // de référence par offre (buBenchmark.medianCas). Sert d'étalon « taille de deal habituelle » pour
+  // situer chaque montant (avec le CA du compte). Pré-calculé ici → labels cohérents pour TOUS les agents.
+  const medianCasVals = Object.values(benchmark).map((b) => Number(b && b.medianCas)).filter((n) => Number.isFinite(n) && n > 0).sort((x, y) => x - y);
+  const portfolioMedian = medianCasVals.length ? medianCasVals[Math.floor((medianCasVals.length - 1) / 2)] : 0;
+  const magnitude = buildMagnitudeGuide({
+    compte: a.nom || "", secteur: a.secteur || "", tier: a.tier || "",
+    casTotal, pipelinePondere, portfolioMedian,
+    recommendation, whitespacePotential, deals, signauxCompte,
+  });
   return {
     compte: a.nom || "",
     secteur: a.secteur || "",
@@ -3424,6 +3435,7 @@ async function assembleCopiloteContext(db, accountId) {
     battlecardsMarket, // concurrents fréquents du marché (loss-rank global) — NON confirmés sur ce compte
     winStats,      // taux de victoire réel (global + par concurrent + leçons)
     valueModel,    // modèle de valeur chiffré (paniers de référence réels) — pour le business case
+    magnitude,     // appréciation relative pré-calculée des montants (% CA compte, ×médiane, label)
     today: new Date().toISOString().slice(0, 10), // ancrage temporel des séquences/plans datés
     // Rôle système du profil client (Phase 0 produit) : injecté dans les prompts copilote via roleOf(c).
     // Absent/défaut → NT_ROLE (comportement identique pour Neurones).
@@ -3442,7 +3454,7 @@ async function assembleCopiloteContext(db, accountId) {
     // CORPS des prompts (prospection/contenu) via marketOf(c). Absent/défaut → « Côte d'Ivoire / UEMOA ».
     geographies: clientProfile.profile && clientProfile.profile.geographies,
     sectorProfil: clientProfile.profile && clientProfile.profile.sector,
-    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte, eventOffers, battlecards, battlecardsMarket, winStats, valueModel, today: new Date().toISOString().slice(0, 10) },
+    account: { nom: a.nom || "", secteur: a.secteur || "", tier: a.tier || "", enjeux, historique, enCours, whitespace, casTotal, pipelinePondere, wins, deals, recommendation, signauxCompte, eventOffers, battlecards, battlecardsMarket, winStats, valueModel, magnitude, today: new Date().toISOString().slice(0, 10) },
   };
 }
 

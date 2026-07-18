@@ -216,6 +216,28 @@ function factBase(c) {
     signauxSecteur.length ? `— Signaux SECTORIELS du marché (demande du secteur, pas encore rattachée à ce compte — à relier à une offre NT si pertinent, sans présumer que le compte est concerné) : ${list(signauxSecteur)}.` : "",
     `— Opportunités réelles en cours (à nommer avec leur montant exact) : ${list(deals)}.`,
     (Array.isArray(c.enjeux) && c.enjeux.length) ? `— Enjeux saisis par le commercial : ${list(c.enjeux)}.` : "",
+    magnitudeBlock(c),
+  ].filter(Boolean).join("\n");
+}
+
+/**
+ * Bloc APPRÉCIATION RELATIVE des montants (2026-07) — pré-calculé (domain/magnitude), partagé par TOUS
+ * les agents pour garantir la COHÉRENCE des labels et le SENS DES PROPORTIONS (un même montant ne peut
+ * pas être « majeur » chez un agent et « dérisoire » chez un autre). L'IA doit REPRENDRE ces labels,
+ * jamais les recalculer. Vide si aucune appréciation disponible (compte sans CA réalisé).
+ */
+function magnitudeBlock(c) {
+  const m = c && c.magnitude && typeof c.magnitude === "object" ? c.magnitude : null;
+  if (!m) return "";
+  const lignes = (Array.isArray(m.montants) ? m.montants : [])
+    .filter((x) => x && x.libelle && x.phrase)
+    .map((x) => `   · ${coerceStr(x.libelle)} : ${coerceStr(x.phrase)}`);
+  const note = m.echelleCompte && m.echelleCompte.note ? coerceStr(m.echelleCompte.note) : "";
+  if (!lignes.length && !note) return "";
+  return [
+    "— APPRÉCIATION RELATIVE DES MONTANTS (pré-calculée — REPRENDS ces qualificatifs tels quels, ne les recalcule pas ; ne présente jamais comme « majeur » un montant étiqueté « dérisoire/modeste », ni l'inverse) :",
+    note ? `   · Échelle du compte : ${note}` : "",
+    ...lignes,
   ].filter(Boolean).join("\n");
 }
 
@@ -845,6 +867,7 @@ function buildChatSystem(ctx) {
         deals: c.compte.deals || c.compte.signaux,
         recommendation: c.compte.recommendation,
         signauxCompte: c.compte.signauxCompte,
+        magnitude: c.compte.magnitude,
       })}\n${competitorBlock(c.compte)}\n${winStatsBlock(c.compte)}\n${valueModelBlock(c.compte)}\n${analyticsBlock(c.compte)}`
     : "Aucun compte précis sélectionné : réponds au niveau méthode/portefeuille, sans inventer de compte.";
   return `${base}\n${compte}`;
