@@ -211,6 +211,15 @@ Consignes impératives :
   (ex: "Proposer à l'acheteur nommé un audit de conformité à l'échéance réglementaire citée").
 - "prox" : imminent = < 1 mois, court = < 3 mois, moyen = 3-12 mois, horizon = > 12 mois — TOUJOURS calculé depuis la date du jour ; une échéance dépassée = "horizon".
 - Dans "businessAngle", n'inventer AUCUN montant ni échéance : null si le texte n'en cite pas.
+- SUBTYPE « tender » / « funding » / « budget » — RÉSERVÉS aux CONSULTATIONS RÉELLEMENT OUVERTES que l'on
+  peut soumissionner : un AVIS d'appel d'offres, un appel à manifestation d'intérêt/à candidatures/à
+  projets, une demande de propositions/cotations, un appel à financement OUVERT — c.-à-d. avec une
+  référence de dossier officielle ET/OU une date limite de dépôt. Une simple ACTUALITÉ qui ÉVOQUE un
+  financement, une levée de fonds, un programme, une rencontre, une signature ou un budget (SANS
+  consultation ouverte à soumissionner) N'EST PAS un AO : classe-la plutôt "expansion", "macro",
+  "trend", "program_change" ou "implantation" selon le cas, et NE mets PAS "tender"/"funding"/"budget".
+- "tenderRef" : à renseigner UNIQUEMENT si une référence de dossier/portail officielle est explicitement
+  citée (ex. "AOOR N°2026-005/MESRI"). Un simple nom d'acheteur ou de programme n'est PAS une référence.
 
 Watchlist des entités suivies (partenaires, concurrents, clients, prospects) :
 ${watchlistLines}
