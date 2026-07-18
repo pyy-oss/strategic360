@@ -220,6 +220,11 @@ Consignes impératives :
   "trend", "program_change" ou "implantation" selon le cas, et NE mets PAS "tender"/"funding"/"budget".
 - "tenderRef" : à renseigner UNIQUEMENT si une référence de dossier/portail officielle est explicitement
   citée (ex. "AOOR N°2026-005/MESRI"). Un simple nom d'acheteur ou de programme n'est PAS une référence.
+- OPÉRATIONS DE MARCHÉ FINANCIER ≠ APPEL D'OFFRES : une titrisation de créances, une émission
+  obligataire / d'emprunt, une levée de fonds, une augmentation de capital, une introduction en bourse
+  ou une notation financière N'EST PAS un appel d'offres auquel on soumissionne — NE mets PAS
+  "tender"/"funding"/"budget" (même s'il y a un code/ISIN). Classe "macro" ou "ma" selon le cas, et ne
+  renseigne PAS tenderRef.
 
 Watchlist des entités suivies (partenaires, concurrents, clients, prospects) :
 ${watchlistLines}

@@ -223,6 +223,11 @@ const SOURCES_SEED = [
   { name: "Banque Mondiale — Avis d'AO Côte d'Ivoire (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=20&order=desc&srt=noticedate&countryname_exact=Cote%20d%27Ivoire", axis: "clients_prospects", active: true },
   { name: "Banque Mondiale — Avis d'AO Sénégal (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Senegal", axis: "clients_prospects", active: true },
   { name: "Banque Mondiale — Avis d'AO Afrique de l'Ouest (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=20&order=desc&srt=noticedate&regionname_exact=Western%20and%20Central%20Africa", axis: "clients_prospects", active: true },
+  // BAD (AfDB) — flux RSS procurement (structurés, une URL par avis → passent le gate provenance).
+  // Les pages HTML BAD/BCEAO/BOAD ne s'extraient pas ; le RSS Drupal (suffixe /rss, cf. flux vacancies)
+  // est le canal fiable. À valider en prod (santé des sources) et ajuster si le chemin diffère.
+  { name: "BAD — Sollicitations en cours (RSS procurement)", kind: "rss", url: "https://www.afdb.org/en/about-us/corporate-procurement/procurement-notices/current-solicitations/rss", axis: "clients_prospects", active: true },
+  { name: "BAD — Avis d'appel d'offres projets (RSS)", kind: "rss", url: "https://www.afdb.org/en/documents/project-related-procurement/procurement-notices/invitation-for-bids/rss", axis: "clients_prospects", active: true },
   // (Doublon retiré — audit 2026-07 : marchespublics.sn est déjà couvert par « Sénégal — Marchés
   // publics (DCMP/SYGMAP) » en kind web-js plus haut. Deux entrées même URL = double fetch/IA.)
   { name: "Sénégal — Sika Finance / actu UEMOA", kind: "rss", url: "https://www.sikafinance.com/rss/actualites_bourse_brvm", axis: "clients_prospects", active: true },
