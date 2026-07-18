@@ -4451,9 +4451,9 @@ exports.setLensWeights = onCall(CALLABLE_OPTS, async (request) => {
  * Une échéance datée alimente dueDate (proximité). Best-effort par item (un échec n'arrête pas le lot).
  */
 const MAX_TENDER_ENRICH = Number(process.env.MAX_TENDER_ENRICH) || 8;
-exports.enrichTendersNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
-  requireExecCaller(request, "enrichir les appels d'offres");
-  const db = firestoreDb();
+
+/** Implémentation partagée (callable enrichTendersNow + planifié enrichTenders). */
+async function runEnrichTenders(db) {
   const snap = await db.collection("intelItems").where("subtype", "in", TENDER_ENRICH_SUBTYPES).get();
   const candidates = [];
   snap.forEach((d) => {
@@ -4489,9 +4489,28 @@ exports.enrichTendersNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
       enriched += 1;
     }
   });
-  logger.info(`enrichTendersNow: candidats=${candidates.length} traités=${batch.length} fetch=${fetched} enrichis=${enriched}`);
+  logger.info(`runEnrichTenders: candidats=${candidates.length} traités=${batch.length} fetch=${fetched} enrichis=${enriched}`);
   return { candidates: candidates.length, processed: batch.length, fetched, enriched };
+}
+
+/** enrichTendersNow — callable exec-gated (bouton « Enrichir les AO » dans la vue). */
+exports.enrichTendersNow = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  requireExecCaller(request, "enrichir les appels d'offres");
+  return await runEnrichTenders(firestoreDb());
 });
+
+/**
+ * enrichTenders — Scheduler (quotidien 07:00 Africa/Abidjan, APRÈS la synchro de veille de 06:00) :
+ * enrichit automatiquement les nouveaux AO en lisant leur page officielle. Même logique bornée que
+ * le callable (MAX_TENDER_ENRICH par run) — coût IA maîtrisé.
+ */
+exports.enrichTenders = onSchedule(
+  { schedule: "0 7 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 540, memory: "512MiB" },
+  async () => {
+    const r = await runEnrichTenders(firestoreDb());
+    logger.info(`enrichTenders (planifié): ${JSON.stringify(r)}`);
+  }
+);
 
 /* ============================================================================================= *
  * INTÉGRATIONS TIERCES — gestion des utilisateurs (rôles), webhooks sortants & entrants.
