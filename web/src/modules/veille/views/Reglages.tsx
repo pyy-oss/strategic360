@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { T } from "../../../design/tokens";
+import { T, AX } from "../../../design/tokens";
 import { Eyebrow, Card } from "../../../design/ui";
 import { useToast } from "../../../design/overlay";
+import { LENS } from "../data";
+import { DEFAULT_LENS_AXIS_BOOST, type LensWeights } from "../lib/ranking";
+import { useLensWeights, mergeWeights, setLensWeights } from "../lib/lensWeights";
+import type { IntelAxis } from "../lib/intel";
 import {
   usePermissions,
   setPermissionsMatrix,
@@ -37,6 +41,87 @@ function fullMatrix(src: PermMatrix | null): Record<Role, Record<Module, PermLev
     }
   }
   return out;
+}
+
+/**
+ * Éditeur des pondérations de FOCALE (rôle-focale × axe) — écran DG. Chaque cellule est un
+ * multiplicateur appliqué au tri (Fil / Détection / Radar) selon la focale du lecteur ; 1 = neutre,
+ * >1 remonte l'axe, <1 le descend. Enregistré via setLensWeights (config/lensWeights). Défaut calibré
+ * ESN/SS2I (Côte d'Ivoire / UEMOA). N'affecte JAMAIS le priorityScore serveur (tri d'affichage seul).
+ */
+const LENS_AXES: IntelAxis[] = ["partenaires", "concurrents", "clients_prospects", "tech", "reglementaire"];
+function LensWeightsEditor() {
+  const { weights, loading } = useLensWeights();
+  const toast = useToast();
+  const [draft, setDraft] = useState<LensWeights | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (!dirty && !loading) setDraft(mergeWeights(weights)); }, [weights, loading, dirty]);
+
+  const val = (lens: string, ax: IntelAxis) => draft?.[lens]?.[ax] ?? 1;
+  const setVal = (lens: string, ax: IntelAxis, v: number) => {
+    setDirty(true);
+    setDraft((d) => ({ ...(d || {}), [lens]: { ...(d?.[lens] || {}), [ax]: v } }));
+  };
+  const save = async () => {
+    if (!draft) return;
+    setSaving(true);
+    try { await setLensWeights(draft); setDirty(false); toast.success("Pondérations de focale enregistrées — appliquées en direct."); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Échec de l'enregistrement."); }
+    finally { setSaving(false); }
+  };
+  const resetDefault = () => { setDirty(true); setDraft(mergeWeights(DEFAULT_LENS_AXIS_BOOST)); toast.info("Défaut ESN chargé — pensez à Enregistrer."); };
+
+  const cellColor = (v: number) => (v > 1.001 ? T.emerald : v < 0.999 ? T.clay : T.dim);
+
+  return (
+    <Card style={{ marginTop: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <Eyebrow color={T.steel}>Focales — pondérations par axe (tri Fil / Détection / Radar)</Eyebrow>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button className="pill" onClick={resetDefault} disabled={saving} style={{ fontSize: 11, padding: "3px 10px" }}>Défaut ESN</button>
+          <button className="pill on" onClick={() => void save()} disabled={saving || !dirty} style={{ fontSize: 11, padding: "3px 12px" }}>{saving ? "Enregistrement…" : "Enregistrer"}</button>
+        </div>
+      </div>
+      <div style={{ fontSize: 12, color: T.dim, marginTop: 6 }}>
+        Multiplicateur appliqué au <b>tri</b> selon la focale (1 = neutre, &gt;1 remonte l'axe). Le score serveur reste l'autorité — ceci ne change que l'ordre d'affichage.
+      </div>
+      {(!draft) ? (
+        <div style={{ fontSize: 12.5, color: T.dim, marginTop: 10 }}>Chargement…</div>
+      ) : (
+        <div className="tbl-scroll" style={{ marginTop: 12 }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%", minWidth: 460 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", padding: "6px 8px", color: T.dim }}>Axe</th>
+                {LENS.map(([k, l]) => <th key={k} style={{ padding: "6px 8px", color: T.dim, textAlign: "center" }}>{l}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {LENS_AXES.map((ax) => (
+                <tr key={ax} style={{ borderTop: `1px solid ${T.line}` }}>
+                  <td style={{ padding: "6px 8px", color: T.ink }}>{AX[ax]?.l ?? ax}</td>
+                  {LENS.map(([lens]) => {
+                    const v = val(lens, ax);
+                    return (
+                      <td key={lens} style={{ textAlign: "center", padding: "4px 6px" }}>
+                        <input
+                          type="number" step={0.05} min={0} max={3} value={v}
+                          onChange={(e) => setVal(lens, ax, Math.min(3, Math.max(0, Number(e.target.value) || 0)))}
+                          style={{ width: 62, textAlign: "center", padding: "3px 4px", borderRadius: 6, border: `1px solid ${T.line}`, background: T.panel2, color: cellColor(v), fontWeight: 600, fontSize: 12 }}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
 }
 
 export function Reglages() {
@@ -96,6 +181,7 @@ export function Reglages() {
   }
 
   return (
+    <>
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <Eyebrow color={T.plum}>Réglages & Droits — matrice RBAC (13 profils × 7 modules)</Eyebrow>
@@ -155,5 +241,7 @@ export function Reglages() {
         </table>
       </div>
     </Card>
+    <LensWeightsEditor />
+    </>
   );
 }

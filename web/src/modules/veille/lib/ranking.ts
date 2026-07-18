@@ -20,22 +20,34 @@ export interface Rankable {
   priorityScore?: number;
 }
 
+/** Type de la table de pondérations rôle-focale × axe. */
+export type LensWeights = Record<string, Partial<Record<IntelAxis, number>>>;
+
 /**
- * Multiplicateur d'alignement par focale × axe. `dg` = neutre (le DG voit la priorité globale telle
- * quelle). `strategie` favorise l'exécution commerciale/réglementaire/partenariale. `innovation`
- * remonte fortement la tech et la concurrence (contre-balance le tech=0.45 du barème serveur).
- * Un axe absent de la table vaut 1 (neutre).
+ * Multiplicateur d'alignement par focale × axe — DÉFAUT calibré pour une ESN/SS2I en Côte d'Ivoire /
+ * UEMOA (audit pondérations 2026-07). Rationale ESN :
+ *  - `dg` : léger tilt business/risque-marché (le board pilote pipeline + accès marché), sans écraser.
+ *  - `strategie` : accès marché (AO publics/UEMOA, bancaire, télécom, gouvernemental), réglementaire
+ *    (ANSSI-CI/PASSI, localisation données, ARTCI), et CONCURRENCE remontée (marché concentré : GTN,
+ *    CBI, CIS, Inovatec… se disputent les mêmes AO). Tech dévalué (altitude stratégique).
+ *  - `innovation` : la tech en tête, mais aussi les PARTENAIRES (chez une ESN l'innovation arrive par
+ *    l'écosystème vendeur : un lancement Microsoft/Fortinet/Google Cloud = une nouvelle offre) et le
+ *    réglementaire NEUTRE-HAUT (la réglementation CRÉE la demande : cloud souverain, cybersécurité).
+ * Un axe absent d'une focale vaut 1 (neutre). Éditable par la Direction (config/lensWeights).
  */
-const LENS_AXIS_BOOST: Record<string, Partial<Record<IntelAxis, number>>> = {
-  dg: {},
-  strategie: { clients_prospects: 1.15, reglementaire: 1.15, partenaires: 1.1, concurrents: 1.05, tech: 0.8 },
-  innovation: { tech: 1.5, concurrents: 1.2, clients_prospects: 1.0, reglementaire: 0.9, partenaires: 0.9 },
+export const DEFAULT_LENS_AXIS_BOOST: LensWeights = {
+  dg: { clients_prospects: 1.1, reglementaire: 1.1, partenaires: 1.05, concurrents: 1.05, tech: 0.9 },
+  strategie: { clients_prospects: 1.15, reglementaire: 1.15, concurrents: 1.2, partenaires: 1.1, tech: 0.8 },
+  innovation: { tech: 1.5, partenaires: 1.2, concurrents: 1.2, reglementaire: 1.05, clients_prospects: 1.0 },
 };
 
-/** Score ajusté à la focale (pour le TRI uniquement) : priorityScore × multiplicateur d'axe du lens. */
-export function lensAdjustedScore(item: Rankable, lens: string): number {
+/**
+ * Score ajusté à la focale (pour le TRI uniquement) : priorityScore × multiplicateur d'axe du lens.
+ * `weights` permet de surcharger la table par défaut (pondérations éditées par la Direction, live).
+ */
+export function lensAdjustedScore(item: Rankable, lens: string, weights: LensWeights = DEFAULT_LENS_AXIS_BOOST): number {
   const base = item.priorityScore ?? 0;
-  const table = LENS_AXIS_BOOST[lens];
+  const table = weights[lens];
   const mult = table && item.axis ? table[item.axis] ?? 1 : 1;
   return base * mult;
 }
@@ -44,9 +56,9 @@ export function lensAdjustedScore(item: Rankable, lens: string): number {
  * Copie triée par score ajusté à la focale (desc). Tri STABLE (départage par priorityScore brut puis
  * ordre d'origine) pour un rendu déterministe. Ne mute pas l'entrée.
  */
-export function rankByLens<T extends Rankable>(items: readonly T[], lens: string): T[] {
+export function rankByLens<T extends Rankable>(items: readonly T[], lens: string, weights: LensWeights = DEFAULT_LENS_AXIS_BOOST): T[] {
   return items
-    .map((it, i) => ({ it, i, s: lensAdjustedScore(it, lens) }))
+    .map((it, i) => ({ it, i, s: lensAdjustedScore(it, lens, weights) }))
     .sort((a, b) => b.s - a.s || (b.it.priorityScore ?? 0) - (a.it.priorityScore ?? 0) || a.i - b.i)
     .map((x) => x.it);
 }
