@@ -210,6 +210,12 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if role() == 'direction';
     }
+    // Pondérations de focale (rôle-focale × axe) : lisibles par TOUT authentifié (le front en a besoin
+    // pour le tri par focale, comme config/permissions). Écriture via le callable setLensWeights (Admin SDK).
+    match /config/lensWeights {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
     // Audit pré-lancement 2026-07 (M4) : les autres docs config/* (profil client, taxonomie,
     // scoring, brouillon d'onboarding — qui contient le crawl concurrentiel et l'analyse IA) ne
     // sont lisibles que par les EXÉCUTIFS. `config/permissions` reste lisible par tout utilisateur

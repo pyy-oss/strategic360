@@ -75,6 +75,7 @@ import { useIsExec, usePermissions, ROLE_LABEL, type Role } from "../../lib/rbac
 import { VIEW_MODULE } from "./data";
 import { Reglages } from "./views/Reglages";
 import { Integrations } from "./views/Integrations";
+import { useLensWeights } from "./lib/lensWeights";
 
 const VIEW_KEYS = NAV.map(([k]) => k);
 /** Vues réservées aux profils exécutifs (paramétrage produit) — masquées de la nav aux autres. */
@@ -96,6 +97,7 @@ export default function VeilleApp() {
   useEffect(() => {
     try { localStorage.setItem("sentinel.lens", lens); } catch { /* stockage indisponible */ }
   }, [lens]);
+  const { weights: lensWeights } = useLensWeights();
   const navigate = useNavigate();
   const { view } = useParams<{ view: string }>();
   const { user, role } = useAuthClaims();
@@ -196,9 +198,9 @@ export default function VeilleApp() {
       </header>
       <GroupedNav view={view} setView={setView} groups={visibleGroups} />
 
-      {view === "radar" && <RadarExecutif lens={lens} setView={setView} />}
-      {view === "fil" && <Fil lens={lens} />}
-      {view === "detection" && <Detection lens={lens} />}
+      {view === "radar" && <RadarExecutif lens={lens} weights={lensWeights} setView={setView} />}
+      {view === "fil" && <Fil lens={lens} weights={lensWeights} />}
+      {view === "detection" && <Detection lens={lens} weights={lensWeights} />}
       {view === "indicateurs" && <Indicateurs />}
       {view === "cadres" && <Cadres />}
       {view === "portefeuille" && <Portefeuille />}

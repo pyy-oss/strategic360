@@ -7,7 +7,7 @@ import { Toggle } from "../../../design/fields";
 import { useActions, useDecisions } from "../lib/execution";
 import { BUSINESS_SUBTYPES, PUBLISHED_STATUSES, useBizOpportunities, useIntelItems, useWatchlist } from "../lib/intel";
 import { isPastDue, effectiveProx } from "../lib/freshness";
-import { rankByLens, lensAdjustedScore, diversifyTopN } from "../lib/ranking";
+import { rankByLens, lensAdjustedScore, diversifyTopN, type LensWeights } from "../lib/ranking";
 import { useVeilleExecSummary, useAiHealth, useKpiHistory, kpiDelta, backfillKpiHistory, type KpiDelta } from "../lib/summaries";
 import { useIsExec } from "../../../lib/rbac";
 import { computeVeilleAttribution } from "../lib/attribution";
@@ -176,11 +176,12 @@ function DecisionDuJour({
 
 export interface RadarExecutifProps {
   lens: string;
+  weights?: LensWeights;
   setView: (v: string) => void;
 }
 
 /** "Radar exécutif" — ported from `Radar_` in the maquette (renamed to avoid clashing with Recharts' Radar). */
-export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
+export function RadarExecutif({ lens, weights, setView }: RadarExecutifProps) {
   const navigate = useNavigate();
   const { entries: watchlist, loading: watchLoading } = useWatchlist();
   const { decisions, loading: decisionsLoading } = useDecisions();
@@ -232,7 +233,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
   // Classement PERSONNALISÉ à la focale (audit pertinence 2026-07) : la focale « innovation » remonte
   // enfin la tech, « stratégie » l'exécution commerciale/réglementaire ; « dg » reste la priorité
   // globale. Re-tri au rendu uniquement (le score serveur reste l'autorité).
-  const sorted = rankByLens(items, lens);
+  const sorted = rankByLens(items, lens, weights);
   const menaces = sorted.filter((s) => s.stance === "threat");
   const opps = sorted.filter((s) => s.stance === "opportunity");
   // « Business imminent » (plan d'audit §5.4) : signaux à échéance proche OU à contenu business
@@ -278,7 +279,7 @@ export function RadarExecutif({ lens, setView }: RadarExecutifProps) {
       const pa = isPastDue(a, nowMs) ? 1 : 0;
       const pb = isPastDue(b, nowMs) ? 1 : 0;
       if (pa !== pb) return pa - pb;
-      return lensAdjustedScore(b, lens) - lensAdjustedScore(a, lens);
+      return lensAdjustedScore(b, lens, weights) - lensAdjustedScore(a, lens, weights);
     }),
     6,
     // Clé de diversité = entité, avec repli sur l'ACHETEUR de l'angle business (audit 4 zones 2026-07) :

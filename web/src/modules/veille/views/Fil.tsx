@@ -9,7 +9,7 @@ import { useCan } from "../../../lib/rbac";
 import { BUSINESS_SUBTYPES, DETECTION_SUBTYPE_LABELS, PUBLISHED_STATUSES, createIntelItem, updateIntelItem, useIntelItems, type IntelAxis, type IntelImpact, type IntelStance, type IntelItem, type IntelStatus } from "../lib/intel";
 import { createAction } from "../lib/execution";
 import { effectiveProx, isPastDue } from "../lib/freshness";
-import { lensAdjustedScore } from "../lib/ranking";
+import { lensAdjustedScore, type LensWeights } from "../lib/ranking";
 import { useIsExec } from "../../../lib/rbac";
 import { SignalMessageButton } from "../components/SignalMessage";
 
@@ -141,7 +141,7 @@ function NewItemPanel({ open, onClose }: { open: boolean; onClose: () => void })
 }
 
 /** "Fil de veille" — ported from `Fil` in the maquette; data source swapped to Firestore `intelItems` (V2). */
-export function Fil({ lens = "dg" }: { lens?: string }) {
+export function Fil({ lens = "dg", weights }: { lens?: string; weights?: LensWeights }) {
   // Maillage inter-vues (Vague C + interactivité 2026-07) : un CTA d'une autre vue (Détection, matrice
   // du radar, graphiques Concurrence…) ouvre le Fil pré-filtré via ?ent= / ?ax= / ?st= / ?imp=.
   const [sp, setSp] = useSearchParams();
@@ -185,7 +185,7 @@ export function Fil({ lens = "dg" }: { lens?: string }) {
     // déterministe entre focales.
     .sort(
       (a, b) =>
-        lensAdjustedScore(b, lens) - lensAdjustedScore(a, lens) ||
+        lensAdjustedScore(b, lens, weights) - lensAdjustedScore(a, lens, weights) ||
         (b.priorityScore ?? 0) - (a.priorityScore ?? 0) ||
         (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999") ||
         (b.date ?? "").localeCompare(a.date ?? "")

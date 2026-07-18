@@ -4400,6 +4400,48 @@ exports.setPermissionsMatrix = onCall(CALLABLE_OPTS, async (request) => {
   return { ok: true, roles: Object.keys(clean) };
 });
 
+/**
+ * setLensWeights — callable (DIRECTION uniquement) : met à jour les pondérations de FOCALE
+ * (rôle-focale × axe) dans config/lensWeights, sans redéploiement. Ces poids re-classent l'affichage
+ * (Fil / Détection / Radar) selon la focale du lecteur — le priorityScore serveur reste l'autorité.
+ * Sanitize : n'accepte que les focales dg/strategie/innovation × les 5 axes connus, valeurs bornées
+ * [0, 3]. config/lensWeights est LISIBLE par tout authentifié (règle dédiée), écrit ici uniquement.
+ */
+const LENS_KEYS = ["dg", "strategie", "innovation"];
+const LENS_AXES = ["partenaires", "concurrents", "clients_prospects", "tech", "reglementaire"];
+function sanitizeLensWeights(obj) {
+  const out = {};
+  if (!obj || typeof obj !== "object") return out;
+  for (const lens of LENS_KEYS) {
+    const row = obj[lens];
+    if (!row || typeof row !== "object") continue;
+    const clean = {};
+    for (const ax of LENS_AXES) {
+      const v = Number(row[ax]);
+      if (Number.isFinite(v)) clean[ax] = Math.min(3, Math.max(0, Math.round(v * 100) / 100));
+    }
+    if (Object.keys(clean).length) out[lens] = clean;
+  }
+  return out;
+}
+exports.setLensWeights = onCall(CALLABLE_OPTS, async (request) => {
+  if (request.auth?.token?.role !== "direction") {
+    throw new HttpsError("permission-denied", "Seule la Direction peut modifier les pondérations de focale.");
+  }
+  const clean = sanitizeLensWeights(request.data?.weights);
+  if (!Object.keys(clean).length) {
+    throw new HttpsError("invalid-argument", "weights (focale → axe → valeur) est requis.");
+  }
+  const db = firestoreDb();
+  await db.doc("config/lensWeights").set({ weights: clean, updatedAt: FieldValue.serverTimestamp(), updatedBy: request.auth.uid }, { merge: true });
+  await db.collection("auditLog").add({
+    uid: request.auth.uid, action: "setLensWeights", module: "config", entity: "config/lensWeights",
+    entityId: "lensWeights", detail: { lenses: Object.keys(clean) }, ts: FieldValue.serverTimestamp(),
+  });
+  logger.info(`setLensWeights: caller=${request.auth.uid} lenses=${Object.keys(clean).join(",")}`);
+  return { ok: true, lenses: Object.keys(clean) };
+});
+
 /* ============================================================================================= *
  * INTÉGRATIONS TIERCES — gestion des utilisateurs (rôles), webhooks sortants & entrants.
  * ============================================================================================= */
