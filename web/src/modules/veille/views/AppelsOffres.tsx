@@ -4,9 +4,11 @@ import { T, PROX } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { useToast } from "../../../design/overlay";
 import { usePaged, Pager } from "../components/Pager";
-import { PUBLISHED_STATUSES, useIntelItems, updateIntelItem, type IntelItem } from "../lib/intel";
+import { PUBLISHED_STATUSES, useIntelItems, updateIntelItem, runEnrichTendersNow, type IntelItem } from "../lib/intel";
 import { createAction } from "../lib/execution";
 import { effectiveProx, isPastDue } from "../lib/freshness";
+import { useIsExec } from "../../../lib/rbac";
+import { useCopiloteAccounts, type CopiloteAccount } from "../lib/copilote";
 
 /**
  * Détection Appels d'offres — vue DÉDIÉE aux signaux d'AO / financements (subtype "tender", et en
@@ -24,11 +26,14 @@ function deadlineOf(it: IntelItem): string | undefined {
   return it.businessAngle?.deadline || it.dueDate || undefined;
 }
 
-function AoRow({ it }: { it: IntelItem }) {
+const normName = (v: string) => (v || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+
+function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [sp, setSp] = useSearchParams();
   const ba = it.businessAngle || {};
+  const bus = account?.nt360?.bus && account.nt360.bus.length ? account.nt360.bus.join(", ") : ba.bu || "";
   const prox = effectiveProx(it) ?? it.prox ?? "horizon";
   const past = isPastDue(it);
   const buyer = ba.buyer || it.ent || "—";
@@ -62,7 +67,12 @@ function AoRow({ it }: { it: IntelItem }) {
         {it.soWhat && <div style={{ fontSize: 11, color: T.dim, marginTop: 2 }}>{it.soWhat}</div>}
         {ba.tenderRef && <div style={{ fontSize: 10.5, color: T.faint, marginTop: 2 }}>Réf : {ba.tenderRef}</div>}
       </td>
-      <td style={{ padding: "8px 8px", color: T.ink }}>{buyer}{ba.bu ? <div style={{ fontSize: 10.5, color: T.faint }}>{ba.bu}</div> : null}</td>
+      <td style={{ padding: "8px 8px", color: T.ink }}>
+        {buyer}
+        {account
+          ? <div style={{ fontSize: 10, marginTop: 2 }}><span style={{ color: T.emerald, fontWeight: 700 }}>● client connu</span>{account.tier ? <span style={{ color: T.faint }}> · {account.tier}</span> : null}{bus ? <span style={{ color: T.faint }}> · {bus}</span> : null}</div>
+          : bus ? <div style={{ fontSize: 10.5, color: T.faint }}>{bus}</div> : null}
+      </td>
       <td style={{ padding: "8px 8px", color: ba.estAmount ? T.emerald : T.faint, whiteSpace: "nowrap" }}>{ba.estAmount || "n.c."}</td>
       <td style={{ padding: "8px 8px", whiteSpace: "nowrap" }}>
         <span style={{ color: PROX_COLOR[prox] || T.dim, fontWeight: 600 }}>{PROX[prox]?.l || prox}</span>
@@ -80,6 +90,10 @@ function AoRow({ it }: { it: IntelItem }) {
 
 export function AppelsOffres() {
   const { items, loading } = useIntelItems();
+  const { accounts } = useCopiloteAccounts();
+  const isExec = useIsExec();
+  const toast = useToast();
+  const [enriching, setEnriching] = useState(false);
   const [withAmount, setWithAmount] = useState(false);
   const [withDeadline, setWithDeadline] = useState(false);
   const [proxFilter, setProxFilter] = useState("all");
@@ -91,6 +105,20 @@ export function AppelsOffres() {
     () => items.filter((s) => AO_SUBTYPES.has(s.subtype ?? "") && PUBLISHED_STATUSES.has(s.status)),
     [items]
   );
+  // Corrélation AO ↔ compte nt360 (levier 5) : rapproche l'acheteur d'un compte connu du pipeline.
+  const accIndex = useMemo(() => accounts.map((a) => ({ n: normName(a.nom), a })).filter((x) => x.n.length >= 3), [accounts]);
+  const matchAccount = (it: IntelItem): CopiloteAccount | undefined => {
+    const hay = normName(`${it.businessAngle?.buyer || ""} ${it.ent || ""}`);
+    if (hay.length < 3) return undefined;
+    return accIndex.find((x) => hay.includes(x.n) || x.n.includes(hay))?.a;
+  };
+  const enrich = async () => {
+    setEnriching(true);
+    try {
+      const r = await runEnrichTendersNow();
+      toast.success(`Enrichissement AO : ${r.enriched}/${r.processed} complété(s) (${r.candidates} candidat(s)).`);
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Échec de l'enrichissement."); } finally { setEnriching(false); }
+  };
   const zones = useMemo(() => {
     const set = new Set<string>();
     aoItems.forEach((s) => { if (s.geo) set.add(s.geo); });
@@ -122,6 +150,7 @@ export function AppelsOffres() {
   const kpiUrgent = aoItems.filter((s) => { const p = effectiveProx(s) ?? s.prox; return (p === "imminent" || p === "court") && !isPastDue(s); }).length;
   const kpiMontant = aoItems.filter((s) => !!s.businessAngle?.estAmount).length;
   const kpiEcheance = aoItems.filter((s) => !!deadlineOf(s)).length;
+  const kpiComptes = accIndex.length ? aoItems.filter((s) => !!matchAccount(s)).length : 0;
 
   const paged = usePaged(rows, 25);
 
@@ -129,7 +158,14 @@ export function AppelsOffres() {
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <Eyebrow color={T.gold}>Détection Appels d'offres — opportunités marché (AO · financements · budgets)</Eyebrow>
-        <Badge>{rows.length} affiché(s)</Badge>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {isExec && (
+            <button className="pill" disabled={enriching} onClick={() => void enrich()} title="Va lire la page officielle des AO pour compléter montant / échéance" style={{ fontSize: 11, padding: "3px 10px" }}>
+              {enriching ? "Enrichissement…" : "Enrichir les AO ↻"}
+            </button>
+          )}
+          <Badge>{rows.length} affiché(s)</Badge>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8, marginTop: 12 }}>
@@ -137,6 +173,7 @@ export function AppelsOffres() {
         <Kpi label="Échéance imminente / courte" value={String(kpiUrgent)} />
         <Kpi label="Montant chiffré" value={String(kpiMontant)} />
         <Kpi label="Avec échéance" value={String(kpiEcheance)} />
+        {accIndex.length > 0 && <Kpi label="Sur comptes connus" value={String(kpiComptes)} />}
       </div>
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
@@ -169,7 +206,7 @@ export function AppelsOffres() {
             </tr>
           </thead>
           <tbody>
-            {paged.pageItems.map((it) => <AoRow key={it.id} it={it} />)}
+            {paged.pageItems.map((it) => <AoRow key={it.id} it={it} account={matchAccount(it)} />)}
             {!loading && !rows.length && (
               <tr><td colSpan={6} style={{ padding: 14, color: T.dim, fontSize: 12.5 }}>
                 Aucun appel d'offres détecté pour ces filtres. Les AO proviennent des portails branchés (marchés publics, UEMOA, bailleurs) via la synchro de veille — élargissez les sources dans Détection ou relancez une synchro.

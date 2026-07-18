@@ -374,6 +374,13 @@ export async function runSyncSourcesNow(): Promise<Record<string, unknown>> {
   return data;
 }
 
+/** Enrichit les appels d'offres via la page officielle (callable enrichTendersNow, exec). */
+export async function runEnrichTendersNow(): Promise<{ candidates: number; processed: number; fetched: number; enriched: number }> {
+  const call = httpsCallable<void, { candidates: number; processed: number; fetched: number; enriched: number }>(functions, "enrichTendersNow", HEAVY_CALL);
+  const { data } = await call();
+  return data;
+}
+
 /** Nettoie les quasi-doublons existants dans les signaux (callable exec). Retourne { clusters, archived }. */
 export async function runDedupeIntelItemsNow(): Promise<{ clusters?: number; archived?: number }> {
   const call = httpsCallable<void, { clusters?: number; archived?: number }>(functions, "dedupeIntelItemsNow", HEAVY_CALL);
