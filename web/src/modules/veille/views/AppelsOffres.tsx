@@ -28,11 +28,17 @@ const AO_NOTICE_RE = /\bappel\s?s?\s+(?:d['’ ]?)?offres?\b|avis\s+(?:d['’ ]?
 // Un simple NOM de portail (« Portail Malien des Marchés Publics ») n'en est pas une : le classifieur
 // mettait parfois le nom de la source dans tenderRef, ce qui faisait passer des actualités pour des AO.
 const REAL_REF_RE = /\d{2,}|N[°o]\s*\d|\b[A-Z]{2,}[-/]\d/;
+// Opérations de MARCHÉ FINANCIER (émission de dette/capital) : ce ne sont PAS des appels d'offres
+// auxquels on peut soumissionner — une « réf » chiffrée (ISIN, code FCTC…) les faisait passer à tort
+// (ex. « titrisation de créances Groupe BSIC »). On les exclut explicitement de la vue AO (2026-07).
+const FINANCIAL_OP_RE = /titrisation|obligataire|emprunt\s+obligataire|lev[ée]{1,2}\s+de\s+fonds|augmentation\s+de\s+capital|introduction\s+en\s+bourse|\bIPO\b|notation\s+financi|eurobond|\bFCTC\b|[ée]mission\s+(?:d['’ ]?)?(?:obligations?|titres|emprunt)/i;
 function isAoItem(s: IntelItem): boolean {
   // Provenance obligatoire (validation 2026-07) : un AO qu'on ne peut pas OUVRIR n'a aucune valeur
   // opérationnelle. On exige donc une URL source — cela masque aussi les avis déjà publiés AVANT le
   // gate backend (qui, lui, ne rejette que les nouveaux items `pending`).
   if (!s.url || !s.url.trim()) return false;
+  // Exclusion des opérations financières (titrisation, obligataire…) : jamais des AO soumissionnables.
+  if (FINANCIAL_OP_RE.test(s.title || "")) return false;
   const ref = s.businessAngle?.tenderRef || "";
   // Réf de dossier crédible (avec numéro/code) = signal le plus fiable.
   if (REAL_REF_RE.test(ref)) return true;
