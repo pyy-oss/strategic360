@@ -75,6 +75,7 @@ import { useIsExec, usePermissions, ROLE_LABEL, type Role } from "../../lib/rbac
 import { VIEW_MODULE } from "./data";
 import { Reglages } from "./views/Reglages";
 import { Integrations } from "./views/Integrations";
+import { AppelsOffres } from "./views/AppelsOffres";
 import { useLensWeights } from "./lib/lensWeights";
 
 const VIEW_KEYS = NAV.map(([k]) => k);
@@ -201,6 +202,7 @@ export default function VeilleApp() {
       {view === "radar" && <RadarExecutif lens={lens} weights={lensWeights} setView={setView} />}
       {view === "fil" && <Fil lens={lens} weights={lensWeights} />}
       {view === "detection" && <Detection lens={lens} weights={lensWeights} />}
+      {view === "appels" && <AppelsOffres />}
       {view === "indicateurs" && <Indicateurs />}
       {view === "cadres" && <Cadres />}
       {view === "portefeuille" && <Portefeuille />}

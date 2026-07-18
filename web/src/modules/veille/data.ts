@@ -198,6 +198,7 @@ export const NAV: [string, string][] = [
   ["onboarding", "Onboarding client"],
   ["reglages", "Réglages & Droits"],
   ["integrations", "Intégrations & API"],
+  ["appels", "Appels d'offres"],
 ];
 
 /**
@@ -207,7 +208,7 @@ export const NAV: [string, string][] = [
  * (exec / direction). Miroir logique du remapping firestore.rules.
  */
 export const VIEW_MODULE: Record<string, string> = {
-  radar: "veille", fil: "veille", detection: "veille", briefing: "veille", concurrence: "veille", plan: "veille",
+  radar: "veille", fil: "veille", detection: "veille", briefing: "veille", concurrence: "veille", plan: "veille", appels: "veille",
   indicateurs: "finance", portefeuille: "finance", valeur: "finance", simulateur: "finance",
   cadres: "strategie", diagnostic: "strategie", scenarios: "strategie", execution: "strategie",
   innovation: "innovation",
@@ -220,7 +221,7 @@ export const VIEW_MODULE: Record<string, string> = {
  * Le libellé de chaque vue reste défini dans NAV (source unique).
  */
 export const NAV_GROUPS: { label: string; home: string; items: string[] }[] = [
-  { label: "Veille", home: "radar", items: ["radar", "fil", "detection", "briefing"] },
+  { label: "Veille", home: "radar", items: ["radar", "fil", "detection", "appels", "briefing"] },
   { label: "Analyse", home: "indicateurs", items: ["indicateurs", "cadres", "diagnostic", "concurrence"] },
   { label: "Croissance", home: "portefeuille", items: ["portefeuille", "valeur", "simulateur", "scenarios", "innovation"] },
   { label: "Action", home: "copilote", items: ["copilote", "equipe", "plan", "execution"] },
