@@ -59,6 +59,28 @@ function mergeBusinessAngle(existing, extracted) {
   return out;
 }
 
+const AO_GATED_SUBTYPES = new Set(TENDER_ENRICH_SUBTYPES);
+/** Un item est-il un AO (soumis à la porte de provenance) ? */
+function isAoSubtype(subtype) {
+  return AO_GATED_SUBTYPES.has(String(subtype || "").toLowerCase());
+}
+
+/**
+ * PORTE DE PROVENANCE AO (Phase 1 fiabilisation AO, 2026-07). Un appel d'offres qu'on ne peut pas
+ * OUVRIR n'a aucune valeur opérationnelle (le commercial ne peut ni le vérifier ni y répondre) et
+ * fait peser un risque de crédibilité (item non traçable présenté comme un fait). Règle déterministe :
+ * un item de subtype AO (tender/funding/budget) DOIT porter une URL source non vide, sinon il est
+ * écarté AVANT même le jugement de pertinence. Renvoie une raison de rejet (string) ou null si OK.
+ * N'affecte QUE les subtypes AO — les autres signaux ne sont pas concernés.
+ */
+function aoProvenanceRejectReason(item) {
+  const it = item && typeof item === "object" ? item : {};
+  if (!isAoSubtype(it.subtype)) return null;
+  const url = typeof it.url === "string" ? it.url.trim() : "";
+  if (!url) return "AO sans URL source — non vérifiable, non publié";
+  return null;
+}
+
 /** Extrait une date ISO (YYYY-MM-DD) d'une échéance en texte libre, pour alimenter dueDate (proximité). */
 function isoDeadline(deadline) {
   if (typeof deadline !== "string") return null;
@@ -75,4 +97,6 @@ module.exports = {
   parseTenderEnrichResponse,
   mergeBusinessAngle,
   isoDeadline,
+  isAoSubtype,
+  aoProvenanceRejectReason,
 };
