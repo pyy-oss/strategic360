@@ -4500,8 +4500,9 @@ exports.userAdmin = onCall(CALLABLE_OPTS, async (request) => {
     const existing = user.customClaims || {};
     await auth.setCustomUserClaims(user.uid, { ...existing, role });
     // E-mail « définissez votre mot de passe » via Identity Toolkit (clé web NON secrète). Aucun mot de
-    // passe ne transite jamais. Nécessite FIREBASE_WEB_API_KEY (functions/.env) — sinon on saute l'e-mail.
-    const apiKey = process.env.FIREBASE_WEB_API_KEY;
+    // passe ne transite jamais. Nécessite WEB_API_KEY (functions/.env) — sinon on saute l'e-mail.
+    // (nom sans préfixe FIREBASE_ : réservé par firebase deploy pour les .env.)
+    const apiKey = process.env.WEB_API_KEY;
     const hasPassword = (user.providerData || []).some((p) => p.providerId === "password");
     let emailSent = false;
     if (apiKey && !hasPassword) {

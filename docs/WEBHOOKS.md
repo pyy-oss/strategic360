@@ -15,7 +15,7 @@ L'authentification Firebase est **partagée** entre les apps du projet. On ne g�
 
 - **Inviter** : crée le compte s'il n'existe pas, assigne le rôle, envoie un e-mail « définissez
   votre mot de passe » (Identity Toolkit — aucun mot de passe ne transite). Nécessite
-  `FIREBASE_WEB_API_KEY` (functions/.env, clé web **non secrète**).
+  `WEB_API_KEY` (functions/.env, clé web **non secrète**).
 - **Ré-attribuer** : change le rôle d'un utilisateur.
 - **Révoquer** : retire le claim `role` (l'utilisateur perd l'accès à l'app ; son compte Firebase
   reste intact pour les autres apps du projet). On ne peut pas se révoquer soi-même.
