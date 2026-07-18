@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import { T } from "../../design/tokens";
@@ -88,7 +88,14 @@ const DIRECTION_ONLY_VIEWS = new Set(["reglages", "integrations"]);
  * the lens/focale selector remains local `useState`, exactly like the maquette.
  */
 export default function VeilleApp() {
-  const [lens, setLens] = useState("dg");
+  // Focale persistée (la préférence du lecteur survit au rechargement).
+  const [lens, setLens] = useState(() => {
+    const saved = typeof localStorage !== "undefined" ? localStorage.getItem("sentinel.lens") : null;
+    return saved && LENS.some((l) => l[0] === saved) ? saved : "dg";
+  });
+  useEffect(() => {
+    try { localStorage.setItem("sentinel.lens", lens); } catch { /* stockage indisponible */ }
+  }, [lens]);
   const navigate = useNavigate();
   const { view } = useParams<{ view: string }>();
   const { user, role } = useAuthClaims();
@@ -190,8 +197,8 @@ export default function VeilleApp() {
       <GroupedNav view={view} setView={setView} groups={visibleGroups} />
 
       {view === "radar" && <RadarExecutif lens={lens} setView={setView} />}
-      {view === "fil" && <Fil />}
-      {view === "detection" && <Detection />}
+      {view === "fil" && <Fil lens={lens} />}
+      {view === "detection" && <Detection lens={lens} />}
       {view === "indicateurs" && <Indicateurs />}
       {view === "cadres" && <Cadres />}
       {view === "portefeuille" && <Portefeuille />}

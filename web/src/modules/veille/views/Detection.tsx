@@ -6,6 +6,7 @@ import { useIntelItems, useSources, withDetectionFields, createSource, updateSou
 import { createAction } from "../lib/execution";
 import { useCan, useIsExec } from "../../../lib/rbac";
 import { effectiveProx, isPastDue } from "../lib/freshness";
+import { lensAdjustedScore } from "../lib/ranking";
 import { useSyncStatus } from "../lib/summaries";
 import { usePaged, Pager } from "../components/Pager";
 import { Select, Input } from "../../../design/fields";
@@ -19,7 +20,7 @@ import { usePipelineConfig, setPipelineConfig, PIPELINE_KEYS, PIPELINE_LABEL, ty
  * données externes automatiques" decision these are derived from `axis` when absent
  * (`withDetectionFields`) so every AI-classified signal is plottable without human touch-up.
  */
-export function Detection() {
+export function Detection({ lens = "dg" }: { lens?: string }) {
   const [cat, setCat] = useState("all");
   const [subtype, setSubtype] = useState("all");
   const { items } = useIntelItems();
@@ -57,6 +58,7 @@ export function Detection() {
       const P: Record<string, number> = { imminent: 0, court: 1, moyen: 2, horizon: 3 };
       const I: Record<string, number> = { high: 0, medium: 1, low: 2 };
       return (
+        lensAdjustedScore(b, lens) - lensAdjustedScore(a, lens) ||
         (b.priorityScore ?? 0) - (a.priorityScore ?? 0) ||
         P[a.eprox as string] - P[b.eprox as string] ||
         I[a.impact] - I[b.impact]
