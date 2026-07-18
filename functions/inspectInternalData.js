@@ -129,6 +129,41 @@ async function sourcesHealth(db) {
   console.log(`\nRésumé : ${errors} en échec · ${degraded} dégradées · ${rows.length - errors - degraded} OK/en attente.`);
 }
 
+/**
+ * INSPECT_MODE="ao": dump READ-ONLY de la PROVENANCE des items d'appel d'offres (collection
+ * intelItems de la base strategic360). Pour chaque item AO-like (subtype tender/funding/budget,
+ * ou tenderRef présent, ou intitulé d'avis), imprime titre + subtype + URL source + nom de source
+ * + geo + date + businessAngle — afin de vérifier si les AO sont bien ancrés dans une vraie source
+ * (URL présente ? geo cohérent avec la source ?) ou fabriqués. Veille externe = infos publiques.
+ */
+const AO_SUBTYPES_INSPECT = new Set(["tender", "funding", "budget"]);
+const AO_NOTICE_INSPECT = /appel\s?s?\s+(?:d['’ ]?)?offres?|avis\s+(?:d['’ ]?)?appel|manifestation\s+(?:d['’ ]?)?int[ée]r|sollicitation\s+de\s+prix|demande\s+de\s+(?:propositions?|cotations?)|appel\s+à\s+(?:candidatures?|projets?)|\b(?:AOOR?|AAO|AON|AMI|DAO|RFP|RFQ)\b/i;
+async function inspectAoProvenance(db) {
+  const snap = await db.collection("intelItems").get();
+  const items = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+  const isAo = (s) =>
+    AO_SUBTYPES_INSPECT.has(s.subtype || "") || (s.businessAngle && s.businessAngle.tenderRef) || AO_NOTICE_INSPECT.test(s.title || "");
+  const ao = items.filter(isAo);
+  console.log(`intelItems : ${items.length} au total, ${ao.length} AO-like.\n`);
+  let noUrl = 0;
+  for (const s of ao) {
+    const ba = s.businessAngle || {};
+    if (!s.url) noUrl += 1;
+    console.log(`• ${s.title || "(sans titre)"}`);
+    console.log(`    subtype=${s.subtype || "—"}  status=${s.status || "—"}  geo=${s.geo || "—"}  date=${s.date || "—"}  evalScore=${s.evalScore ?? "—"}`);
+    console.log(`    url=${s.url || "❌ AUCUNE"}`);
+    console.log(`    sourceName=${s.sourceName || "—"}  sourceRating=${s.sourceRating || "—"}`);
+    console.log(`    tenderRef=${ba.tenderRef || "—"}  buyer=${ba.buyer || "—"}  estAmount=${ba.estAmount || "—"}  deadline=${ba.deadline || "—"}`);
+    console.log("");
+  }
+  console.log(`Résumé AO : ${ao.length} items · ${noUrl} SANS url source · ${ao.length - noUrl} avec url.`);
+  // Répartition par source pour repérer un portail qui « produit » beaucoup d'items (signe de scraping stérile → hallucination).
+  const bySource = {};
+  for (const s of ao) { const k = s.sourceName || "(sans source)"; bySource[k] = (bySource[k] || 0) + 1; }
+  console.log("\nPar source :");
+  for (const [k, n] of Object.entries(bySource).sort((a, b) => b[1] - a[1])) console.log(`  ${n}×  ${k}`);
+}
+
 async function inspectDocSubcollections(db, path) {
   const ref = db.doc(path);
   const snap = await ref.get();
@@ -167,6 +202,8 @@ async function main() {
         await inspectDocSubcollections(db, path);
       } else if (mode === "sources") {
         await sourcesHealth(db);
+      } else if (mode === "ao") {
+        await inspectAoProvenance(db);
       } else if (mode === "roots") {
         await rootsOverview(db);
       } else {
