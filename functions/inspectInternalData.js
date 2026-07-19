@@ -144,6 +144,7 @@ async function sourceDiag(db) {
     console.log(`    url=${g.url || ""}`);
     console.log(`    htmlLen=${g.htmlLen} textLen=${g.textLen} jsonEmbedded=${g.jsonEmbedded}`);
     console.log(`    hrefs=${JSON.stringify(g.hrefs || [])}`);
+    console.log(`    noticeHrefs=${JSON.stringify(g.noticeHrefs || [])}`);
     console.log(`    --- htmlHead ---\n${String(g.htmlHead || "").replace(/\s+/g, " ").slice(0, 3200)}\n`);
   }
 }

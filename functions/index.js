@@ -1613,10 +1613,23 @@ async function runSyncSources(db) {
         if (created === 0) {
           try {
             const h = String(html);
-            const hrefs = (h.match(/href="([^"#][^"]{0,140})"/g) || [])
+            const allHrefs = (h.match(/href="([^"#][^"]{0,200})"/g) || [])
               .map((x) => x.slice(6, -1))
-              .filter((x) => !/\.(png|jpe?g|svg|css|js|woff2?|ico)(\?|$)/i.test(x))
-              .slice(0, 30);
+              .filter((x) => !/\.(png|jpe?g|svg|css|js|woff2?|ico)(\?|$)/i.test(x));
+            const hrefs = allHrefs.slice(0, 30);
+            // CANDIDATS AVIS (audit UEMOA 2026-07-19) : les 30 premiers hrefs ne captent souvent que
+            // la nav ; les liens de détail par avis sont plus bas OU sont des PIÈCES JOINTES PDF (portails
+            // Drupal type UEMOA). On isole donc les liens SOUS LA MÊME SECTION que la page liste
+            // (même préfixe de chemin) et les PDF — la matière pour choisir un detailPrefix SUR PREUVE.
+            let selfPath = "/";
+            try { selfPath = (new URL(source.url).pathname || "/").replace(/\/+$/, "") || "/"; } catch { /* garde "/" */ }
+            const noticeHrefs = [...new Set(allHrefs.filter((x) => {
+              if (/\.pdf(\?|$)/i.test(x)) return true;
+              try {
+                const p = (new URL(x, source.url).pathname || "").replace(/\/+$/, "");
+                return selfPath !== "/" && p.startsWith(selfPath) && p.length > selfPath.length;
+              } catch { return false; }
+            }))].slice(0, 50);
             const jsonEmbedded = /<script[^>]+type=["']application\/(ld\+)?json["']/i.test(h)
               || /window\.__(INITIAL_STATE|NUXT|NEXT_DATA|APOLLO)/i.test(h);
             await db.collection("sourceDiag").doc(source.id).set({
@@ -1629,6 +1642,7 @@ async function runSyncSources(db) {
               webItemsCount: webItems.length, // nb d'éléments extraits (mais 0 AO propre)
               jsonEmbedded,
               hrefs,
+              noticeHrefs, // liens candidats « avis » : même section que la liste, ou PDF joint
               htmlHead: h.slice(0, 3500),
             }, { merge: true });
           } catch { /* diagnostic best-effort, jamais bloquant */ }
