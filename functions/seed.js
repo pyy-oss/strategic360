@@ -146,7 +146,10 @@ const SOURCES_SEED = [
   // compteurs de santé à zéro. La SANTÉ de chaque source en prod dira laquelle passe (ok) ou reste murée
   // (403/timeout — cas probable de la BAD, WAF Cloudflare déjà constaté).
   { name: "BAD — Corporate procurement (avis d'AO)", kind: "web-js", url: "https://www.afdb.org/en/about-us/corporate-procurement/procurement-notices/current-solicitations", axis: "clients_prospects", active: true },
-  { name: "BCEAO — Appels d'offres", kind: "web-js", url: "https://www.bceao.int/fr/appels-offres/appels-offres-marches-publics-achats", axis: "clients_prospects", active: true },
+  // BCEAO/BOAD : kind "portal-ao" (2026-07-19) — DOM réel = liste de LIENS DE DÉTAIL par avis
+  // (/fr/appels-offres/{slug}, /fr/opportunites/appels-doffre/{slug}). L'extraction générique les
+  // ratait ; l'extracteur dédié (domain/portalTenders) suit chaque lien via `detailPrefix`.
+  { name: "BCEAO — Appels d'offres", kind: "portal-ao", url: "https://www.bceao.int/fr/appels-offres/appels-offres-marches-publics-achats", detailPrefix: "/fr/appels-offres/", axis: "clients_prospects", active: true },
   { name: "Banque mondiale — projets Côte d'Ivoire", kind: "web", url: "https://projects.worldbank.org/en/projects-operations/projects-list?countrycode_exact=CI", axis: "clients_prospects", active: true },
   { name: "UEMOA — Appels d'offres", kind: "web-js", url: "https://www.uemoa.int/appel-d-offre", axis: "clients_prospects", active: true },
   { name: "Banque Atlantique — appels d'offres (client)", kind: "web-js", url: "https://www.banqueatlantique.net/appels-doffres/", axis: "clients_prospects", active: true },
@@ -160,7 +163,7 @@ const SOURCES_SEED = [
   { name: "Mali — DGMP-DSP (marchés publics)", kind: "web", url: "https://dgmp.gouv.ml/", axis: "clients_prospects", active: true },
   { name: "Togo — ARCOP (marchés publics)", kind: "web", url: "https://arcop.tg/", axis: "clients_prospects", active: true },
   { name: "Niger — ARMP (marchés publics)", kind: "web", url: "https://www.armp-niger.org/", axis: "clients_prospects", active: true },
-  { name: "BOAD — Appels d'offres", kind: "web-js", url: "https://www.boad.org/fr/opportunites/appels-doffre/", axis: "clients_prospects", active: true },
+  { name: "BOAD — Appels d'offres", kind: "portal-ao", url: "https://www.boad.org/fr/opportunites/appels-doffre/", detailPrefix: "/fr/opportunites/appels-doffre/", axis: "clients_prospects", active: true },
   { name: "AFD — Appels d'offres & consultations", kind: "web", url: "https://www.afd.fr/fr/appels-offres", axis: "clients_prospects", active: true },
   { name: "UNGM — avis de marchés (agences ONU)", kind: "web-js", url: "https://www.ungm.org/Public/Notice", axis: "clients_prospects", active: true },
   // Concurrents (audit 2026-07, Action 3.2 — aucune source n'existait sur cet axe)
@@ -353,6 +356,9 @@ async function seed() {
       if (!cur.sourceRating) patch.sourceRating = sourceRating;
       // Migration du `kind` défini au seed (ex. passage web → web-js pour les portails anti-bot/JS).
       if (entry.kind && cur.kind !== entry.kind) { patch.kind = entry.kind; kindMigrated += 1; }
+      // Config d'extraction portail (kind portal-ao) : le motif de lien de détail doit être écrit sur
+      // le doc existant (sinon l'extracteur retombe sur le chemin de la page liste et ne capte rien).
+      if (entry.detailPrefix && cur.detailPrefix !== entry.detailPrefix) { patch.detailPrefix = entry.detailPrefix; }
       // Correction d'URL (ex. endpoint API World Bank v3→v2) : le seed est la source de vérité de
       // l'URL canonique — si elle change, on met à jour + on remet les compteurs de santé à zéro
       // (l'ancienne URL avait pu accumuler des échecs/désactiver la source).
