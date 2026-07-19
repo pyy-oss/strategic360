@@ -141,10 +141,15 @@ const SOURCES_SEED = [
   { name: "SIGOMAP — portail officiel des marchés publics CI", kind: "web-js", url: "https://www.sigomap.gouv.ci", axis: "clients_prospects", active: true },
   { name: "DGMP — marchespublics.ci (avis d'AO)", kind: "web-js", url: "https://www.marchespublics.ci/appel_offre", axis: "clients_prospects", active: true },
   { name: "ARCOP — Autorité de Régulation de la Commande Publique (ex-ANRMP)", kind: "web-js", url: "https://arcop.ci/", axis: "clients_prospects", active: true },
-  { name: "BAD — Corporate procurement (avis d'AO)", kind: "web", url: "https://www.afdb.org/fr/about/corporate-procurement", axis: "clients_prospects", active: true },
-  { name: "BCEAO — Appels d'offres", kind: "web", url: "https://www.bceao.int/fr/appels_offres", axis: "clients_prospects", active: true },
+  // URL d'AO PRÉCISES fournies par l'utilisateur (2026-07-19) + passage en web-js (rendu headless, meilleure
+  // chance face au JS/anti-bot). Le seed met à jour l'URL des sources existantes (par nom) et remet les
+  // compteurs de santé à zéro. La SANTÉ de chaque source en prod dira laquelle passe (ok) ou reste murée
+  // (403/timeout — cas probable de la BAD, WAF Cloudflare déjà constaté).
+  { name: "BAD — Corporate procurement (avis d'AO)", kind: "web-js", url: "https://www.afdb.org/en/about-us/corporate-procurement/procurement-notices/current-solicitations", axis: "clients_prospects", active: true },
+  { name: "BCEAO — Appels d'offres", kind: "web-js", url: "https://www.bceao.int/fr/appels-offres/appels-offres-marches-publics-achats", axis: "clients_prospects", active: true },
   { name: "Banque mondiale — projets Côte d'Ivoire", kind: "web", url: "https://projects.worldbank.org/en/projects-operations/projects-list?countrycode_exact=CI", axis: "clients_prospects", active: true },
-  { name: "UEMOA — Appels d'offres", kind: "web", url: "https://www.uemoa.int/appel-d-offre", axis: "clients_prospects", active: true },
+  { name: "UEMOA — Appels d'offres", kind: "web-js", url: "https://www.uemoa.int/appel-d-offre", axis: "clients_prospects", active: true },
+  { name: "Banque Atlantique — appels d'offres (client)", kind: "web-js", url: "https://www.banqueatlantique.net/appels-doffres/", axis: "clients_prospects", active: true },
   // Élargissement RÉGIONAL des portails AO (audit pertinence 2026-07, levier 3) : UEMOA/CEDEAO +
   // bailleurs, pour piloter la croissance au-delà de la CI. Une source dont l'URL change/casse se
   // désactive d'elle-même après échecs consécutifs (non bloquant) — voir la santé des sources dans Détection.
@@ -155,7 +160,7 @@ const SOURCES_SEED = [
   { name: "Mali — DGMP-DSP (marchés publics)", kind: "web", url: "https://dgmp.gouv.ml/", axis: "clients_prospects", active: true },
   { name: "Togo — ARCOP (marchés publics)", kind: "web", url: "https://arcop.tg/", axis: "clients_prospects", active: true },
   { name: "Niger — ARMP (marchés publics)", kind: "web", url: "https://www.armp-niger.org/", axis: "clients_prospects", active: true },
-  { name: "BOAD — Appels d'offres", kind: "web", url: "https://www.boad.org/appels-doffres/", axis: "clients_prospects", active: true },
+  { name: "BOAD — Appels d'offres", kind: "web-js", url: "https://www.boad.org/fr/opportunites/appels-doffre/", axis: "clients_prospects", active: true },
   { name: "AFD — Appels d'offres & consultations", kind: "web", url: "https://www.afd.fr/fr/appels-offres", axis: "clients_prospects", active: true },
   { name: "UNGM — avis de marchés (agences ONU)", kind: "web-js", url: "https://www.ungm.org/Public/Notice", axis: "clients_prospects", active: true },
   // Concurrents (audit 2026-07, Action 3.2 — aucune source n'existait sur cet axe)
