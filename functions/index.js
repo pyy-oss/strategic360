@@ -1537,6 +1537,20 @@ async function runSyncSources(db) {
             const jsonEmbedded = /<script[^>]+type=["']application\/(ld\+)?json["']/i.test(html)
               || /window\.__(INITIAL_STATE|NUXT|NEXT_DATA|APOLLO)/i.test(html);
             logger.info(`syncSources DIAG web-js-0item name="${source.name}" htmlLen=${String(html).length} textLen=${rawText.length} degraded=${degraded} jsonEmbedded=${jsonEmbedded} hrefs=${JSON.stringify(hrefs).slice(0, 900)}`);
+            // Persistance du diagnostic sur le doc source (2026-07-19) : le fetch de logs est fenêtré et
+            // rate souvent la ligne d'une source précise (throttle 80/164 + rotation). En écrivant
+            // l'échantillon de DOM dans `_diag`, l'inspection (lecture seule, fiable) le récupère sans
+            // course à la fenêtre de logs — c'est la matière pour construire un extracteur dédié.
+            await sourceDoc.ref.set({
+              _diag: {
+                at: FieldValue.serverTimestamp(),
+                htmlLen: String(html).length,
+                textLen: rawText.length,
+                jsonEmbedded,
+                hrefs,
+                htmlHead: String(html).slice(0, 3500),
+              },
+            }, { merge: true });
           } catch { /* diagnostic best-effort, jamais bloquant */ }
           if (rawText && !degraded) {
             const classified = await classifyRawText(rawText, watchlistEntities, { ...context }, clientProfile);

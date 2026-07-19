@@ -130,6 +130,26 @@ async function sourcesHealth(db) {
 }
 
 /**
+ * INSPECT_MODE="diag": dump READ-ONLY du diagnostic DOM (`_diag`) persisté par syncSources sur les
+ * sources web/web-js qui rendent « ok » mais 0 avis. Sert à construire un extracteur dédié sur PREUVE :
+ * on voit la taille du DOM rendu, la présence de JSON embarqué, l'échantillon de liens, et un extrait
+ * du HTML. Fiable (lecture Firestore) contrairement au fetch de logs fenêtré.
+ */
+async function sourceDiag(db) {
+  const snap = await db.collection("intelSources").get();
+  const withDiag = snap.docs.map((d) => ({ id: d.id, x: d.data() || {} })).filter((r) => r.x._diag);
+  console.log(`${withDiag.length} source(s) avec diagnostic _diag persisté.\n`);
+  for (const { x } of withDiag) {
+    const g = x._diag || {};
+    console.log(`### ${x.name}  [${x.kind}]`);
+    console.log(`    url=${x.url}`);
+    console.log(`    htmlLen=${g.htmlLen} textLen=${g.textLen} jsonEmbedded=${g.jsonEmbedded}`);
+    console.log(`    hrefs=${JSON.stringify(g.hrefs || [])}`);
+    console.log(`    --- htmlHead ---\n${String(g.htmlHead || "").replace(/\s+/g, " ").slice(0, 3200)}\n`);
+  }
+}
+
+/**
  * INSPECT_MODE="ao": dump READ-ONLY de la PROVENANCE des items d'appel d'offres (collection
  * intelItems de la base strategic360). Pour chaque item AO-like (subtype tender/funding/budget,
  * ou tenderRef présent, ou intitulé d'avis), imprime titre + subtype + URL source + nom de source
@@ -202,6 +222,8 @@ async function main() {
         await inspectDocSubcollections(db, path);
       } else if (mode === "sources") {
         await sourcesHealth(db);
+      } else if (mode === "diag") {
+        await sourceDiag(db);
       } else if (mode === "ao") {
         await inspectAoProvenance(db);
       } else if (mode === "roots") {
