@@ -1558,35 +1558,6 @@ async function runSyncSources(db) {
           const rawText = extractWebText(html);
           degraded = isDegradedWebPage(rawText); // M1 : page coquille (SPA) = source dégradée
           yielded = Boolean(rawText && !degraded);
-          // DIAGNOSTIC extraction (2026-07-19) : une source web/web-js qui rend « ok » mais 0 avis (SPA
-          // dont extractWebItems ne lit pas les cartes — ex. SangoBids, UNGM, portails SIGOMAP) est
-          // muette sans qu'on sache POURQUOI. On journalise la forme du DOM rendu (taille, JSON embarqué,
-          // échantillon de liens) pour pouvoir construire un parseur dédié sur PREUVE plutôt qu'à l'aveugle.
-          try {
-            const hrefs = (String(html).match(/href="([^"#][^"]{0,120})"/g) || [])
-              .map((h) => h.slice(6, -1))
-              .filter((h) => !/\.(png|jpe?g|svg|css|js|woff2?|ico)(\?|$)/i.test(h))
-              .slice(0, 20);
-            const jsonEmbedded = /<script[^>]+type=["']application\/(ld\+)?json["']/i.test(html)
-              || /window\.__(INITIAL_STATE|NUXT|NEXT_DATA|APOLLO)/i.test(html);
-            logger.info(`syncSources DIAG web-js-0item name="${source.name}" htmlLen=${String(html).length} textLen=${rawText.length} degraded=${degraded} jsonEmbedded=${jsonEmbedded} hrefs=${JSON.stringify(hrefs).slice(0, 900)}`);
-            // Persistance dans une COLLECTION DÉDIÉE `sourceDiag/{id}` (audit 2026-07-19, correctif H1/M1) —
-            // PAS sur le doc intelSources : ce dernier est chargé en live par le front (jusqu'à 500 docs)
-            // et exposé à tous les rôles ; y stocker 3,5 Ko de HTML brut = bloat + fuite de débogage +
-            // double écriture. La collection dédiée n'est jamais lue par le front (règles: deny) ; seule
-            // l'inspection admin (mode "diag") la lit. Écrasée en `merge` à chaque passage.
-            await db.collection("sourceDiag").doc(source.id).set({
-              name: source.name,
-              url: source.url,
-              kind: source.kind,
-              at: FieldValue.serverTimestamp(),
-              htmlLen: String(html).length,
-              textLen: rawText.length,
-              jsonEmbedded,
-              hrefs,
-              htmlHead: String(html).slice(0, 3500),
-            }, { merge: true });
-          } catch { /* diagnostic best-effort, jamais bloquant */ }
           if (rawText && !degraded) {
             const classified = await classifyRawText(rawText, watchlistEntities, { ...context }, clientProfile);
             if (classified) {
@@ -1594,6 +1565,34 @@ async function runSyncSources(db) {
               if (written) created = 1;
             }
           }
+        }
+        // DIAGNOSTIC DOM (audit 2026-07-19, ÉLARGI) : toute source web/web-js qui ne produit AUCUN AO
+        // propre ce run (created===0) — qu'elle rende 0 élément (SPA muette : SangoBids/UNGM) OU des
+        // éléments tous dédupliqués/rejetés (nav/junk : BCEAO/BOAD/BAD) — persiste la forme de son DOM
+        // dans `sourceDiag/{id}` (collection dédiée, deny au front, lue seulement par l'inspection admin).
+        // C'est la matière pour bâtir un parseur avis-par-avis SUR PREUVE. Best-effort, jamais bloquant.
+        if (created === 0) {
+          try {
+            const h = String(html);
+            const hrefs = (h.match(/href="([^"#][^"]{0,140})"/g) || [])
+              .map((x) => x.slice(6, -1))
+              .filter((x) => !/\.(png|jpe?g|svg|css|js|woff2?|ico)(\?|$)/i.test(x))
+              .slice(0, 30);
+            const jsonEmbedded = /<script[^>]+type=["']application\/(ld\+)?json["']/i.test(h)
+              || /window\.__(INITIAL_STATE|NUXT|NEXT_DATA|APOLLO)/i.test(h);
+            await db.collection("sourceDiag").doc(source.id).set({
+              name: source.name,
+              url: source.url,
+              kind: source.kind,
+              at: FieldValue.serverTimestamp(),
+              htmlLen: h.length,
+              textLen: extractWebText(h).length,
+              webItemsCount: webItems.length, // nb d'éléments extraits (mais 0 AO propre)
+              jsonEmbedded,
+              hrefs,
+              htmlHead: h.slice(0, 3500),
+            }, { merge: true });
+          } catch { /* diagnostic best-effort, jamais bloquant */ }
         }
       } else {
         logger.warn(`syncSources: skip ${source.id} — unrecognized kind "${source.kind}"`);
