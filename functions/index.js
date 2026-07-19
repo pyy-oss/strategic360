@@ -49,6 +49,7 @@ const { buildBriefingPdf } = require("./domain/pdf");
 const { generateJson, DEFAULT_MODEL } = require("./domain/vertex");
 const { TENDER_ENRICH_SUBTYPES, buildTenderEnrichPrompt, parseTenderEnrichResponse, mergeBusinessAngle, isoDeadline, aoProvenanceRejectReason } = require("./domain/tenderEnrich");
 const { parseWorldBankProcNotices } = require("./domain/donorFeeds");
+const { extractPortalTenders } = require("./domain/portalTenders");
 const { AGENTS: COPILOTE_AGENTS, buildChatPrompt, parseChatResponse } = require("./domain/copilote");
 const { buildMagnitudeGuide } = require("./domain/magnitude");
 const { DEFAULT_BACKFILL_DAYS, dayRangeUTC, computeKpiBackfillPoints, mergeHistoryPoints } = require("./domain/kpiBackfill");
@@ -1453,6 +1454,35 @@ async function runSyncSources(db) {
             };
             const iso = isoDeadline(nt.deadline);
             if (iso && !classified.dueDate) classified.dueDate = iso;
+            const { written } = await upsertClassifiedItem(db, classified, dedupeIndex);
+            return written;
+          })
+        );
+        created = settled.filter((s) => s.status === "fulfilled" && s.value).length;
+      } else if (source.kind === "portal-ao") {
+        // PORTAIL institutionnel à LIENS DE DÉTAIL par avis (BOAD/BCEAO — DOM réel constaté 2026-07-19) :
+        // extracteur dédié (domain/portalTenders) ciblant le motif de lien `detailPrefix`. Rendu headless
+        // (ces portails ont besoin du JS). Provenance FORCÉE = l'URL du détail ; subtype forcé "tender".
+        const html = await fetchRendered(source.url);
+        let selfPath = "/";
+        try { selfPath = new URL(source.url).pathname; } catch { /* garde "/" */ }
+        const tenders = extractPortalTenders(html, {
+          baseUrl: source.url,
+          detailPrefix: source.detailPrefix || selfPath,
+          excludePaths: [selfPath],
+          max: 15,
+        });
+        yielded = tenders.length > 0;
+        const settled = await Promise.allSettled(
+          tenders.map(async (t) => {
+            if (existingIds.has(intelItemId({ url: t.url }))) { skippedKnown += 1; return false; }
+            const raw = `${t.title}${t.ref ? ` (réf ${t.ref})` : ""}`;
+            const classified = await classifyRawText(raw, watchlistEntities, { ...context, url: t.url }, clientProfile);
+            if (!classified) return false;
+            classified.url = t.url;               // provenance = source de vérité (jamais réécrite par le modèle)
+            classified.subtype = "tender";
+            const ba = classified.businessAngle && typeof classified.businessAngle === "object" ? classified.businessAngle : {};
+            classified.businessAngle = { ...ba, tenderRef: ba.tenderRef || t.ref || null };
             const { written } = await upsertClassifiedItem(db, classified, dedupeIndex);
             return written;
           })
