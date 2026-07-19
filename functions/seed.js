@@ -151,7 +151,10 @@ const SOURCES_SEED = [
   // ratait ; l'extracteur dédié (domain/portalTenders) suit chaque lien via `detailPrefix`.
   { name: "BCEAO — Appels d'offres", kind: "portal-ao", url: "https://www.bceao.int/fr/appels-offres/appels-offres-marches-publics-achats", detailPrefix: "/fr/appels-offres/", axis: "clients_prospects", active: true },
   { name: "Banque mondiale — projets Côte d'Ivoire", kind: "web", url: "https://projects.worldbank.org/en/projects-operations/projects-list?countrycode_exact=CI", axis: "clients_prospects", active: true },
-  { name: "UEMOA — Appels d'offres", kind: "web-js", url: "https://www.uemoa.int/appel-d-offre", axis: "clients_prospects", active: true },
+  // UEMOA : kind "portal-ao" (preuve DOM 2026-07-19 via noticeHrefs) — les avis sont des PIÈCES
+  // JOINTES PDF sous /sites/default/files/opportunite_affaire/ (portail Drupal, pas de page de détail
+  // par avis). detailPrefix pointe donc sur ce répertoire : chaque PDF = un avis, son URL = provenance.
+  { name: "UEMOA — Appels d'offres", kind: "portal-ao", url: "https://www.uemoa.int/appel-d-offre", detailPrefix: "/sites/default/files/opportunite_affaire/", axis: "clients_prospects", active: true },
   { name: "Banque Atlantique — appels d'offres (client)", kind: "web-js", url: "https://www.banqueatlantique.net/appels-doffres/", axis: "clients_prospects", active: true },
   // Élargissement RÉGIONAL des portails AO (audit pertinence 2026-07, levier 3) : UEMOA/CEDEAO +
   // bailleurs, pour piloter la croissance au-delà de la CI. Une source dont l'URL change/casse se

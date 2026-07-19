@@ -13,9 +13,11 @@
  * PUR : parsing HTML par regex, aucune I/O. La provenance (URL du détail) devient la source de vérité.
  */
 
-/** Déslugifie « aaon-029-2026-menuiserie-aluminium » → « Aaon 029 2026 Menuiserie Aluminium » (titre lisible). */
+/** Déslugifie « aaon-029-2026-menuiserie-aluminium » → « Aaon 029 2026 Menuiserie Aluminium » (titre lisible).
+ * Retire aussi l'extension de document (.pdf/.PDF/.doc/.docx/.xls/.xlsx) — les portails Drupal type UEMOA
+ * publient l'avis en pièce jointe, le nom de fichier EST le titre. */
 function deSlug(slug) {
-  const s = String(slug == null ? "" : slug).replace(/\.html?$/i, "").replace(/[-_]+/g, " ").trim();
+  const s = String(slug == null ? "" : slug).replace(/\.(html?|pdf|docx?|xlsx?)$/i, "").replace(/[-_]+/g, " ").trim();
   if (!s) return "";
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -25,10 +27,12 @@ function deSlug(slug) {
  * N°..., DAO 12-2026…). Renvoie la forme majuscule, ou null si le slug ne porte pas de référence.
  */
 function refFromSlug(slug) {
-  const s = String(slug == null ? "" : slug);
-  const m = s.match(/\b([a-z]{2,5}[-\s]?\d{2,4}[-\s]?\d{2,4})\b/i) // aaon-029-2026, ao-2026-05
-    || s.match(/\bn[°o][-\s]?\d{2,4}[-\s]?\d{2,4}\b/i);
-  return m ? m[1].toUpperCase().replace(/\s+/g, "-") : null;
+  // Normalise « _ » → « - » AVANT le matching : l'underscore est un caractère de mot, donc `\b` ne
+  // s'y déclenche pas (les noms de fichiers UEMOA « ..._DAOI_349 » masquaient sinon la référence).
+  const s = String(slug == null ? "" : slug).replace(/\.(html?|pdf|docx?|xlsx?)$/i, "").replace(/_/g, "-");
+  const m = s.match(/\b([a-z]{2,5}[-\s]?\d{2,4}[-\s]?\d{0,4})\b/i) // aaon-029-2026, ao-012-2026, daoi-349
+    || s.match(/\bn[°o][-\s]?\d{2,4}[-\s]?\d{0,4}\b/i);
+  return m ? m[1].toUpperCase().replace(/\s+/g, "-").replace(/-+$/, "") : null;
 }
 
 /**

@@ -15,6 +15,39 @@ describe("portalTenders — deSlug / refFromSlug", () => {
     expect(refFromSlug("aoon-012-2026-refection-voirie-siege-boad")).toBe("AOON-012-2026");
     expect(refFromSlug("equipements-laboratoire-realite-virtuelle-universite")).toBeNull();
   });
+  it("gère les noms de fichiers PDF (UEMOA) : extension retirée, séparateur underscore", () => {
+    // Avis publiés en pièce jointe PDF sous /opportunite_affaire/ — le nom de fichier est le titre.
+    expect(deSlug("AOI_equipement_mise_en_exploitation_datacenter_reseau_local_CAM.pdf"))
+      .toBe("AOI Equipement Mise En Exploitation Datacenter Reseau Local CAM");
+    expect(deSlug("Avis_consultation_semences.PDF")).toBe("Avis Consultation Semences");
+    expect(refFromSlug("Synthese_depouillement_AO_012-2026_acq.pdf")).toBe("AO-012-2026");
+    expect(refFromSlug("Decision_infructuosite_DAOI_349.pdf")).toBe("DAOI-349");
+  });
+});
+
+describe("portalTenders — extractPortalTenders (UEMOA, pièces jointes PDF)", () => {
+  const uemoaHtml = `
+    <a href="/appel-d-offre">Liste</a>
+    <a href="/sites/default/files/opportunite_affaire/AOI_equipement_datacenter_CAM.pdf">Datacenter</a>
+    <a href="/sites/default/files/opportunite_affaire/AVIS_No_685_equipements_lot3.pdf">Équipements</a>
+    <a href="/en/appel-d-offre">EN</a>
+    <a href="https://www.facebook.com/UEMOAOfficielle">FB</a>`;
+  const items = extractPortalTenders(uemoaHtml, {
+    baseUrl: "https://www.uemoa.int/appel-d-offre",
+    detailPrefix: "/sites/default/files/opportunite_affaire/",
+    excludePaths: ["/appel-d-offre"],
+    max: 15,
+  });
+  it("capte les avis PDF, ignore la nav et les liens sortants", () => {
+    expect(items.length).toBe(2);
+    expect(items.every((i) => i.url.endsWith(".pdf"))).toBe(true);
+    expect(items.some((i) => i.url.includes("facebook"))).toBe(false);
+  });
+  it("titre lisible sans extension", () => {
+    const dc = items.find((i) => /Datacenter/i.test(i.title));
+    expect(dc).toBeTruthy();
+    expect(dc.title).not.toMatch(/\.pdf/i);
+  });
 });
 
 describe("portalTenders — extractPortalTenders (BOAD, DOM réel)", () => {
