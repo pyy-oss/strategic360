@@ -23,7 +23,10 @@ import { useCopiloteAccounts, type CopiloteAccount } from "../lib/copilote";
 // d'avis d'appel d'offres (2026-07 : le classifieur sur-taguait des news en subtype tender/funding
 // → la vue se remplissait de commentaires au lieu d'AO réels. On filtre donc sur la forme de l'avis,
 // pas sur le subtype ni sur des mots-clés noyés dans le corps du texte).
-const AO_NOTICE_RE = /\bappel\s?s?\s+(?:d['’ ]?)?offres?\b|avis\s+(?:d['’ ]?)?appel|manifestation\s+(?:d['’ ]?)?int[ée]r[êe]ts?|sollicitation\s+de\s+prix|demande\s+de\s+(?:propositions?|cotations?|prix)|appel\s+à\s+(?:candidatures?|projets?|manifestation)|\b(?:A\.?A\.?O|A\.?O\.?O\.?R?|A\.?O\.?[NIR]|A\.?M\.?I|D\.?A\.?O|D\.?R\.?P|R\.?F\.?[PQ])\b/i;
+// NB : l'acronyme AMI exige ses POINTS (`A\.M\.I`) — sans eux, `/i` matchait le mot courant « ami »
+// (« Orange, l'ami des PME » passait pour un AO). Les vrais « Avis à Manifestation d'Intérêt » restent
+// captés par la branche « manifestation … d'intérêt » en toutes lettres (audit 2026-07-19, M1).
+const AO_NOTICE_RE = /\bappel\s?s?\s+(?:d['’ ]?)?offres?\b|avis\s+(?:d['’ ]?)?appel|manifestation\s+(?:d['’ ]?)?int[ée]r[êe]ts?|sollicitation\s+de\s+prix|demande\s+de\s+(?:propositions?|cotations?|prix)|appel\s+à\s+(?:candidatures?|projets?|manifestation)|\b(?:A\.?A\.?O|A\.?O\.?O\.?R?|A\.?O\.?[NIR]|A\.M\.I|D\.?A\.?O|D\.?R\.?P|R\.?F\.?[PQ])\b/i;
 // Une VRAIE référence de dossier contient un numéro/code (ex. « AOOR N°2026-005/MESRI », « DAO 12/2026 »).
 // Un simple NOM de portail (« Portail Malien des Marchés Publics ») n'en est pas une : le classifieur
 // mettait parfois le nom de la source dans tenderRef, ce qui faisait passer des actualités pour des AO.
@@ -39,6 +42,10 @@ function isAoItem(s: IntelItem): boolean {
   if (!s.url || !s.url.trim()) return false;
   // Exclusion des opérations financières (titrisation, obligataire…) : jamais des AO soumissionnables.
   if (FINANCIAL_OP_RE.test(s.title || "")) return false;
+  // Subtype "tender" = source de vérité du backend (WB le force ; le classifieur tague les vrais AO).
+  // Sans ça, un AO IT à titre sobre et sans réf (que le recall #145 publie exprès, ex. « Acquisition
+  // d'équipements informatiques ») restait masqué ici alors qu'il est bien un appel d'offres (2026-07-19, H1).
+  if (s.subtype === "tender") return true;
   const ref = s.businessAngle?.tenderRef || "";
   // Réf de dossier crédible (avec numéro/code) = signal le plus fiable.
   if (REAL_REF_RE.test(ref)) return true;
@@ -144,11 +151,19 @@ export function AppelsOffres() {
   );
   // Corrélation AO ↔ compte nt360 (levier 5) : rapproche l'acheteur d'un compte connu du pipeline.
   const accIndex = useMemo(() => accounts.map((a) => ({ n: normName(a.nom), a })).filter((x) => x.n.length >= 3), [accounts]);
-  const matchAccount = (it: IntelItem): CopiloteAccount | undefined => {
-    const hay = normName(`${it.businessAngle?.buyer || ""} ${it.ent || ""}`);
-    if (hay.length < 3) return undefined;
-    return accIndex.find((x) => hay.includes(x.n) || x.n.includes(hay))?.a;
-  };
+  // Table item→compte MÉMOÏSÉE (audit 2026-07-19, M4/M5) : `matchAccount` était un O(comptes) rappelé
+  // dans le tri (n·log n fois), les KPI et à CHAQUE rendu de ligne → coût superlinéaire à chaque frappe.
+  // De plus `rows` ignorait `accIndex` dans ses deps : quand les comptes chargeaient APRÈS les items, le
+  // tri « clients d'abord » et le filtre « Mes clients » restaient inertes. La Map dépend d'aoItems+accIndex.
+  const matchByItem = useMemo(() => {
+    const m = new Map<string, CopiloteAccount | undefined>();
+    for (const it of aoItems) {
+      const hay = normName(`${it.businessAngle?.buyer || ""} ${it.ent || ""}`);
+      m.set(it.id, hay.length < 3 ? undefined : accIndex.find((x) => hay.includes(x.n) || x.n.includes(hay))?.a);
+    }
+    return m;
+  }, [aoItems, accIndex]);
+  const matchAccount = (it: IntelItem): CopiloteAccount | undefined => matchByItem.get(it.id);
   const enrich = async () => {
     setEnriching(true);
     try {
@@ -184,7 +199,7 @@ export function AppelsOffres() {
         const pb = PROX_ORDER[effectiveProx(b) ?? b.prox ?? "horizon"] ?? 3;
         return cb - ca || pa - pb || (b.priorityScore ?? 0) - (a.priorityScore ?? 0) || (b.date ?? "").localeCompare(a.date ?? "");
       }),
-    [aoItems, withAmount, withDeadline, onlyClients, proxFilter, zone, q] // eslint-disable-line react-hooks/exhaustive-deps
+    [aoItems, matchByItem, withAmount, withDeadline, onlyClients, proxFilter, zone, q] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const kpiOuverts = aoItems.filter((s) => !isPastDue(s)).length;

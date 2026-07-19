@@ -65,6 +65,19 @@ function isForbiddenIp(addr) {
 const FORBIDDEN_HOSTNAMES = new Set(["localhost", "metadata", "metadata.google.internal"]);
 
 /**
+ * isCanonicalLiteralIp(host) -> bool — vrai UNIQUEMENT pour une IP littérale sous forme canonique :
+ * IPv4 en quadruplet pointé (ipv4ToInt non nul) ou IPv6 (contient ':'). Sert à distinguer une vraie
+ * IP littérale d'une forme numérique NON canonique (décimal 32 bits « 2130706433 », octal
+ * « 0177.0.0.1 », hex) que `getaddrinfo` résout pourtant vers l'adresse interne — vecteur de
+ * contournement SSRF (audit 2026-07-19). Le `host` reçu est déjà débracketé.
+ */
+function isCanonicalLiteralIp(host) {
+  const h = String(host == null ? "" : host).trim();
+  if (h.includes(":")) return true; // IPv6 littérale (validée par isForbiddenIp)
+  return ipv4ToInt(h) !== null;      // IPv4 canonique pointée uniquement
+}
+
+/**
  * checkPublicHttpUrl(urlString) -> { ok: true, url: URL } | { ok: false, reason }
  * Validation de FORME (pure, sans DNS) : schéma http(s), pas de credentials embarqués,
  * hostname non interdit, et si le hostname est une IP littérale → pas une IP interdite.
@@ -79,11 +92,19 @@ function checkPublicHttpUrl(urlString) {
   if (FORBIDDEN_HOSTNAMES.has(host) || host.endsWith(".internal") || host.endsWith(".local")) {
     return { ok: false, reason: `hôte interne interdit (${host})` };
   }
-  // IP littérale (v4 ou v6) → test direct, pas besoin de DNS.
+  // Hôte à forme d'IP littérale (numérique pointé, décimal/octal/hex, ou IPv6).
   if (/^[\d.]+$/.test(host) || host.includes(":")) {
+    // Durcissement SSRF (audit 2026-07-19) : une forme numérique NON canonique (« 2130706433 »,
+    // « 0177.0.0.1 ») échappe à isForbiddenIpv4 (regex quadruplet) MAIS getaddrinfo la résout vers
+    // l'interne. On la REFUSE d'emblée : un hôte purement numérique qui n'est pas une IPv4 canonique
+    // (ni une IPv6) n'a aucune raison d'être une cible légitime.
+    if (!isCanonicalLiteralIp(host)) return { ok: false, reason: `forme d'IP non canonique (${host})` };
     if (isForbiddenIp(host)) return { ok: false, reason: `adresse IP interne interdite (${host})` };
+    // IP littérale canonique et publique : l'appelant peut sauter la résolution DNS (isLiteralIp).
+    return { ok: true, url: u, isLiteralIp: true };
   }
-  return { ok: true, url: u };
+  // Nom de domaine : l'appelant DOIT résoudre en DNS puis re-tester chaque adresse (isLiteralIp=false).
+  return { ok: true, url: u, isLiteralIp: false };
 }
 
-module.exports = { isForbiddenIp, checkPublicHttpUrl };
+module.exports = { isForbiddenIp, checkPublicHttpUrl, isCanonicalLiteralIp };

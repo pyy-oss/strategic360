@@ -3,7 +3,7 @@
 /** Tests de la garde anti-SSRF (audit pré-lancement 2026-07, B1). PUR — aucune I/O réseau. */
 
 import { describe, it, expect } from "vitest";
-import { isForbiddenIp, checkPublicHttpUrl } from "../domain/netguard.js";
+import { isForbiddenIp, checkPublicHttpUrl, isCanonicalLiteralIp } from "../domain/netguard.js";
 
 describe("netguard — isForbiddenIp", () => {
   it.each([
@@ -67,6 +67,35 @@ describe("netguard — checkPublicHttpUrl", () => {
   });
 
   it("laisse passer un domaine public (le DNS est vérifié par l'appelant)", () => {
-    expect(checkPublicHttpUrl("http://example.com/page").ok).toBe(true);
+    const r = checkPublicHttpUrl("http://example.com/page");
+    expect(r.ok).toBe(true);
+    expect(r.isLiteralIp).toBe(false); // domaine → l'appelant DOIT résoudre
   });
+
+  it("marque une IP littérale publique canonique isLiteralIp=true (DNS sautable)", () => {
+    const r = checkPublicHttpUrl("http://8.8.8.8/");
+    expect(r.ok).toBe(true);
+    expect(r.isLiteralIp).toBe(true);
+  });
+
+  // Durcissement SSRF (audit 2026-07-19) : formes numériques NON canoniques qui résolvent vers
+  // l'interne via getaddrinfo (décimal 32 bits, octal) — DOIVENT être refusées d'emblée.
+  it.each([
+    "http://2130706433/",          // 127.0.0.1 en décimal 32 bits
+    "http://0177.0.0.1/",          // octal
+    "http://017700000001/",        // octal 32 bits
+    "http://2852039166/",          // 169.254.169.254 (metadata GCP) en décimal
+    "http://3232235777/",          // 192.168.1.1 en décimal
+  ])("refuse la forme numérique non canonique %s", (url) => {
+    expect(checkPublicHttpUrl(url).ok).toBe(false);
+  });
+});
+
+describe("netguard — isCanonicalLiteralIp", () => {
+  it.each(["8.8.8.8", "127.0.0.1", "255.255.255.255", "2001:4860:4860::8888", "::1"])(
+    "canonique : %s", (h) => expect(isCanonicalLiteralIp(h)).toBe(true),
+  );
+  it.each(["2130706433", "0177.0.0.1", "0x7f000001", "017700000001", "1.2.3", "1.2.3.4.5"])(
+    "non canonique : %s", (h) => expect(isCanonicalLiteralIp(h)).toBe(false),
+  );
 });

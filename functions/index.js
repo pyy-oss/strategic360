@@ -95,6 +95,13 @@ const SOURCE_FETCH_HEADERS = {
  * ------------------------------------------------------------------------------------------- */
 let _browserPromise = null;
 let _browserLaunchFailed = false;
+/**
+ * Réinitialise le latch d'échec de lancement Chromium (audit 2026-07-19, M1). Une instance Cloud
+ * Functions chaude est réutilisée : un échec TRANSITOIRE de lancement mettait `_browserLaunchFailed`
+ * à true DÉFINITIVEMENT (jusqu'au recyclage), faisant échouer toutes les sources web-js suivantes sur
+ * cette instance (jusqu'à auto-désactivation à tort). On remet le latch à zéro en tête de chaque run.
+ */
+function resetRenderBrowserHealth() { _browserLaunchFailed = false; }
 async function getRenderBrowser() {
   if (_browserLaunchFailed) throw new Error("headless chromium indisponible (échec de lancement précédent)");
   // Mémoïse la PROMESSE de lancement pour dédupliquer les appels concurrents (lots parallèles).
@@ -156,7 +163,9 @@ async function fetchRendered(url, opts = {}) {
         const checked = checkPublicHttpUrl(req.url());
         if (!checked.ok) { await req.abort(); return; }
         const host = checked.url.hostname.replace(/^\[|\]$/g, "");
-        if (/^[\d.]+$/.test(host) || host.includes(":")) { await req.continue(); return; } // IP littérale déjà validée
+        // IP littérale CANONIQUE déjà validée par checkPublicHttpUrl (isLiteralIp) — pas de DNS à faire.
+        // On ne se fie plus à un re-test /^[\d.]+$/ (contournable par forme numérique non canonique).
+        if (checked.isLiteralIp) { await req.continue(); return; }
         let internal = dnsCache.get(host);
         if (internal === undefined) {
           try {
@@ -197,8 +206,10 @@ async function assertSafePublicUrl(urlString) {
   const checked = checkPublicHttpUrl(urlString);
   if (!checked.ok) throw new Error(`URL refusée (SSRF) : ${checked.reason}`);
   const host = checked.url.hostname.replace(/^\[|\]$/g, "");
-  // IP littérale : déjà validée par checkPublicHttpUrl, pas de DNS à faire.
-  if (/^[\d.]+$/.test(host) || host.includes(":")) return checked.url;
+  // IP littérale CANONIQUE (isLiteralIp) : déjà validée par checkPublicHttpUrl, pas de DNS à faire.
+  // On ne court-circuite le DNS QUE sur ce flag positif — une forme numérique non canonique a déjà
+  // été refusée en amont (durcissement SSRF 2026-07-19), elle n'atteint jamais ce point.
+  if (checked.isLiteralIp) return checked.url;
   let addrs;
   try {
     addrs = await dns.lookup(host, { all: true, verbatim: true });
@@ -1277,6 +1288,7 @@ async function ensureClientTenderMonitors(db) {
 }
 
 async function runSyncSources(db) {
+  resetRenderBrowserHealth(); // ne pas hériter d'un échec de lancement Chromium transitoire (M1)
   const statusRef = db.doc("summaries/syncStatus");
   const writeSyncStatus = (patch) => statusRef.set(patch, { merge: true }).catch(() => {});
 
@@ -1416,7 +1428,10 @@ async function runSyncSources(db) {
               ...ba,
               tenderRef: ba.tenderRef || nt.tenderRef || null,
               deadline: ba.deadline || nt.deadline || null,
-              buyer: ba.buyer || nt.country || null,
+              // NE PAS retomber sur le nom du pays comme acheteur (audit 2026-07-19, M4) : « Côte d'Ivoire »
+              // en `buyer` est trompeur (puce « acheteur ») ET casse la corrélation compte (matchAccount
+              // comparerait un pays à des noms de comptes). Le pays reste dans geo/country.
+              buyer: ba.buyer || null,
             };
             const iso = isoDeadline(nt.deadline);
             if (iso && !classified.dueDate) classified.dueDate = iso;
@@ -1537,19 +1552,21 @@ async function runSyncSources(db) {
             const jsonEmbedded = /<script[^>]+type=["']application\/(ld\+)?json["']/i.test(html)
               || /window\.__(INITIAL_STATE|NUXT|NEXT_DATA|APOLLO)/i.test(html);
             logger.info(`syncSources DIAG web-js-0item name="${source.name}" htmlLen=${String(html).length} textLen=${rawText.length} degraded=${degraded} jsonEmbedded=${jsonEmbedded} hrefs=${JSON.stringify(hrefs).slice(0, 900)}`);
-            // Persistance du diagnostic sur le doc source (2026-07-19) : le fetch de logs est fenêtré et
-            // rate souvent la ligne d'une source précise (throttle 80/164 + rotation). En écrivant
-            // l'échantillon de DOM dans `_diag`, l'inspection (lecture seule, fiable) le récupère sans
-            // course à la fenêtre de logs — c'est la matière pour construire un extracteur dédié.
-            await sourceDoc.ref.set({
-              _diag: {
-                at: FieldValue.serverTimestamp(),
-                htmlLen: String(html).length,
-                textLen: rawText.length,
-                jsonEmbedded,
-                hrefs,
-                htmlHead: String(html).slice(0, 3500),
-              },
+            // Persistance dans une COLLECTION DÉDIÉE `sourceDiag/{id}` (audit 2026-07-19, correctif H1/M1) —
+            // PAS sur le doc intelSources : ce dernier est chargé en live par le front (jusqu'à 500 docs)
+            // et exposé à tous les rôles ; y stocker 3,5 Ko de HTML brut = bloat + fuite de débogage +
+            // double écriture. La collection dédiée n'est jamais lue par le front (règles: deny) ; seule
+            // l'inspection admin (mode "diag") la lit. Écrasée en `merge` à chaque passage.
+            await db.collection("sourceDiag").doc(source.id).set({
+              name: source.name,
+              url: source.url,
+              kind: source.kind,
+              at: FieldValue.serverTimestamp(),
+              htmlLen: String(html).length,
+              textLen: rawText.length,
+              jsonEmbedded,
+              hrefs,
+              htmlHead: String(html).slice(0, 3500),
             }, { merge: true });
           } catch { /* diagnostic best-effort, jamais bloquant */ }
           if (rawText && !degraded) {
