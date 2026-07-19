@@ -1353,9 +1353,18 @@ async function runSyncSources(db) {
   // fin de liste.
   let sourceDocs = sourcesSnap.docs;
   if (sourceDocs.length > MAX_SOURCES_PER_RUN) {
-    const start = (new Date().getDate() * MAX_SOURCES_PER_RUN) % sourceDocs.length;
-    sourceDocs = [...sourceDocs.slice(start), ...sourceDocs.slice(0, start)].slice(0, MAX_SOURCES_PER_RUN);
-    logger.warn(`syncSources: ${sourcesSnap.size} sources actives > plafond ${MAX_SOURCES_PER_RUN}/run — rotation quotidienne (départ index ${start})`);
+    // Sources d'AO STRUCTURÉES à haute valeur (portails institutionnels BOAD/BCEAO, API Banque
+    // mondiale) : elles ont un parseur dédié et une provenance forcée, et sont le CŒUR de la mission
+    // AO. La rotation quotidienne pouvait les affamer un jour entier — on les ÉPINGLE à chaque run,
+    // puis on remplit le budget restant par rotation sur les autres sources.
+    const PINNED_KINDS = new Set(["portal-ao", "wb-procnotices"]);
+    const pinned = sourceDocs.filter((d) => PINNED_KINDS.has(d.data().kind));
+    const rest = sourceDocs.filter((d) => !PINNED_KINDS.has(d.data().kind));
+    const budget = Math.max(0, MAX_SOURCES_PER_RUN - pinned.length);
+    const start = rest.length ? (new Date().getDate() * budget) % rest.length : 0;
+    const rotated = [...rest.slice(start), ...rest.slice(0, start)].slice(0, budget);
+    sourceDocs = [...pinned, ...rotated];
+    logger.warn(`syncSources: ${sourcesSnap.size} sources actives > plafond ${MAX_SOURCES_PER_RUN}/run — ${pinned.length} épinglées (AO structurées) + rotation quotidienne sur ${rest.length} (départ index ${start})`);
   }
 
   // Profil client (Phase 0 produit) : surcharge éventuelle de la notation des sources par domaine.
