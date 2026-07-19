@@ -30,6 +30,30 @@ function labelForPct(pct) {
 function round1(n) { return Math.round(n * 10) / 10; }
 
 /**
+ * parseAmount(v) -> Number | null — parse un montant qui peut porter une UNITÉ textuelle (audit
+ * 2026-07-19, M2). L'ancien `Number(v.replace(/[^\d]/g,""))` détruisait l'échelle : « 300 MFCFA » →
+ * 300 (jugé « dérisoire » au lieu de 300 M). On reconnaît les suffixes d'échelle (K/millier, M/million,
+ * Md/Mrd/milliard) — insensible à la casse, tolérant aux séparateurs FR (« 1,2 M€ », « 300 MFCFA »).
+ * Un nombre nu (« 80000000 ») reste interprété tel quel. Renvoie null si non exploitable.
+ */
+function parseAmount(v) {
+  if (typeof v === "number") return Number.isFinite(v) && v > 0 ? v : null;
+  if (typeof v !== "string") return null;
+  const s = v.trim().toLowerCase();
+  // Nombre : chiffres avec séparateurs de milliers (espace/point) et décimale (, ou .).
+  const m = s.match(/(\d[\d\s.]*)(?:,(\d+))?/);
+  if (!m) return null;
+  let num = Number(m[1].replace(/[\s.]/g, "") + (m[2] ? "." + m[2] : ""));
+  if (!Number.isFinite(num) || num <= 0) return null;
+  // Facteur d'échelle d'après le suffixe (le premier trouvé après le nombre).
+  const tail = s.slice(s.indexOf(m[0]) + m[0].length);
+  if (/\bm(?:d|rd|illiard)/.test(tail) || /\bmd\b/.test(tail)) num *= 1e9;      // milliard(s)
+  else if (/\bm(?:io|illion|\b|fcfa|€|\$|usd|xof)/.test(tail) || /\bm\b/.test(tail)) num *= 1e6; // million(s)
+  else if (/\bk\b|\bmillier/.test(tail)) num *= 1e3;                            // millier(s)
+  return num;
+}
+
+/**
  * appreciateAmount(amount, { accountCas, portfolioMedian }) -> appréciation relative d'UN montant.
  * Renvoie null si le montant n'est pas exploitable. Sinon :
  *  { montant, pctOfCas, xMedian, label, phrase } — `phrase` prête à insérer (FR, sobre).
@@ -88,8 +112,8 @@ function buildMagnitudeGuide(ctx) {
   }
   for (const s of Array.isArray(c.signauxCompte) ? c.signauxCompte.slice(0, 6) : []) {
     const amt = s && (s.estAmount || (s.businessAngle && s.businessAngle.estAmount));
-    const parsed = typeof amt === "string" ? Number(amt.replace(/[^\d]/g, "")) : Number(amt);
-    if (Number.isFinite(parsed) && parsed > 0) push(`Signal veille — ${s.titre || "AO"}`, parsed);
+    const parsed = parseAmount(amt); // gère l'unité (« 300 MFCFA » → 3e8), plus de collapse d'échelle
+    if (parsed && parsed > 0) push(`Signal veille — ${s.titre || "AO"}`, parsed);
   }
 
   return {
@@ -106,6 +130,7 @@ function buildMagnitudeGuide(ctx) {
 module.exports = {
   REL_THRESHOLDS,
   labelForPct,
+  parseAmount,
   appreciateAmount,
   clientScaleNote,
   buildMagnitudeGuide,

@@ -136,13 +136,12 @@ async function sourcesHealth(db) {
  * du HTML. Fiable (lecture Firestore) contrairement au fetch de logs fenêtré.
  */
 async function sourceDiag(db) {
-  const snap = await db.collection("intelSources").get();
-  const withDiag = snap.docs.map((d) => ({ id: d.id, x: d.data() || {} })).filter((r) => r.x._diag);
-  console.log(`${withDiag.length} source(s) avec diagnostic _diag persisté.\n`);
-  for (const { x } of withDiag) {
-    const g = x._diag || {};
-    console.log(`### ${x.name}  [${x.kind}]`);
-    console.log(`    url=${x.url}`);
+  const snap = await db.collection("sourceDiag").get();
+  console.log(`${snap.size} source(s) avec diagnostic DOM persisté (collection sourceDiag).\n`);
+  for (const d of snap.docs) {
+    const g = d.data() || {};
+    console.log(`### ${g.name || d.id}  [${g.kind || "?"}]`);
+    console.log(`    url=${g.url || ""}`);
     console.log(`    htmlLen=${g.htmlLen} textLen=${g.textLen} jsonEmbedded=${g.jsonEmbedded}`);
     console.log(`    hrefs=${JSON.stringify(g.hrefs || [])}`);
     console.log(`    --- htmlHead ---\n${String(g.htmlHead || "").replace(/\s+/g, " ").slice(0, 3200)}\n`);

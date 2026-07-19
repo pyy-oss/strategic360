@@ -251,5 +251,8 @@ service cloud.firestore {
     match /webhookNonces/{id}         { allow read, write: if false; }
     // Verrous de run (quantiSync, etc.) : écrits transactionnellement par l'Admin SDK.
     match /runLocks/{id}              { allow read, write: if false; }
+    // Diagnostic DOM des sources web-js muettes (échantillon HTML brut) : écrit par l'Admin SDK,
+    // lu UNIQUEMENT par l'inspection admin (mode "diag"). Jamais exposé au front (audit 2026-07-19).
+    match /sourceDiag/{id}            { allow read, write: if false; }
   }
 }

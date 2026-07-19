@@ -1,5 +1,27 @@
 import { describe, it, expect } from "vitest";
-import { labelForPct, appreciateAmount, clientScaleNote, buildMagnitudeGuide } from "../domain/magnitude.js";
+import { labelForPct, parseAmount, appreciateAmount, clientScaleNote, buildMagnitudeGuide } from "../domain/magnitude.js";
+
+describe("magnitude — parseAmount (unités, audit 2026-07-19 M2)", () => {
+  it("préserve l'échelle des montants avec unité", () => {
+    expect(parseAmount("300 MFCFA")).toBe(3e8);
+    expect(parseAmount("1,2 M€")).toBe(1.2e6);
+    expect(parseAmount("3 milliards")).toBe(3e9);
+    expect(parseAmount("1.5 Md XOF")).toBe(15e9); // FR : point = séparateur de milliers → 1.5 = 15
+    expect(parseAmount("500 K")).toBe(5e5);
+    expect(parseAmount("80 000 000")).toBe(8e7); // nombre nu à séparateurs d'espaces
+    expect(parseAmount(80000000)).toBe(8e7);      // numérique brut
+  });
+  it("null / rejet sur entrée non exploitable", () => {
+    expect(parseAmount("")).toBeNull();
+    expect(parseAmount("n.c.")).toBeNull();
+    expect(parseAmount(null)).toBeNull();
+    expect(parseAmount(0)).toBeNull();
+  });
+  it("ne collapse PLUS « 300 MFCFA » en 300 (le bug corrigé)", () => {
+    const a = appreciateAmount(parseAmount("300 MFCFA"), { accountCas: 5e9 });
+    expect(a.label).not.toBe("dérisoire"); // 3e8 / 5e9 = 6% → « modeste », pas « dérisoire »
+  });
+});
 
 describe("magnitude — labelForPct", () => {
   it("borne les labels par seuils de % du CA", () => {
