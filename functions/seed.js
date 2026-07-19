@@ -243,6 +243,16 @@ const SOURCES_SEED = [
   { name: "Banque Mondiale — Avis d'AO Togo (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Togo", axis: "clients_prospects", active: false },
   { name: "Banque Mondiale — Avis d'AO Guinée-Bissau (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Guinea-Bissau", axis: "clients_prospects", active: false },
   { name: "Banque Mondiale — Avis d'AO Afrique de l'Ouest (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=200&order=desc&srt=noticedate&regionname_exact=Western%20and%20Central%20Africa", axis: "clients_prospects", active: true },
+  // UNGM — place de marché ONU (2026-07-18) : seul PRIMAIRE gratuit + officiel + libre d'accès qu'on
+  // n'avait pas. Couvre les AO des 40+ agences ONU (UNICEF/PNUD/PAM/HCR…) qui achètent IT/télécom/
+  // équipement en CI/UEMOA — cœur de métier. La consultation publique est libre (sans compte) mais le
+  // listing est une SPA → kind "web-js" (rendu headless + extractWebItems, une URL par avis). Flux mondial :
+  // c'est le filtre géo/évaluateur en aval qui restreint à l'Afrique de l'Ouest. RISQUE ASSUMÉ : le WAF
+  // UNGM peut renvoyer 403 à notre headless (comme la BAD) — à valider par la SANTÉ DE LA SOURCE en prod ;
+  // si stérile/403 répété, l'auto-curation la désactive (aucune casse). Les agrégateurs commerciaux
+  // (SangoBids/AfricaTenders/dgMarket…) sont écartés : détail derrière login/abonnement + ToS + ils ne
+  // font que revendre ces mêmes primaires (DGMP/WB/BAD/BCEAO/UNGM).
+  { name: "UNGM — Avis d'achat ONU (agences UN, IT/équipement)", kind: "web-js", url: "https://www.ungm.org/Public/Notice", axis: "clients_prospects", active: true },
   // BAD (AfDB) — flux RSS procurement : URL correctes mais le WAF Cloudflare de la BAD renvoie 403,
   // Y COMPRIS via le rendu headless (défi anti-bot HTML servi à la place du flux, validation prod
   // 2026-07-18). Mur externe irrécupérable depuis nos IP cloud. Laissées INACTIVES et documentées :
@@ -273,7 +283,7 @@ const SOURCES_SEED = [
 function ratingForSource(entry) {
   const n = (entry.name || "").toLowerCase();
   const url = (entry.url || "").toLowerCase();
-  const official = ["artci", "bceao", "anssi", "amf-umoa", "amf umoa", "ministère", "ministere", "douanes", "guce", "commerce.gouv", "dgi", "trésor", "tresor", "dgmp", "marchespublics", "sigomap", "arcop", "cepici", "banque mondiale", "world bank", "worldbank", "bad", "afdb", "uemoa", "boad", "autorité de protection", "autorite de protection"];
+  const official = ["artci", "bceao", "anssi", "amf-umoa", "amf umoa", "ministère", "ministere", "douanes", "guce", "commerce.gouv", "dgi", "trésor", "tresor", "dgmp", "marchespublics", "sigomap", "arcop", "cepici", "banque mondiale", "world bank", "worldbank", "bad", "afdb", "uemoa", "boad", "ungm", "united nations", "onu", "autorité de protection", "autorite de protection"];
   if (official.some((k) => n.includes(k) || url.includes(k.replace(/\s/g, "")))) return "A2";
   const vendors = ["cisco", "fortinet", "palo alto", "paloalto", "hpe", "wallix", "microsoft", "azure", "huawei", "broadcom", "vmware", "westcon", "exclusive", "nutanix", "veeam", "ingram", "tdsynnex", "td synnex", "aws", "amazon", "google cloud"];
   if (vendors.some((k) => n.includes(k) || url.includes(k.replace(/\s/g, "")))) return "B2";
