@@ -272,6 +272,20 @@ const MAX_CONSECUTIVE_FAILURES = 5;
  * simple signal de santé pour l'écran Réglages/sources. */
 const MAX_CONSECUTIVE_EMPTY = 20;
 
+/** Source health (audit 2026-07-19, H2) : une page `web`/`web-js` qui ne rend qu'une COQUILLE JS
+ * (degraded) à CHAQUE passage relance un rendu Chromium complet à vie sans jamais rien produire —
+ * fuite de coût récurrente (CPU/mémoire 2GiB + attente 3,5s). Au-delà de ce seuil de passages
+ * dégradés consécutifs, on DÉSACTIVE la source (contrairement à "sterile" : une coquille JS
+ * persistante n'est pas un portail calme, c'est une source inexploitable par notre rendu). */
+const MAX_CONSECUTIVE_DEGRADED = 8;
+
+/** Fenêtre de rétro-lecture d'intelItems pour la dédup (audit 2026-07-19, M2) : au lieu de charger
+ * TOUTE la collection à chaque run (coût O(N) croissant), on borne aux items récents — les flux
+ * re-servent les mêmes URLs à quelques jours/semaines d'intervalle, 180 j couvrent largement. Les
+ * IDs plus anciens absents ne causent pas de doublon (id déterministe → upsert idempotent), au pire
+ * une re-classification rare d'une URL très ancienne re-servie. */
+const DEDUP_LOOKBACK_MS = 180 * 24 * 3600 * 1000;
+
 // Hôtes d'agrégateurs RSS fiables où un 403/429 est un rate-limit (pas un défi anti-bot JS) : inutile
 // (et coûteux) d'y retenter en rendu headless — le navigateur reçoit la même réponse (audit final
 // pré-prod 2026-07). Concerne surtout news.google.com (jusqu'à MAX_MONITORS sources de surveillance).
@@ -1359,7 +1373,11 @@ async function runSyncSources(db) {
   const existingIds = new Set();
   let skippedKnown = 0;
   try {
-    const existingSnap = await db.collection("intelItems").get();
+    // Lecture BORNÉE à la fenêtre de dédup (M2) : `createdAt` est un serverTimestamp immuable
+    // (index simple auto), donc le `where` ne requiert pas d'index composite. Cap le coût O(N).
+    const existingSnap = await db.collection("intelItems")
+      .where("createdAt", ">=", new Date(Date.now() - DEDUP_LOOKBACK_MS))
+      .get();
     for (const d of existingSnap.docs) existingIds.add(d.id);
     dedupeIndex = existingSnap.docs
       .map((d) => d.data())
@@ -1591,20 +1609,32 @@ async function runSyncSources(db) {
       const sterileRun = !degraded && !yielded;
       const consecutiveEmpty = sterileRun ? (source.consecutiveEmpty || 0) + 1 : 0;
       const sterile = consecutiveEmpty >= MAX_CONSECUTIVE_EMPTY;
+      // Curation des COQUILLES JS (audit 2026-07-19, H2) : une page qui rend une coquille (degraded) à
+      // chaque passage relance un rendu Chromium complet à vie sans rien produire. On compte les
+      // passages dégradés consécutifs et, au seuil, on DÉSACTIVE la source (rendu non hydratable chez
+      // nous) — au lieu de repayer Chromium indéfiniment.
+      const consecutiveDegraded = degraded ? (source.consecutiveDegraded || 0) + 1 : 0;
+      const disableDegraded = consecutiveDegraded >= MAX_CONSECUTIVE_DEGRADED;
       await sourceDoc.ref.update({
         lastFetch: FieldValue.serverTimestamp(),
-        lastStatus: degraded
-          ? "degraded: contenu insuffisant (page probablement JS)"
-          : sterile
-            ? `sterile: aucun contenu extrait depuis ${consecutiveEmpty} passages (structure changée ?)`
-            : "ok",
+        lastStatus: disableDegraded
+          ? `degraded: désactivée après ${consecutiveDegraded} passages en coquille JS (rendu non hydraté)`
+          : degraded
+            ? `degraded: contenu insuffisant (page probablement JS) [${consecutiveDegraded}/${MAX_CONSECUTIVE_DEGRADED}]`
+            : sterile
+              ? `sterile: aucun contenu extrait depuis ${consecutiveEmpty} passages (structure changée ?)`
+              : "ok",
         consecutiveFailures: 0,
         consecutiveEmpty,
+        consecutiveDegraded,
+        ...(disableDegraded ? { active: false } : {}),
         // Mémorise le passage réussi en rendu headless : une source `web` anti-bot/JS devient "web-js"
         // (les runs suivants rendent directement, sans repayer un 403/coquille).
         ...(kindUpgrade ? { kind: kindUpgrade } : {}),
       });
-      if (sterile && consecutiveEmpty === MAX_CONSECUTIVE_EMPTY) {
+      if (disableDegraded) {
+        logger.warn(`syncSources: source ${source.id} (${source.name}) DÉSACTIVÉE — coquille JS persistante (${consecutiveDegraded} passages, rendu non hydraté).`);
+      } else if (sterile && consecutiveEmpty === MAX_CONSECUTIVE_EMPTY) {
         logger.warn(`syncSources: source ${source.id} (${source.name}) marquée STÉRILE — ${consecutiveEmpty} passages sans contenu.`);
       }
       return created;

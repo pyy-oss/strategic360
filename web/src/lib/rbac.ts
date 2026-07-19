@@ -204,7 +204,11 @@ function startMatrixSource() {
         matrixDocUnsub = onSnapshot(
           doc(db, "config/permissions"),
           (snap) => emitMatrix({ matrix: (snap.data()?.matrix as PermMatrix | undefined) ?? null, loading: false }),
-          () => emitMatrix({ matrix: null, loading: false })
+          // Résilience (audit 2026-07-19) : une ERREUR de lecture transitoire ne doit PAS remettre la
+          // matrice à null — sinon tout rôle ≠ direction se voit « Accès refusé » et l'app entière se
+          // verrouille sur un simple incident réseau. On CONSERVE la dernière matrice connue (fail-closed
+          // reste assuré au tout premier chargement, où matrixState.matrix vaut encore null).
+          () => emitMatrix({ matrix: matrixState.matrix, loading: false })
         );
       }
     } else {
