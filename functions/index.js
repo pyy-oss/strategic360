@@ -1525,6 +1525,19 @@ async function runSyncSources(db) {
           const rawText = extractWebText(html);
           degraded = isDegradedWebPage(rawText); // M1 : page coquille (SPA) = source dégradée
           yielded = Boolean(rawText && !degraded);
+          // DIAGNOSTIC extraction (2026-07-19) : une source web/web-js qui rend « ok » mais 0 avis (SPA
+          // dont extractWebItems ne lit pas les cartes — ex. SangoBids, UNGM, portails SIGOMAP) est
+          // muette sans qu'on sache POURQUOI. On journalise la forme du DOM rendu (taille, JSON embarqué,
+          // échantillon de liens) pour pouvoir construire un parseur dédié sur PREUVE plutôt qu'à l'aveugle.
+          try {
+            const hrefs = (String(html).match(/href="([^"#][^"]{0,120})"/g) || [])
+              .map((h) => h.slice(6, -1))
+              .filter((h) => !/\.(png|jpe?g|svg|css|js|woff2?|ico)(\?|$)/i.test(h))
+              .slice(0, 20);
+            const jsonEmbedded = /<script[^>]+type=["']application\/(ld\+)?json["']/i.test(html)
+              || /window\.__(INITIAL_STATE|NUXT|NEXT_DATA|APOLLO)/i.test(html);
+            logger.info(`syncSources DIAG web-js-0item name="${source.name}" htmlLen=${String(html).length} textLen=${rawText.length} degraded=${degraded} jsonEmbedded=${jsonEmbedded} hrefs=${JSON.stringify(hrefs).slice(0, 900)}`);
+          } catch { /* diagnostic best-effort, jamais bloquant */ }
           if (rawText && !degraded) {
             const classified = await classifyRawText(rawText, watchlistEntities, { ...context }, clientProfile);
             if (classified) {
