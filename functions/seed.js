@@ -243,16 +243,20 @@ const SOURCES_SEED = [
   { name: "Banque Mondiale — Avis d'AO Togo (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Togo", axis: "clients_prospects", active: false },
   { name: "Banque Mondiale — Avis d'AO Guinée-Bissau (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=15&order=desc&srt=noticedate&countryname_exact=Guinea-Bissau", axis: "clients_prospects", active: false },
   { name: "Banque Mondiale — Avis d'AO Afrique de l'Ouest (API)", kind: "wb-procnotices", url: "https://search.worldbank.org/api/v2/procnotices?format=json&apilang=en&rows=200&order=desc&srt=noticedate&regionname_exact=Western%20and%20Central%20Africa", axis: "clients_prospects", active: true },
-  // UNGM — place de marché ONU (2026-07-18) : seul PRIMAIRE gratuit + officiel + libre d'accès qu'on
-  // n'avait pas. Couvre les AO des 40+ agences ONU (UNICEF/PNUD/PAM/HCR…) qui achètent IT/télécom/
-  // équipement en CI/UEMOA — cœur de métier. La consultation publique est libre (sans compte) mais le
-  // listing est une SPA → kind "web-js" (rendu headless + extractWebItems, une URL par avis). Flux mondial :
-  // c'est le filtre géo/évaluateur en aval qui restreint à l'Afrique de l'Ouest. RISQUE ASSUMÉ : le WAF
-  // UNGM peut renvoyer 403 à notre headless (comme la BAD) — à valider par la SANTÉ DE LA SOURCE en prod ;
-  // si stérile/403 répété, l'auto-curation la désactive (aucune casse). Les agrégateurs commerciaux
-  // (SangoBids/AfricaTenders/dgMarket…) sont écartés : détail derrière login/abonnement + ToS + ils ne
-  // font que revendre ces mêmes primaires (DGMP/WB/BAD/BCEAO/UNGM).
-  { name: "UNGM — Avis d'achat ONU (agences UN, IT/équipement)", kind: "web-js", url: "https://www.ungm.org/Public/Notice", axis: "clients_prospects", active: true },
+  // UNGM — place de marché ONU. DOUBLON RETIRÉ (validation prod 2026-07-19) : une source UNGM (« UNGM —
+  // avis de marchés (agences ONU) », même URL) existait DÉJÀ en base et remonte « ok » (donc UNGM n'est
+  // PAS bloqué par WAF, contrairement à la BAD). Mais elle yield 0 avis : le rendu headless charge la SPA,
+  // l'extraction générique (extractWebItems) n'attrape pas ses lignes d'avis. Pour la rendre productive il
+  // faudrait un PARSEUR DÉDIÉ ciblant sa structure réelle (comme wb-procnotices) — non faisable à l'aveugle
+  // (sa réponse 403 nos sondes de dev). Cette entrée est donc INACTIVE (le doublon actif suffit à surveiller
+  // la joignabilité). Les agrégateurs commerciaux (AfricaTenders/dgMarket/GlobalTenders/DevelopmentAid) :
+  // écartés (détail derrière login/abonnement + ToS + revendent ces mêmes primaires).
+  { name: "UNGM — Avis d'achat ONU (agences UN, IT/équipement)", kind: "web-js", url: "https://www.ungm.org/Public/Notice", axis: "clients_prospects", active: false },
+  // SangoBids — test empirique demandé (agrégateur CI/UEMOA francophone qui compile DGMP/WB/BAD/BCEAO/UNGM).
+  // App mobile gratuite + listing web CI. On TESTE si le listing est consultable/rendu (web-js) ou 403/login :
+  // la SANTÉ de la source en prod tranchera. Note ToS assumée (scraping d'un agrégateur tiers) — décision
+  // métier de l'utilisateur. Si stérile/403 répété → auto-désactivation, aucune casse.
+  { name: "SangoBids — appels d'offres CI (agrégateur)", kind: "web-js", url: "https://ci.sangobids.com/tenders", axis: "clients_prospects", active: true },
   // BAD (AfDB) — flux RSS procurement : URL correctes mais le WAF Cloudflare de la BAD renvoie 403,
   // Y COMPRIS via le rendu headless (défi anti-bot HTML servi à la place du flux, validation prod
   // 2026-07-18). Mur externe irrécupérable depuis nos IP cloud. Laissées INACTIVES et documentées :
