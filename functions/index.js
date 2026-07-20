@@ -50,6 +50,7 @@ const { generateJson, DEFAULT_MODEL } = require("./domain/vertex");
 const { TENDER_ENRICH_SUBTYPES, buildTenderEnrichPrompt, parseTenderEnrichResponse, mergeBusinessAngle, isoDeadline, aoProvenanceRejectReason } = require("./domain/tenderEnrich");
 const { parseWorldBankProcNotices } = require("./domain/donorFeeds");
 const { extractPortalTenders } = require("./domain/portalTenders");
+const { deriveNoticeKind } = require("./domain/noticeStatus");
 const { AGENTS: COPILOTE_AGENTS, buildChatPrompt, parseChatResponse } = require("./domain/copilote");
 const { buildMagnitudeGuide } = require("./domain/magnitude");
 const { DEFAULT_BACKFILL_DAYS, dayRangeUTC, computeKpiBackfillPoints, mergeHistoryPoints } = require("./domain/kpiBackfill");
@@ -1324,10 +1325,12 @@ async function runSyncSources(db) {
       return true;
     });
   } catch (e) {
-    // Transaction indisponible → on continue SANS verrou (mieux vaut une sync que pas de sync).
-    logger.warn(`syncSources: verrou indisponible (${e.message}) — run sans verrou`);
-    lockAcquired = true;
-    await writeSyncStatus({ running: true, startedAt: FieldValue.serverTimestamp(), finishedAt: null, total: 0, processed: 0, created: 0, phase: "ingestion" });
+    // Transaction indisponible → FAIL-CLOSED (audit final 2026-07) : on REFUSE de démarrer plutôt que de
+    // courir sans exclusion. Auparavant on continuait sans verrou ; deux runs concurrents heurtant la même
+    // erreur transitoire pouvaient alors s'exécuter en parallèle → double coût Vertex + doubles écritures
+    // (la dédup best-effort ne garantit pas l'exclusion). Le prochain tick planifié reprendra la sync.
+    logger.warn(`syncSources: verrou indisponible (${e.message}) — démarrage refusé (fail-closed)`);
+    return { sourcesTotal: 0, sourcesProcessed: 0, itemsCreated: 0, deduped: 0, evaluated: 0, rejected: 0, skipped: true, lockError: true };
   }
   if (!lockAcquired) {
     logger.warn("syncSources: un run est déjà en cours (verrou actif) — démarrage refusé");
@@ -1460,6 +1463,12 @@ async function runSyncSources(db) {
               // en `buyer` est trompeur (puce « acheteur ») ET casse la corrélation compte (matchAccount
               // comparerait un pays à des noms de comptes). Le pays reste dans geo/country.
               buyer: ba.buyer || null,
+              // Avis ouvert vs attribution/résultat (audit final) : l'API WB mélange les deux. On dérive
+              // le type depuis notice_type + titre pour que la vue AO filtre les résultats par défaut.
+              noticeKind: deriveNoticeKind({ noticeType: nt.noticeType, title: nt.title, url: nt.url }),
+              // Provenance STRUCTURÉE (API bailleur) : réf/échéance viennent des champs de l'avis, pas
+              // du modèle → champs fiables (le front peut les afficher sans caveat « à vérifier »).
+              provenanceVerified: true,
             };
             const iso = isoDeadline(nt.deadline);
             if (iso && !classified.dueDate) classified.dueDate = iso;
@@ -1491,7 +1500,17 @@ async function runSyncSources(db) {
             classified.url = t.url;               // provenance = source de vérité (jamais réécrite par le modèle)
             classified.subtype = "tender";
             const ba = classified.businessAngle && typeof classified.businessAngle === "object" ? classified.businessAngle : {};
-            classified.businessAngle = { ...ba, tenderRef: ba.tenderRef || t.ref || null };
+            classified.businessAngle = {
+              ...ba,
+              tenderRef: ba.tenderRef || t.ref || null,
+              // Avis ouvert vs résultat/attribution : les portails (ex. UEMOA) publient dans la même liste
+              // des avis ET des PV d'attribution / décisions d'infructuosité — on les distingue par le
+              // titre/nom de fichier pour que la vue AO filtre les résultats par défaut.
+              noticeKind: deriveNoticeKind({ title: t.title, url: t.url }),
+              // Provenance STRUCTURÉE (portail officiel) : l'URL du détail/PDF fait foi. La réf vient du
+              // slug/nom de fichier (pas inventée par le modèle) → fiable.
+              provenanceVerified: true,
+            };
             const { written } = await upsertClassifiedItem(db, classified, dedupeIndex);
             return written;
           })
@@ -4639,6 +4658,45 @@ exports.purgeArchivedIntelItems = onSchedule(
 );
 
 /**
+ * purgeWebhookNonces — RÉTENTION des nonces anti-rejeu (audit final 2026-07). Chaque requête webhook
+ * mutante crée un doc `webhookNonces/{id}` portant `expiresAt` (epoch ms), mais rien ne le consommait :
+ * croissance monotone du stockage/coût de lecture. On supprime ici les nonces expirés (fenêtre anti-rejeu
+ * déjà passée — leur suppression n'affaiblit pas la garde). Paginé par curseur, borné, best-effort.
+ */
+exports.purgeWebhookNonces = onSchedule(
+  { schedule: "15 3 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1" },
+  async () => {
+    try {
+      const db = firestoreDb();
+      const nowMs = Date.now();
+      let deleted = 0;
+      let lastDoc = null;
+      for (let i = 0; i < 50; i++) {
+        let q = db.collection("webhookNonces").orderBy(FieldPath.documentId()).limit(400);
+        if (lastDoc) q = q.startAfter(lastDoc);
+        const snap = await q.get();
+        if (snap.empty) break;
+        const stale = snap.docs.filter((d) => {
+          const e = (d.data() || {}).expiresAt;
+          return typeof e === "number" && e < nowMs;
+        });
+        if (stale.length) {
+          const batch = db.batch();
+          stale.forEach((d) => batch.delete(d.ref));
+          await batch.commit();
+          deleted += stale.length;
+        }
+        lastDoc = snap.docs[snap.docs.length - 1];
+        if (snap.size < 400) break;
+      }
+      if (deleted) logger.info(`purgeWebhookNonces: ${deleted} nonces expirés supprimés.`);
+    } catch (err) {
+      logger.error(`purgeWebhookNonces: FAILED — ${err.message}`, { err });
+    }
+  }
+);
+
+/**
  * setUserRole — callable (admin `direction`)
  * Pose le custom claim `role` + audit (BUILD_KIT.md §7/§10).
  *
@@ -5166,18 +5224,21 @@ exports.webhookInbound = onRequest({ region: "europe-west1", timeoutSeconds: 540
     } else if (act === "ingest") {
       const item = payload.item || payload;
       if (!item || (!item.title && !item.url)) return void (await fail(422, "item.title ou item.url requis.", act));
-      const classified = {
-        title: String(item.title || "").slice(0, 300),
-        url: item.url ? String(item.url) : "",
-        date: item.date || null,
-        axis: item.axis || "marche",
-        subtype: item.subtype || null,
-        summary: item.summary ? String(item.summary).slice(0, 2000) : "",
-        source: item.source || `webhook:${sourceId}`,
-        impact: item.impact || "moyen",
-        stance: item.stance || "neutre",
-        status: "new",
-      };
+      // Validation d'énumérations (audit final 2026-07) : le payload entrant est arbitraire. On le fait
+      // passer par le MÊME normaliseur que les sorties LLM (`parseClassificationResponse`) pour coercer
+      // axis/impact/stance/subtype dans le vocabulaire valide — sinon un `axis:"marche"`/`impact:"moyen"`
+      // hors énumération est écrit tel quel, rendant l'item invisible/mal trié et polluant les agrégats.
+      const classified = parseClassificationResponse(
+        {
+          title: item.title != null ? String(item.title) : undefined,
+          summary: item.summary != null ? String(item.summary) : undefined,
+          axis: item.axis, impact: item.impact, stance: item.stance, subtype: item.subtype,
+          date: item.date, geo: item.geo, businessAngle: item.businessAngle,
+        },
+        { url: item.url ? String(item.url) : undefined, sourceName: item.source || `webhook:${sourceId}`, defaultDate: item.date || undefined }
+      );
+      if (!classified) return void (await fail(422, "item inexploitable (titre/résumé manquant).", act));
+      classified.source = item.source || `webhook:${sourceId}`;
       const r = await upsertClassifiedItem(db, classified, null);
       result = { ingested: r.written, id: r.id };
     } else if (act === "action") {
@@ -5196,9 +5257,14 @@ exports.webhookInbound = onRequest({ region: "europe-west1", timeoutSeconds: 540
       result = { actionId: ref.id };
     } else if (act === "sync") {
       const target = String(payload.target || req.query.target || "quanti");
+      if (target !== "quanti" && target !== "sources") return void (await fail(400, "target invalide (quanti|sources).", act));
+      // Anti-amplification de coût (audit final 2026-07) : une source entrante pouvait déclencher en
+      // boucle des runs de pipeline Vertex complets (l'anti-rejeu n'arrête pas des requêtes NOUVELLES).
+      // On applique le MÊME throttle min-interval que les crons planifiés — au-delà de la fréquence
+      // configurée, on refuse (429) au lieu d'enchaîner des syncs coûteuses.
+      if (!(await gateScheduledPipeline(db, "sync"))) return void (await fail(429, "Sync déjà exécutée récemment (throttle).", act));
       if (target === "quanti") { await runInternalQuantiSync(db); result = { synced: "quanti" }; }
-      else if (target === "sources") { await runSyncSources(db); result = { synced: "sources" }; }
-      else return void (await fail(400, "target invalide (quanti|sources).", act));
+      else { await runSyncSources(db); result = { synced: "sources" }; }
     }
 
     await db.doc(`webhookInboundSources/${sourceId}`).set({ lastSeenAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
