@@ -186,7 +186,7 @@ exactement ce schéma :
   "impact": "high" | "medium" | "low",
   "stance": "opportunity" | "threat" | "neutral",
   "entity": string | null,         // nom de l'entité de la watchlist la plus proche, sinon null
-  "geo": string | null,            // code pays UEMOA/CEDEAO ou zone : "ci","sn","ml","bf","bj","tg","ne","gw","afrique_ouest","afrique","international"
+  "geo": string | null,            // code pays UEMOA/CEDEAO ou zone : "ci","sn","ml","bf","bj","tg","ne","gw","gn"(Guinée-Conakry),"afrique_ouest","afrique","international"
   "prox": "imminent" | "court" | "moyen" | "horizon", // imminence de l'échéance/impact
   "weakSignal": boolean,           // signal faible/précoce (encore incertain mais potentiellement important)
   "soWhat": string,                // "so-what" : pourquoi ce signal compte pour l'entreprise (cf. contexte ci-dessus)
