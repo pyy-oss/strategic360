@@ -224,7 +224,9 @@ const SOURCES_SEED = [
   { name: "Novojob Côte d'Ivoire — IT/télécom", kind: "web-js", url: "https://www.novojob.com/cote-d-ivoire/offres-d-emploi", axis: "concurrents", active: true },
   { name: "RMO Jobcenter CI — offres IT", kind: "web-js", url: "https://www.rmo-jobcenter.com/", axis: "concurrents", active: true },
   // Distributeurs pivots de la fusion HPE/Juniper Vantage & éditeur cible de migration VMware (M10).
-  { name: "Ingram Micro — Newsroom", kind: "web", url: "https://www.ingrammicro.com/en-us/newsroom", axis: "partenaires", active: true },
+  // Désactivée (revue santé 2026-07-20) : newsroom SPA JS que l'extracteur lit mal (dégradée 5/8),
+  // faible valeur (distributeur). La veille Ingram Micro passe déjà par le monitor d'entité watchlist.
+  { name: "Ingram Micro — Newsroom", kind: "web", url: "https://www.ingrammicro.com/en-us/newsroom", axis: "partenaires", active: false },
   { name: "TD SYNNEX — Newsroom", kind: "web", url: "https://www.tdsynnex.com/na/us/news-events/", axis: "partenaires", active: true },
   { name: "Nutanix — Blog (RSS)", kind: "rss", url: "https://www.nutanix.com/blog/rss.xml", axis: "partenaires", active: true },
   // Couverture régionale réelle (M11 audit) : filiale Burkina, expansion Sénégal/UEMOA.
