@@ -10,7 +10,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{db}/documents {
 
-    function role() { return request.auth.token.role; }
+    // Rôle de l'appelant — claim NAMESPACÉ `sentinelRole` en priorité (audit final : Auth partagée entre
+    // apps du même projet ; un autre app posant le claim générique `role` ne doit pas conférer un rôle
+    // ici). Repli sur `role` tant que tous les comptes ne sont pas migrés (backfillRoleClaims) → aucun
+    // lock-out : un compte historique portant seulement `role` reste autorisé.
+    function role() { return request.auth.token.get('sentinelRole', request.auth.token.get('role', null)); }
     function matrix() { return get(/databases/$(db)/documents/config/permissions).data.matrix; }
     function lvl(m) { return role() in ['direction'] ? 'write' : matrix()[role()][m]; }
     function canRead(m) { return request.auth != null && lvl(m) in ['read', 'write']; }

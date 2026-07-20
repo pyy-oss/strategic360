@@ -74,6 +74,25 @@ function ctxFor(role) {
   return testEnv.authenticatedContext(`user-${role}`, { role });
 }
 
+describe("claim namespacing (sentinelRole)", () => {
+  // Le claim namespacé `sentinelRole` est honoré seul (accès autorisé pour un rôle valide de la matrice).
+  it("sentinelRole seul autorise l'accès", async () => {
+    const db = testEnv.authenticatedContext("u-ns", { sentinelRole: "finance" }).firestore();
+    await assertSucceeds(db.collection("intelItems").doc("i1").get());
+  });
+  // Précédence : un `role` générique INVALIDE (qu'un autre app aurait pu poser) ne prime pas ; c'est
+  // `sentinelRole` qui décide. Si le repli l'emportait, « not_a_role » ferait échouer la résolution.
+  it("sentinelRole PRIME sur un role générique usurpé", async () => {
+    const db = testEnv.authenticatedContext("u-prec", { role: "not_a_role", sentinelRole: "finance" }).firestore();
+    await assertSucceeds(db.collection("intelItems").doc("i1").get());
+  });
+  // Repli : un compte historique portant SEULEMENT `role` reste autorisé (aucun lock-out avant migration).
+  it("repli sur role si sentinelRole absent (pas de lock-out)", async () => {
+    const db = testEnv.authenticatedContext("u-fb", { role: "finance" }).firestore();
+    await assertSucceeds(db.collection("intelItems").doc("i1").get());
+  });
+});
+
 describe("intelItems", () => {
   it.each(ALL_ROLES)("read is allowed for role=%s", async (role) => {
     const db = ctxFor(role).firestore();
