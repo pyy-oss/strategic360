@@ -75,12 +75,16 @@ describe("evaluate — porte de pertinence des signaux de veille", () => {
     expect(parseEvaluateResponse({ pertinence: 95, publier: false, raison: "doublon" }).publier).toBe(false);
   });
 
-  it("fail-open borné : `publier` absent → déduit du seuil ; score absent → publie ; réponse nulle → null", () => {
+  it("anti-injection : `publier` absent → déduit du seuil ; score absent → INEXPLOITABLE (null) ; rejet explicite honoré même sans score", () => {
     expect(parseEvaluateResponse({ pertinence: RELEVANCE_MIN + 10, raison: "" }).publier).toBe(true);
     expect(parseEvaluateResponse({ pertinence: RELEVANCE_MIN - 10, raison: "" }).publier).toBe(false);
-    // score ET publier absents → fail-open (publie).
-    expect(parseEvaluateResponse({ raison: "?" }).publier).toBe(true);
-    // réponse non-objet → null (l'appelant publiera par défaut).
+    // Score absent dans un objet parsé → NULL (auparavant « publie ») : un contenu externe hostile ne
+    // peut plus émettre {"publier":true} sans note pour forcer la publication ; l'appelant garde `pending`.
+    expect(parseEvaluateResponse({ publier: true, raison: "?" })).toBeNull();
+    expect(parseEvaluateResponse({ raison: "?" })).toBeNull();
+    // Mais un rejet EXPLICITE reste honoré même sans score (on n'a pas besoin de note pour écarter).
+    expect(parseEvaluateResponse({ publier: false, raison: "spam" })).toEqual({ pertinence: null, publier: false, raison: "spam" });
+    // réponse non-objet → null (l'appelant applique son fail-closed borné).
     expect(parseEvaluateResponse(null)).toBeNull();
     expect(parseEvaluateResponse("nope")).toBeNull();
   });
