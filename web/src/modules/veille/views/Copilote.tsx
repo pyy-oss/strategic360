@@ -373,17 +373,16 @@ export function Copilote() {
               <Eyebrow>Opportunités réelles en cours</Eyebrow>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 7 }}>
                 {(account.nt360?.opportunites ?? []).map((o, i) => (
-                  <DealRow key={`${o.ref || o.nom}-${i}`} nom={o.nom} dealRef={o.ref} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
+                  <DealRow key={`${o.ref || o.nom}-${i}`} nom={o.nom} dealRef={o.ref} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
                 ))}
               </div>
             </div>
           )}
 
-          {(account.nt360?.ams?.length || account.nt360?.bus?.length) ? (
+          {account.nt360?.ams?.length ? (
             <div style={{ display: "flex", gap: 6, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
               <span style={{ fontSize: 11, color: T.dim }}>Rattachement :</span>
               {(account.nt360?.ams ?? []).map((am, i) => <Badge key={`am${i}`} c={T.steel}>AM {am}</Badge>)}
-              {(account.nt360?.bus ?? []).map((bu, i) => <Badge key={`bu${i}`} c={T.dim}>{bu}</Badge>)}
             </div>
           ) : null}
           <OwnersEditor account={account} isAdmin={isAdmin} onSaved={reload} />
@@ -460,7 +459,7 @@ function Money({ label, value, accent }: { label: string; value: number; accent?
 }
 
 /* -------- Ligne opportunité : montant + jauge de probabilité (met en avant ce qui est jouable) -------- */
-function DealRow({ nom, bu, etape, montant, probability, closingDate, dealRef }: { nom: string; bu?: string; etape: string; montant: number; probability?: number | null; closingDate?: string; dealRef?: string }) {
+function DealRow({ nom, etape, montant, probability, closingDate, dealRef }: { nom: string; etape: string; montant: number; probability?: number | null; closingDate?: string; dealRef?: string }) {
   // Echelle canonique 0-100. nt360 stocke la probabilite en fraction 0-1 (0.5 = 50 %) : sans
   // normalisation, « 0.5 » s'affichait « 0.5% ». Defensif ici aussi (docs deja stockes en 0-1, avant
   // resync) : une valeur <= 1 est une fraction (x100), > 1 est deja un pourcentage. Borne 0-100.
@@ -468,9 +467,6 @@ function DealRow({ nom, bu, etape, montant, probability, closingDate, dealRef }:
     typeof probability === "number" && Number.isFinite(probability)
       ? Math.round(Math.max(0, Math.min(100, probability <= 1 ? probability * 100 : probability)))
       : null;
-  // Le libellé (fiche projet ou « Opportunité <offre> ») peut déjà contenir l'offre → on n'affiche le
-  // BU en second que s'il n'y est pas déjà, pour éviter « Opportunité ICT · ICT ».
-  const showBu = bu && !nom.toLowerCase().includes(bu.toLowerCase());
   // Urgence de closing (audit doubler-CA) : dépassée = à requalifier (fantôme) ; ≤14 j = à fermer.
   const cd = closingDate && /^\d{4}-\d{2}-\d{2}/.test(closingDate) ? closingDate : "";
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -482,7 +478,7 @@ function DealRow({ nom, bu, etape, montant, probability, closingDate, dealRef }:
     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", padding: "8px 11px", background: T.panel2, borderRadius: 9, borderLeft: `3px solid ${edge}` }}>
       <div style={{ minWidth: 0 }}>
         <div title={dealRef ? `réf. ${dealRef}` : undefined} style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {nom}{showBu ? <span style={{ color: T.dim }}> · {bu}</span> : null} <span style={{ color: T.steel }}>— {etape}</span>
+          {nom} <span style={{ color: T.steel }}>— {etape}</span>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
           {p !== null && (
@@ -722,7 +718,7 @@ function PortfolioDashboard({
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
               {hotDeals.map((o, i) => (
                 <button key={i} onClick={() => onPick(o.accountId)} style={{ display: "block", width: "100%", padding: 0, background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
-                  <DealRow nom={`${o.compte} · ${o.nom}`} dealRef={o.ref} bu={o.bu} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
+                  <DealRow nom={`${o.compte} · ${o.nom}`} dealRef={o.ref} etape={o.etape} montant={o.montant} probability={o.probability} closingDate={o.closingDate} />
                 </button>
               ))}
             </div>
@@ -1669,15 +1665,14 @@ function PerimetresPanel({ open, onClose }: { open: boolean; onClose: () => void
   };
   const edit = (p: CopiloteProfile) => setF({ email: p.email, ams: p.ams.join(", "), bus: p.bus.join(", ") });
   return (
-    <Modal open={open} onClose={onClose} title="Périmètres commerciaux (AM / BU par e-mail)" width={680}>
+    <Modal open={open} onClose={onClose} title="Périmètres commerciaux (par e-mail)" width={680}>
       <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 10, lineHeight: 1.5 }}>
-        Un commercial voit un compte s'il en est <b>owner</b> (attribution), si l'un de ses <b>AM</b> ou de ses <b>BU</b>
+        Un commercial voit un compte s'il en est <b>owner</b> (attribution), si l'un de ses <b>AM</b>
         correspond au compte, ou s'il l'a créé. Direction et directeurs commerciaux voient tout.
       </div>
-      <div className="g4" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+      <div className="g4" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <div><label style={lbl}>E-mail du commercial *</label><Input value={f.email} onChange={(v) => set("email", v)} placeholder="jean@nt.ci" /></div>
         <div><label style={lbl}>Account managers (AM), séparés par des virgules</label><Input value={f.ams} onChange={(v) => set("ams", v)} placeholder="K. Diallo, M. Traoré" /></div>
-        <div><label style={lbl}>BU / équipes, séparées par des virgules</label><Input value={f.bus} onChange={(v) => set("bus", v)} placeholder="ICT, CYBER" /></div>
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
         <button className="pill on" disabled={busy || !f.email.trim()} onClick={() => void save()}>{busy ? "…" : "Enregistrer le périmètre"}</button>
@@ -1692,7 +1687,7 @@ function PerimetresPanel({ open, onClose }: { open: boolean; onClose: () => void
                 style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", padding: "7px 10px", background: T.panel2, borderRadius: 8, border: `1px solid ${T.line}`, cursor: "pointer", textAlign: "left" }}>
                 <span style={{ fontSize: 12.5, color: T.ink }}>{p.email}</span>
                 <span style={{ fontSize: 11.5, color: T.faint }}>
-                  {p.ams.length ? `AM: ${p.ams.join(", ")}` : "AM: —"} · {p.bus.length ? `BU: ${p.bus.join(", ")}` : "BU: —"}
+                  {p.ams.length ? `AM: ${p.ams.join(", ")}` : "AM: —"}
                 </span>
               </button>
             ))}

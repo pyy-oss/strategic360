@@ -207,7 +207,7 @@ export function Portefeuille() {
       {c === "gran" && (
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <Eyebrow color={T.steel}>Granularité de la croissance — où gagner (par BU, CAS N vs N-1)</Eyebrow>
+            <Eyebrow color={T.steel}>Granularité de la croissance — où gagner (par segment, CAS N vs N-1)</Eyebrow>
             {gran.length > 0 && <Badge c={T.emerald}>Temps réel (nt360)</Badge>}
           </div>
           {gran.length === 0 && (
@@ -232,7 +232,7 @@ export function Portefeuille() {
                 </div>
               ))}
               <div style={{ fontSize: 11.5, color: T.faint, marginTop: 4 }}>
-                Segment = BU (un axe segment × offre plus fin nécessitera un tag « offre » côté données internes). Montants en FCFA.
+                Un axe segment × offre plus fin nécessitera un tag « offre » côté données internes. Montants en FCFA.
               </div>
             </div>
           )}

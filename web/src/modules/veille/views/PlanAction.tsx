@@ -119,7 +119,6 @@ function BizOpportunitiesSection({ isExec }: { isExec: boolean }) {
                 {o.source === "relance" && <Badge c={T.clay}>↺ Relance dormant</Badge>}
                 {o.triggerEvent && <Badge c={T.gold}>⚡ Déclenché par la veille</Badge>}
                 <Badge c={T.plum}>{o.client}</Badge>
-                <Badge c={T.steel}>BU {o.bu}</Badge>
                 <Badge c={T.gold}>Montant estimé : {o.estAmount || "—"}</Badge>
                 <Badge c={o.horizon === "imminent" ? T.clay : T.faint}>
                   {o.deadline ? `Échéance ${o.deadline}` : PROX[o.horizon]?.l ?? o.horizon}
