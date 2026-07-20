@@ -160,7 +160,11 @@ const SOURCES_SEED = [
   // bailleurs, pour piloter la croissance au-delà de la CI. Une source dont l'URL change/casse se
   // désactive d'elle-même après échecs consécutifs (non bloquant) — voir la santé des sources dans Détection.
   { name: "Sénégal — Marchés publics (DCMP/SYGMAP)", kind: "web-js", url: "https://www.marchespublics.sn/", axis: "clients_prospects", active: true },
-  { name: "ARMP Sénégal — régulation & avis", kind: "web", url: "https://www.armp.sn/", axis: "clients_prospects", active: true },
+  // L'ARMP Sénégal est devenue l'ARCOP et a migré de domaine (preuve DOM 2026-07-20 : armp.sn ne sert
+  // qu'un redirect JS « window.location='http://arcop.sn' »). On garde le MÊME nom (clé de re-seed) mais
+  // on bascule l'URL sur le nouveau site — même famille de CMS que les ARCOP CI/TG/BF qui, eux,
+  // répondent. Le changement d'URL remet les compteurs de santé à zéro (logique de re-seed).
+  { name: "ARMP Sénégal — régulation & avis", kind: "web", url: "https://arcop.sn/", axis: "clients_prospects", active: true },
   { name: "Bénin — ARMP (marchés publics)", kind: "web", url: "https://armp.bj/", axis: "clients_prospects", active: true },
   { name: "Burkina Faso — ARCOP (marchés publics)", kind: "web", url: "https://www.arcop.bf/", axis: "clients_prospects", active: true },
   { name: "Mali — DGMP-DSP (marchés publics)", kind: "web", url: "https://dgmp.gouv.ml/", axis: "clients_prospects", active: true },

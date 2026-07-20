@@ -145,6 +145,7 @@ async function sourceDiag(db) {
     console.log(`    htmlLen=${g.htmlLen} textLen=${g.textLen} jsonEmbedded=${g.jsonEmbedded}`);
     console.log(`    hrefs=${JSON.stringify(g.hrefs || [])}`);
     console.log(`    noticeHrefs=${JSON.stringify(g.noticeHrefs || [])}`);
+    if (g.nextData) console.log(`    --- __NEXT_DATA__ (SPA) ---\n${String(g.nextData).replace(/\s+/g, " ").slice(0, 3200)}\n`);
     console.log(`    --- htmlHead ---\n${String(g.htmlHead || "").replace(/\s+/g, " ").slice(0, 3200)}\n`);
   }
 }
