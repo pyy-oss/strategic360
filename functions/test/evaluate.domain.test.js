@@ -3,7 +3,7 @@
 /** Tests unitaires du juge de pertinence (porte de qualité avant publication). PUR. */
 
 import { describe, it, expect } from "vitest";
-import { RELEVANCE_MIN, buildEvaluatePrompt, parseEvaluateResponse } from "../domain/evaluate.js";
+import { RELEVANCE_MIN, buildEvaluatePrompt, parseEvaluateResponse, deterministicPublishFloor } from "../domain/evaluate.js";
 
 describe("evaluate — porte de pertinence des signaux de veille", () => {
   it("buildEvaluatePrompt ancre sur NT + le marché, cite les champs du signal et demande un JSON pertinence/publier/raison", () => {
@@ -95,5 +95,34 @@ describe("evaluate — porte de pertinence des signaux de veille", () => {
     expect(parseEvaluateResponse({ pertinence: 95, publier: 0, raison: "hs" }).publier).toBe(false);
     // « true » stringifié ou toute autre valeur non-falsey → couplé au seuil (ici publié).
     expect(parseEvaluateResponse({ pertinence: 95, publier: "true", raison: "ok" }).publier).toBe(true);
+  });
+});
+
+describe("deterministicPublishFloor — plancher AO IT ouvert en zone (audit alignement 2026-07)", () => {
+  const NOW = Date.parse("2026-07-20T00:00:00Z");
+  const openAo = {
+    subtype: "tender", url: "https://boad.org/avis/soc-ci", title: "Avis d'appel d'offres — SOC managé",
+    geo: "ci", businessAngle: { deadline: "2026-09-30" },
+  };
+  it("publie d'office un AO IT ouvert, ancré en zone, traçable, échéance future", () => {
+    expect(deterministicPublishFloor(openAo, { nowMs: NOW })).toBe(true);
+    // Ancrage par compte nommé (ent) suffit aussi.
+    expect(deterministicPublishFloor({ subtype: "funding", url: "https://x/y", title: "AMI", ent: "BCEAO" }, { nowMs: NOW })).toBe(true);
+    // Zone UEMOA hors-CI acceptée.
+    expect(deterministicPublishFloor({ ...openAo, geo: "sn" }, { nowMs: NOW })).toBe(true);
+  });
+  it("ne s'applique PAS hors du cœur AO ou sans traçabilité", () => {
+    expect(deterministicPublishFloor({ ...openAo, subtype: "trend" }, { nowMs: NOW })).toBe(false); // pas un AO
+    expect(deterministicPublishFloor({ ...openAo, url: "" }, { nowMs: NOW })).toBe(false); // pas d'URL
+    expect(deterministicPublishFloor({ ...openAo, geo: "international", ent: "" }, { nowMs: NOW })).toBe(false); // hors zone
+    expect(deterministicPublishFloor({ ...openAo, geo: "", ent: "" }, { nowMs: NOW })).toBe(false); // aucun ancrage
+  });
+  it("ne force PAS un avis d'ATTRIBUTION ni un AO manifestement expiré", () => {
+    // Attribution (award) : ce n'est pas une opportunité ouverte.
+    expect(deterministicPublishFloor({ ...openAo, title: "PV d'attribution du marché SOC" }, { nowMs: NOW })).toBe(false);
+    // Échéance passée → ne force pas.
+    expect(deterministicPublishFloor({ ...openAo, businessAngle: { deadline: "2026-06-01" } }, { nowMs: NOW })).toBe(false);
+    // Échéance absente/non datée → toléré (avis ouvert, on ne peut prouver l'expiration).
+    expect(deterministicPublishFloor({ ...openAo, businessAngle: {} }, { nowMs: NOW })).toBe(true);
   });
 });

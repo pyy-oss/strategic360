@@ -39,7 +39,7 @@ const {
   parseVeillePlanResponse,
   buildConfigDocsFromDraft,
 } = require("./domain/onboarding");
-const { buildEvaluatePrompt, parseEvaluateResponse } = require("./domain/evaluate");
+const { buildEvaluatePrompt, parseEvaluateResponse, deterministicPublishFloor } = require("./domain/evaluate");
 const { planWatchlistMonitors, MONITOR_SOURCE_TAG } = require("./domain/watchlistMonitor");
 const { planClientTenderMonitors, CLIENT_AO_MONITOR_TAG } = require("./domain/clientTenderMonitor");
 const { pickRelevant } = require("./domain/retrieve");
@@ -1353,11 +1353,17 @@ async function runSyncSources(db) {
   // pour être crawlée dès ce run). Best-effort.
   await ensureClientTenderMonitors(db);
 
-  const [sourcesSnap, watchlistSnap] = await Promise.all([
+  const [sourcesSnap, watchlistSnap, clientValueIdx] = await Promise.all([
     db.collection("intelSources").where("active", "==", true).get(),
     db.collection("intelWatchlist").where("active", "==", true).get(),
+    loadClientValueIndex(db),
   ]);
-  const watchlistEntities = watchlistSnap.docs.map((d) => ({ name: d.data().name, type: d.data().type }));
+  // Enrichi d'une note de VALEUR COMPTE (audit alignement 2026-07) pour que le classifieur oriente
+  // la recommendedAction vers les comptes prioritaires (gros CA) plutôt qu'une action générique.
+  const watchlistEntities = annotateWatchlistValue(
+    watchlistSnap.docs.map((d) => ({ name: d.data().name, type: d.data().type })),
+    clientValueIdx,
+  );
 
   // Plafond de coût par run (audit M7) : le nombre de sources actives n'était pas borné — 200
   // sources × 8 items = ~1600 appels Vertex/run. Au-delà du plafond, ROTATION quotidienne (le point
@@ -1945,6 +1951,18 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
         rejected += 1;
         return;
       }
+      // PLANCHER DÉTERMINISTE (audit alignement 2026-07 : « générer plus de business ») : un AO IT OUVERT,
+      // ancré en zone, traçable et non expiré est le CŒUR DE MÉTIER de NT — on le PUBLIE d'office sans
+      // soumettre sa pertinence au jugement subjectif du LLM (qui l'écartait parfois « trop petit »).
+      // Coût IA évité en prime. Les autres signaux passent au juge normalement.
+      if (deterministicPublishFloor(it)) {
+        await db.doc(`intelItems/${it.id}`).update({
+          status: "new", evalScore: 70, evalFailed: false, floorPublished: true,
+          evalReason: "AO IT ouvert en zone (cœur de métier) — publié d'office", updatedAt: stamp(),
+        });
+        published += 1;
+        return;
+      }
       // Jugement de pertinence : température 0 (verdict reproductible) + modèle d'extraction configurable
       // (GEMINI_MODEL_EXTRACTION, coûts) — non défini → modèle par défaut (inchangé).
       const parsed = parseEvaluateResponse(await generateJson(buildEvaluatePrompt(it, companyContext, evalIdentity), { temperature: 0, model: process.env.GEMINI_MODEL_EXTRACTION }));
@@ -2030,8 +2048,14 @@ exports.classifyAI = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   }
   const existing = snap.data();
 
-  const watchlistSnap = await db.collection("intelWatchlist").where("active", "==", true).get();
-  const watchlistEntities = watchlistSnap.docs.map((d) => ({ name: d.data().name, type: d.data().type }));
+  const [watchlistSnap, clientValueIdx] = await Promise.all([
+    db.collection("intelWatchlist").where("active", "==", true).get(),
+    loadClientValueIndex(db),
+  ]);
+  const watchlistEntities = annotateWatchlistValue(
+    watchlistSnap.docs.map((d) => ({ name: d.data().name, type: d.data().type })),
+    clientValueIdx,
+  );
 
   const clientProfile = await loadClientProfile(db);
   const rawText = `${existing.title || ""}\n${existing.summary || ""}`.trim();
@@ -2080,6 +2104,28 @@ function resolveItemAccountValue(item, clientValue) {
   const buyer = item && item.businessAngle && item.businessAngle.buyer;
   const byBuyer = buyer ? nt360ResolveAccountValue(buyer, clientValue) : 0;
   return Math.max(byEnt, byBuyer);
+}
+
+/**
+ * annotateWatchlistValue(entities, clientValue) — enrichit chaque entité watchlist d'une NOTE de valeur
+ * compte (audit alignement 2026-07 : « générer plus de business »). Le classifieur voit alors quels
+ * comptes sont prioritaires (gros CA) et peut orienter la `recommendedAction` vers eux plutôt que de
+ * produire une action générique. On PRÉSERVE toute note existante (on ajoute la valeur en préfixe).
+ * Tier ≥ 0.8 → « compte prioritaire (CA élevé) » ; ≥ 0.5 → « compte à fort potentiel ». Best-effort :
+ * clientValue absent → entités inchangées.
+ */
+function annotateWatchlistValue(entities, clientValue) {
+  const list = Array.isArray(entities) ? entities : [];
+  if (!clientValue || typeof clientValue !== "object") return list;
+  return list.map((e) => {
+    const tier = nt360ResolveAccountValue(e.name, clientValue);
+    let flag = "";
+    if (tier >= 0.8) flag = "compte prioritaire (CA élevé)";
+    else if (tier >= 0.5) flag = "compte à fort potentiel";
+    if (!flag) return e;
+    const note = e.note ? `${flag} · ${e.note}` : flag;
+    return { ...e, note };
+  });
 }
 
 exports.onIntelItemWrite = onDocumentWritten({ document: "intelItems/{id}", region: "europe-west1", database: FIRESTORE_DATABASE_ID }, async (event) => {
