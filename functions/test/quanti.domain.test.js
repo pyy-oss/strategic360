@@ -186,10 +186,28 @@ describe("computeKris", () => {
     const byName = Object.fromEntries(kris.map((k) => [k.n, k]));
 
     expect(byName["Taux de conversion"].val).toBe(50); // 1/2 → 50%
-    expect(byName["Saturation lignes fournisseurs"].val).toBe(90); // same Top-3 as Porter test
+    // Échantillon insuffisant (2 clos < 5) → PAS de statut coloré + sous-texte explicite (crédibilité).
+    expect(byName["Taux de conversion"].stat).toBeNull();
+    expect(byName["Taux de conversion"].sub).toMatch(/échantillon insuffisant/);
+    expect(byName["Dépendance Top-3 fournisseurs"].val).toBe(90); // renommé (ex-"Saturation lignes fournisseurs")
     expect(byName["Délai commande→facturation"].val).toBe(30);
     expect(byName["Part de récurrent"].val).toBeNull();
-    expect(byName["Part de récurrent"].caveat).toMatch(/récurrent\/projet manquant/);
+    expect(byName["Part de récurrent"].caveat).toMatch(/taguer chaque commande/);
+  });
+
+  it("taux de conversion : statut coloré + échantillon dès 5 affaires closes", () => {
+    const opportunities = [
+      { client: "A", montant: 100, etape: "Gagné" },
+      { client: "B", montant: 100, etape: "Gagné" },
+      { client: "C", montant: 100, etape: "Gagné" },
+      { client: "D", montant: 100, etape: "Gagné" },
+      { client: "E", montant: 100, etape: "Perdu" },
+    ];
+    const kris = computeKris({ opportunities });
+    const conv = kris.find((k) => k.n === "Taux de conversion");
+    expect(conv.val).toBe(80); // 4/5
+    expect(conv.stat).toBe("ok"); // >=55% et échantillon suffisant
+    expect(conv.sub).toBe("4 gagnés / 5 clos");
   });
 });
 

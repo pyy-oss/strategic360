@@ -63,7 +63,7 @@ export function Indicateurs() {
               return (
                 <Card key={i} style={{ borderTop: `3px solid ${col}` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                    <Eyebrow>{k.n}</Eyebrow>
+                    <Eyebrow>{k.n}{k.hint && <span title={k.hint} style={{ color: T.faint, cursor: "help", marginLeft: 4, fontSize: 11 }}>ⓘ</span>}</Eyebrow>
                     {!pending && k.stat && (
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: col, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
                         <span style={{ width: 8, height: 8, borderRadius: 8, background: col, display: "inline-block" }} />
@@ -75,8 +75,8 @@ export function Indicateurs() {
                     <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 24, color: pending ? T.faint : T.ink, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
                       {pending ? "—" : <>{k.val}{k.u}</>}
                     </div>
-                    <div style={{ fontSize: 11, color: T.dim, marginTop: 6 }}>
-                      {pending ? (k.caveat || "Indisponible.") : "Valeur actuelle — calculée depuis les imports internes."}
+                    <div style={{ fontSize: 11, color: pending ? T.dim : (k.sub && !k.stat ? T.gold : T.dim), marginTop: 6 }}>
+                      {pending ? (k.caveat || "Indisponible.") : (k.sub || "Valeur actuelle — calculée depuis les imports internes.")}
                     </div>
                   </div>
                 </Card>

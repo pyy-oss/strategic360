@@ -41,6 +41,8 @@ export interface QuantiKri {
   val: number | null;
   stat: "ok" | "warn" | "alert" | null;
   caveat?: string; // present when val is null due to a known missing-prerequisite (e.g. Part de récurrent)
+  sub?: string;    // sous-texte de contexte (ex. échantillon « 3 gagnés / 3 clos ») — crédibilité
+  hint?: string;   // infobulle explicative (ex. proxy « Dépendance Top-3 fournisseurs »)
 }
 
 export interface QuantiValueAtStakeEntry {

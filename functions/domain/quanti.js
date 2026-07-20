@@ -235,6 +235,8 @@ function computePipeline({ opportunities } = {}) {
     pipelinePondere: Math.round(pipelinePondere),
     realise: Math.round(realise),
     winRate: closed > 0 ? Math.round((gagne / closed) * 100) / 100 : null,
+    wins: gagne,      // nb d'opportunités Gagné (échantillon du taux de conversion)
+    closed,           // nb d'opportunités closes (Gagné + Perdu) — dénominateur du win-rate
   };
 }
 
@@ -270,20 +272,31 @@ function computePipeline({ opportunities } = {}) {
 function computeKris({ orders, opportunities, invoices } = {}) {
   const kris = [];
 
-  const { winRate } = computePipeline({ opportunities });
+  const { winRate, wins, closed } = computePipeline({ opportunities });
+  // CRÉDIBILITÉ (audit écran KRI 2026-07) : un « 100 % » sur 2-3 deals est un artefact de couverture,
+  // pas un feu vert. Sous un échantillon minimal d'affaires CLOSES, on N'AFFICHE PAS de statut coloré
+  // (stat null) et on l'explique ; au-dessus, on montre toujours l'échantillon (n gagnés / n clos).
+  const MIN_CLOSED_FOR_STATUS = 5;
+  const enoughSample = winRate != null && closed >= MIN_CLOSED_FOR_STATUS;
   kris.push({
     n: "Taux de conversion",
     u: "%",
     val: winRate != null ? Math.round(winRate * 100) : null,
     // Placeholder thresholds: >=55% ok, >=40% warn, else alert (below industry-typical B2B win rates).
-    stat: winRate == null ? null : winRate >= 0.55 ? "ok" : winRate >= 0.4 ? "warn" : "alert",
+    stat: !enoughSample ? null : winRate >= 0.55 ? "ok" : winRate >= 0.4 ? "warn" : "alert",
+    sub: winRate == null ? null
+      : enoughSample ? `${wins} gagné${wins > 1 ? "s" : ""} / ${closed} clos`
+        : `échantillon insuffisant — ${wins} gagné${wins > 1 ? "s" : ""} / ${closed} clos (min. ${MIN_CLOSED_FOR_STATUS} pour un statut fiable)`,
   });
 
   const { pouvoirFournisseurs } = computePorterForces({ orders });
   kris.push({
-    n: "Saturation lignes fournisseurs",
+    // Renommé (audit écran KRI) : ce n'est PAS une saturation de lignes de crédit mais la concentration
+    // des achats sur le Top-3 fournisseurs (proxy de dépendance, faute de données de lignes de crédit).
+    n: "Dépendance Top-3 fournisseurs",
     u: "%",
     val: pouvoirFournisseurs,
+    hint: "Part des achats (CAS) concentrée sur vos 3 principaux fournisseurs — proxy de dépendance/risque d'approvisionnement (les vraies lignes de crédit ne sont pas encore importées).",
     // Placeholder thresholds: <60% ok, <80% warn, else alert (high supplier concentration = risk).
     stat: pouvoirFournisseurs == null ? null : pouvoirFournisseurs < 60 ? "ok" : pouvoirFournisseurs < 80 ? "warn" : "alert",
   });
@@ -312,7 +325,7 @@ function computeKris({ orders, opportunities, invoices } = {}) {
     u: "%",
     val: null,
     stat: null,
-    caveat: "estimation indisponible — tag récurrent/projet manquant sur orders/opportunities (DELTA_01 §3bis.F)",
+    caveat: "Indisponible : nécessite de taguer chaque commande « récurrent » ou « projet » dans l'import (LIVE/P&L). Une fois ce champ présent, la part de récurrent se calcule automatiquement.",
   });
 
   return kris;
