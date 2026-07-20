@@ -101,6 +101,37 @@ export async function setPermissionsMatrix(matrix: PermMatrix): Promise<void> {
   await call({ matrix });
 }
 
+/* ------------------------------------------------------------------------- *
+ * Administration des UTILISATEURS (callable `userAdmin`, DG uniquement).
+ * list / invite (crée le compte + e-mail « définir mot de passe ») / assign / revoke.
+ * ------------------------------------------------------------------------- */
+export interface AppUser {
+  uid: string; email: string | null; displayName: string | null; role: Role;
+  disabled: boolean; lastSignIn: string | null; createdAt: string | null;
+}
+/** Liste les comptes portant un rôle connu de cette app (Auth partagée → filtré côté serveur). */
+export async function listAppUsers(): Promise<AppUser[]> {
+  const call = httpsCallable<{ action: "list" }, { users: AppUser[] }>(functions, "userAdmin");
+  const res = await call({ action: "list" });
+  return res.data.users || [];
+}
+/** Invite/crée un compte par e-mail avec un rôle ; déclenche l'e-mail de définition de mot de passe. */
+export async function inviteAppUser(email: string, role: Role): Promise<{ created: boolean; passwordEmailSent: boolean }> {
+  const call = httpsCallable<{ action: "invite"; email: string; role: Role }, { created?: boolean; passwordEmailSent?: boolean }>(functions, "userAdmin");
+  const res = await call({ action: "invite", email, role });
+  return { created: !!res.data.created, passwordEmailSent: !!res.data.passwordEmailSent };
+}
+/** Change le rôle d'un compte existant. */
+export async function assignAppUserRole(uid: string, role: Role): Promise<void> {
+  const call = httpsCallable<{ action: "assign"; uid: string; role: Role }, { ok: boolean }>(functions, "userAdmin");
+  await call({ action: "assign", uid, role });
+}
+/** Révoque l'accès d'un compte à CETTE app (retire les claims de rôle ; le compte Auth global reste). */
+export async function revokeAppUser(uid: string): Promise<void> {
+  const call = httpsCallable<{ action: "revoke"; uid: string }, { ok: boolean }>(functions, "userAdmin");
+  await call({ action: "revoke", uid });
+}
+
 export type PermLevel = "none" | "read" | "write";
 export type PermMatrix = Record<string, Partial<Record<string, PermLevel>>>;
 
