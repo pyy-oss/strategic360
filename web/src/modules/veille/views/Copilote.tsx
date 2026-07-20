@@ -227,9 +227,9 @@ export function Copilote() {
       {tab === "prospection" && <ProspectionTab accountId={accountId} canWrite={canWrite} />}
       {tab === "sequence" && <SequenceTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "cvp" && <CvpTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "businessCase" && <BusinessCaseTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "meddic" && <MeddicTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
-      {tab === "dealAnalysis" && <DealAnalysisTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
+      {tab === "businessCase" && <BusinessCaseTab accountId={accountId} disabled={!accountId} canWrite={canWrite} accountName={account?.nom} />}
+      {tab === "meddic" && <MeddicTab accountId={accountId} disabled={!accountId} canWrite={canWrite} accountName={account?.nom} />}
+      {tab === "dealAnalysis" && <DealAnalysisTab accountId={accountId} disabled={!accountId} canWrite={canWrite} accountName={account?.nom} />}
       {tab === "stakeholders" && <StakeholdersTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "brief" && <BriefTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "triennal" && <TriennalTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
@@ -1049,31 +1049,60 @@ const QUAND_C: Record<string, string> = { "0–30 jours": T.clay, "30–60 jours
 // 2026-07) : le lookup retombait toujours sur 3, rendant le quadrant « Faire maintenant » inatteignable.
 const QUAND_URGENCE: Record<string, number> = { "0–30 jours": 5, "30–60 jours": 4, "60–90 jours": 3, Continu: 2 };
 
-function PlanActionTab({ accountId, disabled, canWrite, accountName }: { accountId: string; disabled: boolean; canWrite: boolean; accountName?: string }) {
-  const { data, busy, err, done, run } = useAgent<PlanActionResult>("planAction", accountId);
+/**
+ * useAddToPlan — transforme un élément de livrable Copilote (étape MEDDIC, jalon de closing, première
+ * action de business case…) en action SUIVIE du plan d'action, en un clic (audit alignement 2026-07 :
+ * « chaque insight doit pouvoir devenir un acte commercial »). Réutilise createAction avec l'owner du
+ * commercial connecté et une échéance ISO si disponible. Clé opaque (string) pour marquer chaque
+ * élément « ajouté » indépendamment de son index.
+ */
+function useAddToPlan(accountId: string, source: string, accountName?: string) {
   const { user } = useAuthClaims();
   const toast = useToast();
-  const [added, setAdded] = useState<Set<number>>(new Set());
-
-  async function addToPlan(i: number, p: PlanActionResult["plan"][number]) {
-    if (added.has(i)) return;
-    const urgence = QUAND_URGENCE[p.quand] ?? 3;
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  async function add(key: string, opts: { title: string; echeance?: string; impact?: number; urgence?: number }) {
+    if (added.has(key)) return;
+    const impact = opts.impact ?? 4, urgence = opts.urgence ?? 3, effort = 2;
     try {
       await createAction({
-        title: p.action,
-        impact: 4, urgence, effort: 2,
-        ev: Math.round(actionPriority({ impact: 4, urgence, effort: 2 }) * 100),
+        title: opts.title,
+        impact, urgence, effort,
+        ev: Math.round(actionPriority({ impact, urgence, effort }) * 100),
         owner: user?.displayName || user?.email || "",
-        echeance: /^\d{4}-\d{2}-\d{2}/.test(p.echeance || "") ? (p.echeance || "") : "",
+        echeance: /^\d{4}-\d{2}-\d{2}/.test(opts.echeance || "") ? (opts.echeance || "") : "",
         statut: "À lancer",
-        source: `Copilote · plan 90j${accountName ? ` · ${accountName}` : ""}`,
+        source: `Copilote · ${source}${accountName ? ` · ${accountName}` : ""}`,
         accountId,
       });
-      setAdded((s) => new Set(s).add(i));
+      setAdded((s) => new Set(s).add(key));
       toast.success("Ajouté à ton plan d'action.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Échec de l'ajout.");
     }
+  }
+  return { add, added };
+}
+
+/** Bouton « ＋ Au plan » réutilisable (état ajouté ↔ ✓). Rendu uniquement en écriture par l'appelant. */
+function AddToPlanBtn({ added, onClick, title = "Enregistrer dans mon plan d'action suivi" }: { added: boolean; onClick: () => void; title?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={added}
+      title={title}
+      style={{ flexShrink: 0, border: `1px solid ${added ? T.emerald : T.line}`, background: added ? T.emerald + "22" : "transparent", color: added ? T.emerald : T.dim, cursor: added ? "default" : "pointer", fontSize: 11, padding: "4px 9px", borderRadius: 7, fontWeight: 600, whiteSpace: "nowrap" }}
+    >
+      {added ? "✓ Ajouté" : "＋ Au plan"}
+    </button>
+  );
+}
+
+function PlanActionTab({ accountId, disabled, canWrite, accountName }: { accountId: string; disabled: boolean; canWrite: boolean; accountName?: string }) {
+  const { data, busy, err, done, run } = useAgent<PlanActionResult>("planAction", accountId);
+  const { add, added } = useAddToPlan(accountId, "plan 90j", accountName);
+
+  async function addToPlan(i: number, p: PlanActionResult["plan"][number]) {
+    await add(String(i), { title: p.action, echeance: p.echeance, urgence: QUAND_URGENCE[p.quand] ?? 3 });
   }
 
   return (
@@ -1099,16 +1128,7 @@ function PlanActionTab({ accountId, disabled, canWrite, accountName }: { account
               {p.objet && <div style={{ fontSize: 11.5, color: T.steel, marginTop: 2 }}>↳ {p.objet}</div>}
               {p.preuve && <div style={{ fontSize: 11.5, color: T.dim, marginTop: 2 }}><b style={{ color: T.emerald }}>Preuve :</b> {p.preuve}</div>}
             </div>
-            {canWrite && (
-              <button
-                onClick={() => addToPlan(i, p)}
-                disabled={added.has(i)}
-                title="Enregistrer cette étape dans mon plan d'action suivi"
-                style={{ flexShrink: 0, border: `1px solid ${added.has(i) ? T.emerald : T.line}`, background: added.has(i) ? T.emerald + "22" : "transparent", color: added.has(i) ? T.emerald : T.dim, cursor: added.has(i) ? "default" : "pointer", fontSize: 11, padding: "4px 9px", borderRadius: 7, fontWeight: 600, whiteSpace: "nowrap" }}
-              >
-                {added.has(i) ? "✓ Ajouté" : "＋ Au plan"}
-              </button>
-            )}
+            {canWrite && <AddToPlanBtn added={added.has(String(i))} onClick={() => addToPlan(i, p)} title="Enregistrer cette étape dans mon plan d'action suivi" />}
           </div>
         ))}
       </div>
@@ -1196,13 +1216,24 @@ function SequenceTab({ accountId, disabled, canWrite }: { accountId: string; dis
   );
 }
 
-function BusinessCaseTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+function BusinessCaseTab({ accountId, disabled, canWrite, accountName }: { accountId: string; disabled: boolean; canWrite: boolean; accountName?: string }) {
   const { data, busy, err, done, run } = useAgent<BusinessCaseResult>("businessCase", accountId);
+  const { add, added } = useAddToPlan(accountId, "business case", accountName);
+  const copyText = data ? [
+    `Business case${accountName ? ` — ${accountName}` : ""}`,
+    data.synthese,
+    data.potentielTotal ? `Potentiel adressable : ${data.potentielTotal}` : "",
+    (data.gains?.length ?? 0) ? `Leviers de valeur :\n${(data.gains ?? []).map((g) => `- ${g.levier} : ${g.montant}${g.base ? ` (${g.base})` : ""}`).join("\n")}` : "",
+    (data.hypotheses?.length ?? 0) ? `Hypothèses :\n- ${(data.hypotheses ?? []).join("\n- ")}` : "",
+    (data.risques?.length ?? 0) ? `Conditions / risques :\n- ${(data.risques ?? []).join("\n- ")}` : "",
+    data.recommandation ? `Première action : ${data.recommandation}` : "",
+  ].filter(Boolean).join("\n\n") : "";
   return (
     <TabShell title="Business case chiffré (ROI)" color={T.gold} busy={busy} disabled={disabled} canWrite={canWrite} done={done} empty={!data} onRun={() => run()} label="Générer le business case" hint="Sélectionnez un compte pour chiffrer sa valeur.">
       <ErrLine err={err} />
       {data && (
         <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}><CopyBtn text={copyText} label="Copier le business case" /></div>
           <div style={{ padding: "12px 14px", background: T.panel2, borderRadius: 10, fontSize: 14, color: T.ink, lineHeight: 1.55 }}>{data.synthese}</div>
           {data.potentielTotal && <div style={{ fontSize: 16, fontWeight: 700, color: T.emerald, marginTop: 10, fontFamily: "'Bricolage Grotesque',sans-serif" }}>Potentiel adressable : {data.potentielTotal}</div>}
           {(data.gains?.length ?? 0) > 0 && (
@@ -1222,20 +1253,33 @@ function BusinessCaseTab({ accountId, disabled, canWrite }: { accountId: string;
           )}
           {(data.hypotheses?.length ?? 0) > 0 && <Section title="Hypothèses" color={T.steel}><Chips items={data.hypotheses} /></Section>}
           {(data.risques?.length ?? 0) > 0 && <Section title="Conditions / risques" color={T.clay}><Chips items={data.risques} /></Section>}
-          {data.recommandation && <div style={{ fontSize: 12.5, color: T.dim, marginTop: 12 }}><b style={{ color: T.gold }}>Première action :</b> {data.recommandation}</div>}
+          {data.recommandation && (
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 12 }}>
+              <div style={{ flex: 1, fontSize: 12.5, color: T.dim }}><b style={{ color: T.gold }}>Première action :</b> {data.recommandation}</div>
+              {canWrite && <AddToPlanBtn added={added.has("reco")} onClick={() => add("reco", { title: data.recommandation, impact: 5 })} />}
+            </div>
+          )}
         </div>
       )}
     </TabShell>
   );
 }
 
-function MeddicTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+function MeddicTab({ accountId, disabled, canWrite, accountName }: { accountId: string; disabled: boolean; canWrite: boolean; accountName?: string }) {
   const { data, busy, err, done, run } = useAgent<MeddicResult>("meddic", accountId);
+  const { add, added } = useAddToPlan(accountId, "MEDDIC", accountName);
   const rows: [string, string][] = data ? [
     ["Metrics (gains chiffrés)", data.metrics], ["Economic buyer", data.economicBuyer],
     ["Decision criteria", data.decisionCriteria], ["Decision process", data.decisionProcess],
     ["Identified pain", data.identifiedPain], ["Champion", data.champion], ["Concurrence", data.competition],
   ] : [];
+  const copyText = data ? [
+    `Qualification MEDDIC${accountName ? ` — ${accountName}` : ""} (${data.score}/100)`,
+    data.blocageCritique ? `Blocage critique : ${data.blocageCritique}` : "",
+    ...rows.map(([k, v]) => `${k} : ${v}`),
+    (data.trous?.length ?? 0) ? `Trous à combler :\n- ${(data.trous ?? []).join("\n- ")}` : "",
+    (data.prochainesActions?.length ?? 0) ? `Prochaines actions :\n- ${(data.prochainesActions ?? []).join("\n- ")}` : "",
+  ].filter(Boolean).join("\n") : "";
   const scoreC = data ? (data.score >= 66 ? T.emerald : data.score >= 33 ? T.gold : T.clay) : T.faint;
   const verdict = data?.verdict;
   const vC = verdict === "poursuivre" ? T.emerald : verdict === "désengager" ? T.clay : T.gold;
@@ -1245,6 +1289,7 @@ function MeddicTab({ accountId, disabled, canWrite }: { accountId: string; disab
       <ErrLine err={err} />
       {data && (
         <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}><CopyBtn text={copyText} label="Copier la qualification" /></div>
           {verdict && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, background: `${vC}18`, border: `1px solid ${vC}55`, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
               <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.6, color: vC, background: `${vC}22`, padding: "3px 8px", borderRadius: 6, flexShrink: 0 }}>{vLabel}</span>
@@ -1267,15 +1312,41 @@ function MeddicTab({ accountId, disabled, canWrite }: { accountId: string; disab
             ))}
           </div>
           {(data.trous?.length ?? 0) > 0 && <Section title="Trous à combler" color={T.clay}><Chips items={data.trous} /></Section>}
-          {(data.prochainesActions?.length ?? 0) > 0 && <Section title="Prochaines actions de qualification" color={T.emerald}><Chips items={data.prochainesActions} /></Section>}
+          {(data.prochainesActions?.length ?? 0) > 0 && (
+            <Section title="Prochaines actions de qualification" color={T.emerald}>
+              <ActionableChips items={data.prochainesActions ?? []} canWrite={canWrite} keyPrefix="meddic" added={added} onAdd={(key, title) => add(key, { title })} />
+            </Section>
+          )}
         </div>
       )}
     </TabShell>
   );
 }
 
-function DealAnalysisTab({ accountId, disabled, canWrite }: { accountId: string; disabled: boolean; canWrite: boolean }) {
+/** Liste d'actions recommandées, chacune convertible en action suivie (« ＋ Au plan ») en écriture. */
+function ActionableChips({ items, canWrite, keyPrefix, added, onAdd }: { items: string[]; canWrite: boolean; keyPrefix: string; added: Set<string>; onAdd: (key: string, title: string) => void }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+      {items.map((x, i) => (
+        <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <div style={{ flex: 1, fontSize: 12.5, color: T.dim, lineHeight: 1.5 }}>• {x}</div>
+          {canWrite && <AddToPlanBtn added={added.has(`${keyPrefix}:${i}`)} onClick={() => onAdd(`${keyPrefix}:${i}`, x)} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DealAnalysisTab({ accountId, disabled, canWrite, accountName }: { accountId: string; disabled: boolean; canWrite: boolean; accountName?: string }) {
   const { data, busy, err, done, run } = useAgent<DealAnalysisResult>("dealAnalysis", accountId);
+  const { add, added } = useAddToPlan(accountId, "analyse deal", accountName);
+  const copyText = data ? [
+    `Analyse de deal${accountName ? ` — ${accountName}` : ""}: ${data.deal || "Deal principal"} (probabilité ${data.probabilite}, vs ${data.concurrent})`,
+    (data.winThemes?.length ?? 0) ? `Axes de victoire :\n- ${(data.winThemes ?? []).join("\n- ")}` : "",
+    (data.parades?.length ?? 0) ? `Parades :\n- ${(data.parades ?? []).join("\n- ")}` : "",
+    (data.objections?.length ?? 0) ? `Objections & réponses :\n${(data.objections ?? []).map((o) => `- ${o.objection} → ${o.reponse}`).join("\n")}` : "",
+    (data.planClosing?.length ?? 0) ? `Plan de closing :\n${(data.planClosing ?? []).map((s) => `- ${s.quand} : ${s.action}`).join("\n")}` : "",
+  ].filter(Boolean).join("\n\n") : "";
   return (
     <TabShell title="Analyse de deal & stratégie de gain" color={T.clay} busy={busy} disabled={disabled} canWrite={canWrite} done={done} empty={!data} onRun={() => run()} label="Analyser le deal" hint="Sélectionnez un compte avec un deal en cours.">
       <ErrLine err={err} />
@@ -1285,6 +1356,7 @@ function DealAnalysisTab({ accountId, disabled, canWrite }: { accountId: string;
             <span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{data.deal || "Deal principal"}</span>
             <Badge c={PROBA_C[data.probabilite] ?? T.faint}>Probabilité {data.probabilite}</Badge>
             <Badge c={T.steel}>vs {data.concurrent}</Badge>
+            <div style={{ marginLeft: "auto" }}><CopyBtn text={copyText} label="Copier l'analyse" /></div>
           </div>
           {(data.forcesConcurrent?.length ?? 0) > 0 && <Section title="Forces adverses à neutraliser" color={T.clay}><Chips items={data.forcesConcurrent} /></Section>}
           {(data.parades?.length ?? 0) > 0 && <Section title="Parades" color={T.emerald}><Chips items={data.parades} /></Section>}
@@ -1296,7 +1368,8 @@ function DealAnalysisTab({ accountId, disabled, canWrite }: { accountId: string;
                 {(data.planClosing ?? []).map((s, i) => (
                   <div key={i} style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
                     <Badge c={T.gold}>{s.quand}</Badge>
-                    <span style={{ fontSize: 12.5, color: T.ink }}>{s.action}</span>
+                    <span style={{ flex: 1, fontSize: 12.5, color: T.ink }}>{s.action}</span>
+                    {canWrite && <AddToPlanBtn added={added.has(`closing:${i}`)} onClick={() => add(`closing:${i}`, { title: s.action })} />}
                   </div>
                 ))}
               </div>

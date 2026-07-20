@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { T, PROX } from "../../../design/tokens";
 import { Eyebrow, Card, Kpi, Badge, LoadError } from "../../../design/ui";
 import { useToast } from "../../../design/overlay";
@@ -8,7 +8,8 @@ import { PUBLISHED_STATUSES, useIntelItems, updateIntelItem, runEnrichTendersNow
 import { createAction } from "../lib/execution";
 import { effectiveProx, isPastDue } from "../lib/freshness";
 import { useIsExec } from "../../../lib/rbac";
-import { useCopiloteAccounts, type CopiloteAccount } from "../lib/copilote";
+import { useAuthClaims } from "../../../lib/AuthProvider";
+import { useCopiloteAccounts, slugifyClient, type CopiloteAccount } from "../lib/copilote";
 import { SignalMessageButton } from "../components/SignalMessage";
 
 /**
@@ -88,7 +89,10 @@ function shareToken(a: Set<string>, b: Set<string>): boolean {
 
 function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
   const toast = useToast();
+  const navigate = useNavigate();
+  const { user } = useAuthClaims();
   const [busy, setBusy] = useState(false);
+  const [nogoBusy, setNogoBusy] = useState(false);
   const [sp, setSp] = useSearchParams();
   const ba = it.businessAngle || {};
   const prox = effectiveProx(it) ?? it.prox ?? "horizon";
@@ -109,15 +113,33 @@ function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
         urgence: past ? 2 : prox === "imminent" ? 5 : prox === "court" ? 4 : 3,
         effort: 3,
         ev: 0,
-        owner: "—",
+        // Owner = commercial connecté (audit alignement 2026-07 : une action « GO » sans porteur ne
+        // se pilote pas) — plus de « — » anonyme non assignable.
+        owner: user?.displayName || user?.email || "",
         echeance: deadline || "",
         statut: "À planifier",
         source: `AO : ${buyer}`,
         linkedItemId: it.id,
       });
       await updateIntelItem(it.id, { status: "actioned" });
-      toast.success("Action créée (rattachée à l'AO).");
+      toast.success("Go — action créée (rattachée à l'AO).");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); } finally { setBusy(false); }
+  };
+  // No-go : décision explicite de ne pas répondre → archive l'AO (sort du fil des opportunités
+  // ouvertes) pour que la vue reflète les vrais deals poursuivis (audit alignement 2026-07, go/no-go).
+  const markNoGo = async () => {
+    setNogoBusy(true);
+    try {
+      await updateIntelItem(it.id, { status: "archived" });
+      toast.success("No-go — AO archivé.");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); } finally { setNogoBusy(false); }
+  };
+  // « Préparer la proposition » : deep-link vers le Copilote sur la CVP (valeur/offre) du compte
+  // concerné — le pont insight→proposition (audit alignement 2026-07). Slug du client connu si
+  // rattaché, sinon dérivé de l'acheteur (best-effort : le Copilote présélectionne s'il le connaît).
+  const prepareProposal = () => {
+    const slug = account?.id || (ba.buyer ? slugifyClient(ba.buyer) : it.ent ? slugifyClient(it.ent) : "");
+    navigate(`/veille/copilote?tab=cvp${slug ? `&account=${encodeURIComponent(slug)}` : ""}`);
   };
   const openInFil = () => { const n = new URLSearchParams(sp); n.set("q", it.title.slice(0, 40)); setSp(n); };
 
@@ -158,7 +180,11 @@ function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
         {/* Dernier centimètre commercial (audit final #2) : message de positionnement prêt à envoyer,
             directement sur la ligne AO — plus besoin de repasser par le Fil. */}
         <SignalMessageButton item={it} />
-        <button className="pill on" style={{ fontSize: 11, padding: "3px 10px" }} disabled={busy} onClick={() => void createLinkedAction()}>{busy ? "…" : "Créer une action"}</button>
+        {/* Pont insight→proposition : ouvre le Copilote sur la CVP du compte pour construire l'offre. */}
+        {!award && <button className="pill" style={{ fontSize: 11, padding: "3px 10px" }} onClick={prepareProposal} title="Ouvrir le Copilote pour construire la proposition de valeur">Préparer la proposition ↗</button>}
+        {/* Décision go/no-go explicite. */}
+        <button className="pill on" style={{ fontSize: 11, padding: "3px 10px" }} disabled={busy} onClick={() => void createLinkedAction()}>{busy ? "…" : "✓ Go — créer l'action"}</button>
+        {!award && <button className="pill" style={{ fontSize: 11, padding: "3px 10px", color: T.clay }} disabled={nogoBusy} onClick={() => void markNoGo()} title="Décider de ne pas répondre — archive l'AO">{nogoBusy ? "…" : "✗ No-go"}</button>}
       </div>
     </div>
   );

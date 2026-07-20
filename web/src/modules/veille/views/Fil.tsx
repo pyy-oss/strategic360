@@ -320,6 +320,9 @@ export function Fil({ lens = "dg", weights }: { lens?: string; weights?: LensWei
                     {s.ent || "—"} · {s.geo || "—"}
                   </Badge>
                   <Badge c={T.steel}>Source {s.sourceRating}</Badge>
+                  {/* Non réellement évalué (publié par défaut après panne du juge IA) : signalé pour ne
+                      pas présenter un score-plancher comme un verdict de pertinence (audit alignement 2026-07). */}
+                  {s.evalFailed && <span title="Publié par défaut sur panne de l'évaluateur — pertinence non confirmée"><Badge c={T.gold}>⚠ non évalué</Badge></span>}
                   {/* Provenance vérifiable (audit final #1) : lien cliquable vers la source, comme sur l'AO.
                       Un signal invérifiable d'un clic n'inspire pas confiance (crédibilité DG/analyste). */}
                   {s.url && (
@@ -410,6 +413,29 @@ function SignalLifecycle({ s }: { s: IntelItem }) {
       setOpen(false);
     } finally { setBusy(false); }
   };
+  // Transformer un signal RÉGLEMENTAIRE/TECH en INITIATIVE d'offre (audit alignement 2026-07) : une
+  // nouvelle norme ou une rupture techno n'est pas un acte de vente immédiat mais révèle une OFFRE à
+  // monter (conformité, migration, nouveau service). On l'inscrit au plan comme une initiative datée à
+  // horizon plus long — le pont « connaissance du marché → business » pour les axes non-commerciaux.
+  const isOfferSignal = s.axis === "reglementaire" || s.axis === "tech";
+  const createInitiative = async () => {
+    setBusy(true);
+    try {
+      const base = s.recommendedAction?.trim() || s.soWhat?.trim() || s.title;
+      await createAction({
+        title: `Monter une offre : ${base}`.slice(0, 200),
+        impact: s.impact === "high" ? 5 : 4,
+        urgence: 3, effort: 4, ev: 0,
+        owner: owner.trim() || "—",
+        echeance: s.dueDate || "",
+        statut: "À planifier",
+        source: `Initiative offre (${s.axis}) : ${s.title}`.slice(0, 200),
+        linkedItemId: s.id,
+      });
+      await updateIntelItem(s.id, { status: "actioned", owner: owner.trim() || s.owner });
+      setOpen(false);
+    } finally { setBusy(false); }
+  };
   return (
     <div style={{ marginTop: 10, borderTop: `1px solid ${T.line}`, paddingTop: 8, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
       <span style={{ fontSize: 11, color: T.dim }}>Statut :</span>
@@ -424,11 +450,17 @@ function SignalLifecycle({ s }: { s: IntelItem }) {
         {open ? "Annuler" : "→ Créer une action"}
       </button>
       {open && (
-        <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+        <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           <input className="inp" placeholder="Porteur" value={owner} onChange={(e) => setOwner(e.target.value)} style={{ fontSize: 11, padding: "4px 8px", width: 130 }} />
           <button className="pill on" disabled={busy} onClick={createLinkedAction} style={{ fontSize: 11, padding: "3px 8px" }}>
             Créer &amp; marquer traité
           </button>
+          {/* Axes non-commerciaux : convertir en initiative d'offre plutôt qu'en action de vente directe. */}
+          {isOfferSignal && (
+            <button className="pill" disabled={busy} onClick={createInitiative} style={{ fontSize: 11, padding: "3px 8px" }} title="Inscrire au plan une initiative de montage d'offre">
+              → Offre / initiative
+            </button>
+          )}
         </span>
       )}
     </div>

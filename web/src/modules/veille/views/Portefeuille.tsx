@@ -2,9 +2,12 @@ import React, { useState } from "react";
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, ReferenceLine, Tooltip, Cell } from "recharts";
 import { T, fmt, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Badge } from "../../../design/ui";
-import { useInitiatives } from "../lib/execution";
+import { useInitiatives, createInitiative } from "../lib/execution";
 import { useFramework } from "../lib/frameworks";
 import { useQuantiSummary } from "../lib/quanti";
+import { useCan } from "../../../lib/rbac";
+import { useAuthClaims } from "../../../lib/AuthProvider";
+import { useToast } from "../../../design/overlay";
 
 type Ge9Content = { items: { n: string; attr: number; pos: number; size: number; note?: string; emerging?: boolean; posSource?: "interne+ia" | "ia" }[] };
 type HorizonsContent = { items: { h: "H1" | "H2" | "H3"; title: string; d?: string }[] };
@@ -22,6 +25,30 @@ type HorizonsContent = { items: { h: "H1" | "H2" | "H3"; title: string; d?: stri
 export function Portefeuille() {
   const [c, setC] = useState("ge9");
   const { initiatives, loading } = useInitiatives();
+  const { canWrite } = useCan("strategie");
+  const { user } = useAuthClaims();
+  const toast = useToast();
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  // Adopter une suggestion (Three Horizons IA ou opportunité GE-McKinsey émergente) EN INITIATIVE
+  // RÉELLE, en un clic (audit alignement 2026-07 : le portefeuille n'avait aucun CTA — les suggestions
+  // stratégiques restaient lettre morte). Crée l'initiative dans le pipeline « Exécution & Décisions ».
+  const adoptInitiative = async (key: string, opts: { title: string; horizon: string; objective?: string }) => {
+    if (added.has(key)) return;
+    try {
+      await createInitiative({
+        title: opts.title.slice(0, 200),
+        objective: (opts.objective || opts.title).slice(0, 500),
+        keyResults: [],
+        owner: user?.displayName || user?.email || "",
+        status: "à lancer",
+        horizon: opts.horizon,
+        progress: 0,
+        linkedItems: [],
+      });
+      setAdded((s) => new Set(s).add(key));
+      toast.success("Initiative créée (Exécution & Décisions).");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Échec de la création."); }
+  };
   const { data: quanti } = useQuantiSummary();
   const { data: ge9fw } = useFramework<Ge9Content>("ge9");
   const { data: horizonsFw } = useFramework<HorizonsContent>("horizons");
@@ -108,18 +135,30 @@ export function Portefeuille() {
             </ResponsiveContainer>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
-            {[...ge9].sort((a, b) => Number(b.emerging) - Number(a.emerging)).map((e, i) => (
-              <div key={i} style={{ fontSize: 12, color: T.dim }}>
-                <b style={{ color: T.ink }}>{e.n}</b>
-                {e.emerging && (
-                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: T.gold, border: `1px solid ${T.gold}`, borderRadius: 4, padding: "1px 5px", verticalAlign: "middle" }}>
-                    OPPORTUNITÉ ÉMERGENTE
+            {[...ge9].sort((a, b) => Number(b.emerging) - Number(a.emerging)).map((e, i) => {
+              const key = `ge9:${e.n}`;
+              // Une opportunité ÉMERGENTE (attractivité forte, position à construire) est un pari de
+              // croissance → adoptable en initiative H2 (moteur de demain).
+              return (
+                <div key={i} style={{ fontSize: 12, color: T.dim, display: "flex", gap: 6, alignItems: "baseline", flexWrap: "wrap" }}>
+                  <span>
+                    <b style={{ color: T.ink }}>{e.n}</b>
+                    {e.emerging && (
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: T.gold, border: `1px solid ${T.gold}`, borderRadius: 4, padding: "1px 5px", verticalAlign: "middle" }}>
+                        OPPORTUNITÉ ÉMERGENTE
+                      </span>
+                    )}{" "}
+                    <span style={{ color: T.faint }}>(attr. {e.attr} · pos. {e.pos})</span>
+                    {e.note ? <> — {e.note}</> : null}
                   </span>
-                )}{" "}
-                <span style={{ color: T.faint }}>(attr. {e.attr} · pos. {e.pos})</span>
-                {e.note ? <> — {e.note}</> : null}
-              </div>
-            ))}
+                  {e.emerging && canWrite && (
+                    <button className={`pill ${added.has(key) ? "on" : ""}`} disabled={added.has(key)} onClick={() => void adoptInitiative(key, { title: `Adresser le marché émergent : ${e.n}`, horizon: "H2", objective: e.note })} style={{ fontSize: 10.5, padding: "2px 8px" }}>
+                      {added.has(key) ? "✓ Initiative créée" : "＋ Créer une initiative"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Card>
       )}
@@ -145,12 +184,20 @@ export function Portefeuille() {
                   <div key={hm.h}>
                     <div style={{ fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase", color: hm.c, fontWeight: 700, marginBottom: 6 }}>{hm.label}</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {hSuggestions.filter((sg) => sg.h === hm.h).map((sg, i) => (
-                        <div key={i} style={{ padding: "8px 10px", background: T.panel2, borderRadius: 8, borderLeft: `3px solid ${hm.c}` }}>
-                          <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{sg.title}</div>
-                          {sg.d && <div style={{ fontSize: 11.5, color: T.faint, marginTop: 3, lineHeight: 1.45 }}>{sg.d}</div>}
-                        </div>
-                      ))}
+                      {hSuggestions.filter((sg) => sg.h === hm.h).map((sg, i) => {
+                        const key = `h:${hm.h}:${i}`;
+                        return (
+                          <div key={i} style={{ padding: "8px 10px", background: T.panel2, borderRadius: 8, borderLeft: `3px solid ${hm.c}` }}>
+                            <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{sg.title}</div>
+                            {sg.d && <div style={{ fontSize: 11.5, color: T.faint, marginTop: 3, lineHeight: 1.45 }}>{sg.d}</div>}
+                            {canWrite && (
+                              <button className={`pill ${added.has(key) ? "on" : ""}`} disabled={added.has(key)} onClick={() => void adoptInitiative(key, { title: sg.title, horizon: hm.h, objective: sg.d })} style={{ fontSize: 10.5, padding: "2px 8px", marginTop: 6 }}>
+                                {added.has(key) ? "✓ Adoptée" : "＋ Adopter comme initiative"}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
                       {hSuggestions.filter((sg) => sg.h === hm.h).length === 0 && (
                         <div style={{ fontSize: 11.5, color: T.faint }}>Aucune suggestion sur cet horizon.</div>
                       )}
