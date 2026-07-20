@@ -1660,6 +1660,12 @@ async function runSyncSources(db) {
             }))].slice(0, 50);
             const jsonEmbedded = /<script[^>]+type=["']application\/(ld\+)?json["']/i.test(h)
               || /window\.__(INITIAL_STATE|NUXT|NEXT_DATA|APOLLO)/i.test(h);
+            // SPA Next.js (SIGOMAP & co, audit 2026-07-20) : le contenu n'est pas dans le HTML rendu mais
+            // dans le blob `__NEXT_DATA__` (buildId + props de page, souvent l'API/les données d'avis).
+            // On en capte un extrait pour DÉCOUVRIR la source de données SUR PREUVE (embarquée vs API).
+            let nextData = null;
+            const nd = h.match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+            if (nd) nextData = nd[1].slice(0, 3500);
             await db.collection("sourceDiag").doc(source.id).set({
               name: source.name,
               url: source.url,
@@ -1671,6 +1677,7 @@ async function runSyncSources(db) {
               jsonEmbedded,
               hrefs,
               noticeHrefs, // liens candidats « avis » : même section que la liste, ou PDF joint
+              nextData,    // extrait __NEXT_DATA__ (SPA Next.js) — buildId + props/API pour découvrir la donnée
               htmlHead: h.slice(0, 3500),
             }, { merge: true });
           } catch { /* diagnostic best-effort, jamais bloquant */ }
