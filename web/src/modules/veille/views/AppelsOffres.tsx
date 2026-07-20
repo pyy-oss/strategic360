@@ -91,7 +91,6 @@ function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
   const [busy, setBusy] = useState(false);
   const [sp, setSp] = useSearchParams();
   const ba = it.businessAngle || {};
-  const bus = account?.nt360?.bus && account.nt360.bus.length ? account.nt360.bus.join(", ") : ba.bu || "";
   const prox = effectiveProx(it) ?? it.prox ?? "horizon";
   const past = isPastDue(it);
   const buyer = ba.buyer || it.ent || "—";
@@ -143,7 +142,6 @@ function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
         {account && <span style={chip(T.emerald + "22", T.emerald)}>● client connu{account.tier ? ` · ${account.tier}` : ""}</span>}
         <span style={chip(ba.estAmount ? T.emerald + "22" : T.line, ba.estAmount ? T.emerald : T.faint)}>💰 {ba.estAmount || "montant n.c."}{ba.estAmount && !verified ? " (à vérifier)" : ""}</span>
         <span style={chip((PROX_COLOR[prox] || T.dim) + "22", PROX_COLOR[prox] || T.dim)}>{PROX[prox]?.l || prox}{deadline ? ` · ${deadline}${past ? " (dépassée)" : ""}` : ""}</span>
-        {bus && !account && <span style={chip(T.line, T.faint)}>{bus}</span>}
       </div>
       {ba.tenderRef && <div style={{ fontSize: 10.5, color: T.faint }}>Réf : {ba.tenderRef}{!verified ? " · à vérifier sur la source" : ""}</div>}
       {/* Provenance vérifiable. */}
