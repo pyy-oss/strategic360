@@ -167,6 +167,10 @@ const SOURCES_SEED = [
   { name: "ARMP Sénégal — régulation & avis", kind: "web", url: "https://arcop.sn/", axis: "clients_prospects", active: true },
   { name: "Bénin — ARMP (marchés publics)", kind: "web", url: "https://armp.bj/", axis: "clients_prospects", active: true },
   { name: "Burkina Faso — ARCOP (marchés publics)", kind: "web", url: "https://www.arcop.bf/", axis: "clients_prospects", active: true },
+  // Guinée (Conakry) — ajout couverture (2026-07-20). ARMP Guinée publie ses avis sous /appels-doffres/
+  // (site derrière WAF → kind web-js pour le rendu headless) ; DGCMP = contrôle/réglementation.
+  { name: "Guinée — ARMP (marchés publics & avis d'AO)", kind: "web-js", url: "https://armpguinee.org/appels-doffres/", axis: "clients_prospects", active: true },
+  { name: "Guinée — DGCMP (contrôle des marchés publics)", kind: "web", url: "https://www.dgcmp.mef.gov.gn/", axis: "reglementaire", active: true },
   { name: "Mali — DGMP-DSP (marchés publics)", kind: "web", url: "https://dgmp.gouv.ml/", axis: "clients_prospects", active: true },
   { name: "Togo — ARCOP (marchés publics)", kind: "web", url: "https://arcop.tg/", axis: "clients_prospects", active: true },
   { name: "Niger — ARMP (marchés publics)", kind: "web", url: "https://www.armp-niger.org/", axis: "clients_prospects", active: true },
