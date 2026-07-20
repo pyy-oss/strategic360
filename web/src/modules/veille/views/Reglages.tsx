@@ -16,6 +16,12 @@ import {
   ROLE_LABEL,
   ROLE_GROUP,
   MODULE_LABEL,
+  listAppUsers,
+  inviteAppUser,
+  assignAppUserRole,
+  revokeAppUser,
+  useClaims,
+  type AppUser,
   type Role,
   type Module,
   type PermLevel,
@@ -187,6 +193,124 @@ function ClientTenderMonitorsEditor() {
   );
 }
 
+/**
+ * Administration des UTILISATEURS (écran DG) — création/invitation de comptes, attribution et
+ * révocation de rôle. S'appuie sur le callable `userAdmin` (direction-only, double-écriture du claim
+ * namespacé `sentinelRole`). Inviter crée le compte Auth si besoin et envoie l'e-mail « définir le
+ * mot de passe » (aucun mot de passe ne transite). L'accès reste servi par les Security Rules.
+ */
+function UsersAdmin() {
+  const toast = useToast();
+  const { user: me } = useClaims();
+  const [users, setUsers] = useState<AppUser[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<Role>("lecture");
+  const [busy, setBusy] = useState(false);
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
+
+  const load = async () => {
+    setError(null);
+    try { setUsers(await listAppUsers()); }
+    catch (e) { setError(e instanceof Error ? e.message : "Échec du chargement des utilisateurs."); }
+  };
+  useEffect(() => { void load(); }, []);
+
+  const invite = async () => {
+    const e = email.trim().toLowerCase();
+    if (!/.+@.+\..+/.test(e)) { toast.error("E-mail invalide."); return; }
+    setBusy(true);
+    try {
+      const r = await inviteAppUser(e, role);
+      toast.success(`${r.created ? "Compte créé" : "Compte existant mis à jour"} · rôle « ${ROLE_LABEL[role]} »${r.passwordEmailSent ? " · e-mail de mot de passe envoyé" : " · (e-mail non envoyé — voir config)"}`);
+      setEmail("");
+      await load();
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Échec de l'invitation."); }
+    finally { setBusy(false); }
+  };
+
+  const changeRole = async (u: AppUser, next: Role) => {
+    if (next === u.role) return;
+    setRowBusy(u.uid);
+    try { await assignAppUserRole(u.uid, next); toast.success(`Rôle de ${u.email} → « ${ROLE_LABEL[next]} ».`); await load(); }
+    catch (err) { toast.error(err instanceof Error ? err.message : "Échec du changement de rôle."); }
+    finally { setRowBusy(null); }
+  };
+
+  const revoke = async (u: AppUser) => {
+    setRowBusy(u.uid);
+    try { await revokeAppUser(u.uid); toast.success(`Accès révoqué pour ${u.email}.`); await load(); }
+    catch (err) { toast.error(err instanceof Error ? err.message : "Échec de la révocation."); }
+    finally { setRowBusy(null); }
+  };
+
+  const inputStyle: React.CSSProperties = { padding: "6px 10px", borderRadius: 7, border: `1px solid ${T.line}`, background: T.panel2, color: T.ink, fontSize: 12.5 };
+  const fmtDate = (s: string | null) => (s ? new Date(s).toISOString().slice(0, 10) : "—");
+
+  return (
+    <Card>
+      <Eyebrow color={T.gold}>Utilisateurs & habilitations</Eyebrow>
+      <div style={{ fontSize: 12, color: T.dim, marginTop: 6 }}>
+        Créez un compte par e-mail, attribuez un rôle (qui pilote l'accès via la matrice ci-dessous), ou révoquez un accès.
+        L'invité reçoit un e-mail pour définir son mot de passe.
+      </div>
+
+      {/* Invitation / création de compte */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@entreprise.com"
+          style={{ ...inputStyle, flex: "1 1 220px", minWidth: 180 }} />
+        <select value={role} onChange={(e) => setRole(e.target.value as Role)} style={inputStyle}>
+          {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+        </select>
+        <button className="pill on" onClick={() => void invite()} disabled={busy} style={{ fontSize: 11, padding: "4px 12px" }}>
+          {busy ? "Invitation…" : "Inviter / créer le compte"}
+        </button>
+      </div>
+
+      {error && <div style={{ marginTop: 10, fontSize: 12, color: T.clay }}>{error} <button className="pill" onClick={() => void load()} style={{ fontSize: 11, padding: "2px 9px" }}>Réessayer</button></div>}
+
+      {/* Liste des comptes */}
+      <div style={{ marginTop: 14, overflowX: "auto" }}>
+        {users === null && !error && <div style={{ fontSize: 12.5, color: T.dim }}>Chargement des utilisateurs…</div>}
+        {users !== null && users.length === 0 && <div style={{ fontSize: 12.5, color: T.dim }}>Aucun utilisateur avec un rôle attribué pour l'instant.</div>}
+        {users !== null && users.length > 0 && (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 620 }}>
+            <thead>
+              <tr style={{ color: T.faint, textAlign: "left" }}>
+                <th style={{ padding: "6px 8px" }}>E-mail</th>
+                <th style={{ padding: "6px 8px" }}>Rôle</th>
+                <th style={{ padding: "6px 8px" }}>Dernière connexion</th>
+                <th style={{ padding: "6px 8px" }}>Créé le</th>
+                <th style={{ padding: "6px 8px" }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const isMe = me?.uid === u.uid;
+                return (
+                  <tr key={u.uid} style={{ borderTop: `1px solid ${T.line}` }}>
+                    <td style={{ padding: "6px 8px", color: T.ink }}>{u.email || u.uid}{isMe && <span style={{ color: T.gold, fontSize: 10 }}> · vous</span>}{u.disabled && <span style={{ color: T.clay, fontSize: 10 }}> · désactivé</span>}</td>
+                    <td style={{ padding: "6px 8px" }}>
+                      <select value={u.role} disabled={rowBusy === u.uid || (isMe && u.role === "direction")} onChange={(e) => void changeRole(u, e.target.value as Role)} style={{ ...inputStyle, padding: "3px 6px", fontSize: 12 }} title={isMe && u.role === "direction" ? "Vous ne pouvez pas vous rétrograder vous-même" : ""}>
+                        {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: "6px 8px", color: T.dim }}>{fmtDate(u.lastSignIn)}</td>
+                    <td style={{ padding: "6px 8px", color: T.dim }}>{fmtDate(u.createdAt)}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right" }}>
+                      {!isMe && <button className="pill" onClick={() => void revoke(u)} disabled={rowBusy === u.uid} style={{ fontSize: 11, padding: "2px 9px", color: T.clay }} title="Retire l'accès à cette app (le compte reste)">Révoquer</button>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export function Reglages() {
   const { matrix, loading } = usePermissions();
   const toast = useToast();
@@ -245,6 +369,7 @@ export function Reglages() {
 
   return (
     <>
+    <UsersAdmin />
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <Eyebrow color={T.plum}>Réglages & Droits — matrice RBAC (13 profils × 7 modules)</Eyebrow>
