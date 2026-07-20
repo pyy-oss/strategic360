@@ -141,8 +141,14 @@ export default function VeilleApp() {
     [isExec, role, perms.loading, perms.matrix]
   );
 
+  // LANDING PAR RÔLE (audit final #5/#9) : tous les profils atterrissaient sur le Radar exécutif (KPI DG),
+  // sans point d'entrée utile pour le terrain. On oriente chaque rôle vers SA valeur — commercial /
+  // avant-vente / marketing → Copilote ; achats → Appels d'offres ; finance → Indicateurs ; défaut → Radar.
+  // Repli sur radar si la vue cible n'est pas accessible au rôle (matrice éditable par le DG).
+  const ROLE_LANDING: Record<string, string> = { commercial: "copilote", avant_vente: "copilote", marketing: "copilote", achats: "appels", finance: "indicateurs" };
+  const landing = (() => { const t = ROLE_LANDING[role || ""] || "radar"; return canAccessView(t) ? t : "radar"; })();
   if (!view || !VIEW_KEYS.includes(view) || !canAccessView(view)) {
-    return <Navigate to="/veille/radar" replace />;
+    return <Navigate to={`/veille/${landing}`} replace />;
   }
   const setView = (v: string) => navigate(`/veille/${v}`);
 

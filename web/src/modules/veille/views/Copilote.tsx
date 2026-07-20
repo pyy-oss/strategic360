@@ -114,7 +114,12 @@ export function Copilote() {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
   const { accounts, loading, error, scoped, reload } = useCopiloteAccounts();
-  const { canWrite } = useCan("veille");
+  // RBAC par MODULE (audit final 2026-07) : le Copilote relève du module `copilote`, pas `veille`.
+  // Auparavant gaté sur `veille` → avant_vente/commercial (copilote:W, veille:R) avaient tout désactivé,
+  // et strategie/innovation (veille:W, copilote:R) pouvaient écrire alors qu'ils sont en lecture seule.
+  const { canWrite } = useCan("copilote");
+  // Le calendrier éditorial (onglet Contenu) relève du module `marketing`.
+  const { canWrite: canWriteMarketing } = useCan("marketing");
   const { role } = useClaims();
   const isAdmin = role === "direction" || role === "commercial_dir"; // peut attribuer les comptes
   // Deep-link (audit 2026-07 — unification des référentiels) : ?account=<slug> présélectionne le
@@ -231,7 +236,7 @@ export function Copilote() {
       {tab === "planCompte" && <PlanCompteTab accountId={accountId} disabled={!accountId} canWrite={canWrite} />}
       {tab === "planAction" && <PlanActionTab accountId={accountId} disabled={!accountId} canWrite={canWrite} accountName={account?.nom} />}
       {tab === "redaction" && <RedactionTab accountId={accountId} compte={account?.nom || ""} canWrite={canWrite} />}
-      {tab === "contenu" && <ContenuTab accountId={accountId} canWrite={canWrite} />}
+      {tab === "contenu" && <ContenuTab accountId={accountId} canWrite={canWriteMarketing} />}
       {tab === "chat" && <ChatTab accountId={accountId} canWrite={canWrite} />}
 
       {account && (
@@ -936,7 +941,7 @@ function CvpTab({ accountId, disabled, canWrite }: { accountId: string; disabled
           </div>
           <div style={{ padding: "12px 14px", background: T.panel2, borderRadius: 10, fontSize: 14, color: T.ink, lineHeight: 1.55 }}>{data.message}</div>
           <ul style={{ margin: "10px 0 0", paddingLeft: 18, color: T.dim, fontSize: 13, lineHeight: 1.7 }}>
-            {data.differenciateurs.map((d, i) => <li key={i}>{d}</li>)}
+            {(data.differenciateurs ?? []).map((d, i) => <li key={i}>{d}</li>)}
           </ul>
           {/* Ferme la boucle insight->envoi (audit 4 zones 2026-07) : la CVP etait le seul livrable
               pret-a-envoyer sans bouton d'envoi direct (WhatsApp/e-mail), contrairement aux 4 autres. */}
@@ -1003,10 +1008,10 @@ function PlanCompteTab({ accountId, disabled, canWrite }: { accountId: string; d
               <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.55, marginTop: 4 }}>{data.these}</div>
             </div>
           )}
-          {data.mouvements.length > 0 && (
+          {(data.mouvements?.length ?? 0) > 0 && (
             <Section title="Mouvements prioritaires (tranchés)" color={T.emerald}>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
-                {data.mouvements.map((m, i) => (
+                {(data.mouvements ?? []).map((m, i) => (
                   <div key={i} style={{ background: T.panel2, borderRadius: 9, padding: "10px 12px" }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap" }}>
                       <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{i === 0 ? "① " : `${i + 1}. `}{m.titre}</span>
@@ -1019,10 +1024,10 @@ function PlanCompteTab({ accountId, disabled, canWrite }: { accountId: string; d
               </div>
             </Section>
           )}
-          {data.risquesCaches.length > 0 && (
+          {(data.risquesCaches?.length ?? 0) > 0 && (
             <Section title="Risques cachés" color={T.clay}>
               <div style={{ marginTop: 6 }}>
-                {data.risquesCaches.map((r, i) => (
+                {(data.risquesCaches ?? []).map((r, i) => (
                   <div key={i} style={{ padding: "7px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <span style={{ fontSize: 12.5, color: T.ink }}>{r.r}</span>
@@ -1204,10 +1209,10 @@ function BusinessCaseTab({ accountId, disabled, canWrite }: { accountId: string;
         <div style={{ marginTop: 12 }}>
           <div style={{ padding: "12px 14px", background: T.panel2, borderRadius: 10, fontSize: 14, color: T.ink, lineHeight: 1.55 }}>{data.synthese}</div>
           {data.potentielTotal && <div style={{ fontSize: 16, fontWeight: 700, color: T.emerald, marginTop: 10, fontFamily: "'Bricolage Grotesque',sans-serif" }}>Potentiel adressable : {data.potentielTotal}</div>}
-          {data.gains.length > 0 && (
+          {(data.gains?.length ?? 0) > 0 && (
             <Section title="Leviers de valeur (chiffrés sur paniers de référence réels)" color={T.emerald}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-                {data.gains.map((g, i) => (
+                {(data.gains ?? []).map((g, i) => (
                   <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "8px 10px", background: T.panel2, borderRadius: 8 }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{g.levier}</div>
@@ -1219,8 +1224,8 @@ function BusinessCaseTab({ accountId, disabled, canWrite }: { accountId: string;
               </div>
             </Section>
           )}
-          {data.hypotheses.length > 0 && <Section title="Hypothèses" color={T.steel}><Chips items={data.hypotheses} /></Section>}
-          {data.risques.length > 0 && <Section title="Conditions / risques" color={T.clay}><Chips items={data.risques} /></Section>}
+          {(data.hypotheses?.length ?? 0) > 0 && <Section title="Hypothèses" color={T.steel}><Chips items={data.hypotheses} /></Section>}
+          {(data.risques?.length ?? 0) > 0 && <Section title="Conditions / risques" color={T.clay}><Chips items={data.risques} /></Section>}
           {data.recommandation && <div style={{ fontSize: 12.5, color: T.dim, marginTop: 12 }}><b style={{ color: T.gold }}>Première action :</b> {data.recommandation}</div>}
         </div>
       )}
@@ -1265,8 +1270,8 @@ function MeddicTab({ accountId, disabled, canWrite }: { accountId: string; disab
               </div>
             ))}
           </div>
-          {data.trous.length > 0 && <Section title="Trous à combler" color={T.clay}><Chips items={data.trous} /></Section>}
-          {data.prochainesActions.length > 0 && <Section title="Prochaines actions de qualification" color={T.emerald}><Chips items={data.prochainesActions} /></Section>}
+          {(data.trous?.length ?? 0) > 0 && <Section title="Trous à combler" color={T.clay}><Chips items={data.trous} /></Section>}
+          {(data.prochainesActions?.length ?? 0) > 0 && <Section title="Prochaines actions de qualification" color={T.emerald}><Chips items={data.prochainesActions} /></Section>}
         </div>
       )}
     </TabShell>
@@ -1285,14 +1290,14 @@ function DealAnalysisTab({ accountId, disabled, canWrite }: { accountId: string;
             <Badge c={PROBA_C[data.probabilite] ?? T.faint}>Probabilité {data.probabilite}</Badge>
             <Badge c={T.steel}>vs {data.concurrent}</Badge>
           </div>
-          {data.forcesConcurrent.length > 0 && <Section title="Forces adverses à neutraliser" color={T.clay}><Chips items={data.forcesConcurrent} /></Section>}
-          {data.parades.length > 0 && <Section title="Parades" color={T.emerald}><Chips items={data.parades} /></Section>}
-          {data.winThemes.length > 0 && <Section title="Axes de victoire" color={T.gold}><Chips items={data.winThemes} /></Section>}
-          {data.objections.length > 0 && <Section title="Objections & réponses" color={T.steel}><QaList pairs={data.objections} /></Section>}
-          {data.planClosing.length > 0 && (
+          {(data.forcesConcurrent?.length ?? 0) > 0 && <Section title="Forces adverses à neutraliser" color={T.clay}><Chips items={data.forcesConcurrent} /></Section>}
+          {(data.parades?.length ?? 0) > 0 && <Section title="Parades" color={T.emerald}><Chips items={data.parades} /></Section>}
+          {(data.winThemes?.length ?? 0) > 0 && <Section title="Axes de victoire" color={T.gold}><Chips items={data.winThemes} /></Section>}
+          {(data.objections?.length ?? 0) > 0 && <Section title="Objections & réponses" color={T.steel}><QaList pairs={data.objections} /></Section>}
+          {(data.planClosing?.length ?? 0) > 0 && (
             <Section title="Plan de closing daté" color={T.emerald}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-                {data.planClosing.map((s, i) => (
+                {(data.planClosing ?? []).map((s, i) => (
                   <div key={i} style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
                     <Badge c={T.gold}>{s.quand}</Badge>
                     <span style={{ fontSize: 12.5, color: T.ink }}>{s.action}</span>
@@ -1315,7 +1320,7 @@ function StakeholdersTab({ accountId, disabled, canWrite }: { accountId: string;
       {data && (
         <div style={{ marginTop: 12 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {data.parties.map((p, i) => (
+            {(data.parties ?? []).map((p, i) => (
               <div key={i} style={{ background: T.panel2, borderRadius: 8, padding: "9px 11px", borderLeft: `3px solid ${POSTURE_C[p.posture] ?? T.faint}` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{p.nom}{p.role && p.role !== p.nom ? ` — ${p.role}` : ""}</span>
@@ -1332,7 +1337,7 @@ function StakeholdersTab({ accountId, disabled, canWrite }: { accountId: string;
             {data.champion && <Badge c={T.emerald}>Champion : {data.champion}</Badge>}
           </div>
           {data.risqueRelationnel && <div style={{ fontSize: 12.5, color: T.dim, marginTop: 8 }}><b style={{ color: T.clay }}>Risque relationnel :</b> {data.risqueRelationnel}</div>}
-          {data.multiThread.length > 0 && <Section title="Élargir la couverture (multi-thread)" color={T.emerald}><Chips items={data.multiThread} /></Section>}
+          {(data.multiThread?.length ?? 0) > 0 && <Section title="Élargir la couverture (multi-thread)" color={T.emerald}><Chips items={data.multiThread} /></Section>}
         </div>
       )}
     </TabShell>
@@ -1344,11 +1349,11 @@ function BriefTab({ accountId, disabled, canWrite }: { accountId: string; disabl
   const [obj, setObj] = useState("");
   const copyText = data ? [
     `Snapshot : ${data.snapshot}`,
-    data.objectifs.length ? `Objectifs :\n- ${data.objectifs.join("\n- ")}` : "",
-    data.questions.length ? `Questions :\n- ${data.questions.join("\n- ")}` : "",
-    data.aValoriser.length ? `À valoriser :\n- ${data.aValoriser.join("\n- ")}` : "",
-    data.objections.length ? `Objections :\n${data.objections.map((o) => `- ${o.objection} → ${o.reponse}`).join("\n")}` : "",
-    data.prochainesEtapes.length ? `Next steps :\n- ${data.prochainesEtapes.join("\n- ")}` : "",
+    (data.objectifs?.length ?? 0) ? `Objectifs :\n- ${(data.objectifs ?? []).join("\n- ")}` : "",
+    (data.questions?.length ?? 0) ? `Questions :\n- ${(data.questions ?? []).join("\n- ")}` : "",
+    (data.aValoriser?.length ?? 0) ? `À valoriser :\n- ${(data.aValoriser ?? []).join("\n- ")}` : "",
+    (data.objections?.length ?? 0) ? `Objections :\n${(data.objections ?? []).map((o) => `- ${o.objection} → ${o.reponse}`).join("\n")}` : "",
+    (data.prochainesEtapes?.length ?? 0) ? `Next steps :\n- ${(data.prochainesEtapes ?? []).join("\n- ")}` : "",
   ].filter(Boolean).join("\n\n") : "";
   return (
     <TabShell title="Brief de rendez-vous" color={T.plum} busy={busy} disabled={disabled} canWrite={canWrite} done={done} empty={!data} onRun={() => run(obj.trim() ? { objectif: obj.trim() } : undefined)} label="Générer le brief" hint="Sélectionnez un compte pour préparer un RDV.">
@@ -1363,11 +1368,11 @@ function BriefTab({ accountId, disabled, canWrite }: { accountId: string; disabl
         <div style={{ marginTop: 12 }}>
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}><CopyBtn text={copyText} label="Copier le brief" /></div>
           <div style={{ padding: "12px 14px", background: T.panel2, borderRadius: 10, fontSize: 13.5, color: T.ink, lineHeight: 1.55 }}>{data.snapshot}</div>
-          {data.objectifs.length > 0 && <Section title="Objectifs du RDV" color={T.emerald}><Chips items={data.objectifs} /></Section>}
-          {data.questions.length > 0 && <Section title="Questions à poser" color={T.steel}><Chips items={data.questions} /></Section>}
-          {data.aValoriser.length > 0 && <Section title="À valoriser" color={T.gold}><Chips items={data.aValoriser} /></Section>}
-          {data.objections.length > 0 && <Section title="Objections probables & réponses" color={T.clay}><QaList pairs={data.objections} /></Section>}
-          {data.prochainesEtapes.length > 0 && <Section title="Next steps à obtenir" color={T.emerald}><Chips items={data.prochainesEtapes} /></Section>}
+          {(data.objectifs?.length ?? 0) > 0 && <Section title="Objectifs du RDV" color={T.emerald}><Chips items={data.objectifs} /></Section>}
+          {(data.questions?.length ?? 0) > 0 && <Section title="Questions à poser" color={T.steel}><Chips items={data.questions} /></Section>}
+          {(data.aValoriser?.length ?? 0) > 0 && <Section title="À valoriser" color={T.gold}><Chips items={data.aValoriser} /></Section>}
+          {(data.objections?.length ?? 0) > 0 && <Section title="Objections probables & réponses" color={T.clay}><QaList pairs={data.objections} /></Section>}
+          {(data.prochainesEtapes?.length ?? 0) > 0 && <Section title="Next steps à obtenir" color={T.emerald}><Chips items={data.prochainesEtapes} /></Section>}
         </div>
       )}
     </TabShell>

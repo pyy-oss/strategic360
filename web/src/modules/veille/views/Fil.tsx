@@ -320,6 +320,11 @@ export function Fil({ lens = "dg", weights }: { lens?: string; weights?: LensWei
                     {s.ent || "—"} · {s.geo || "—"}
                   </Badge>
                   <Badge c={T.steel}>Source {s.sourceRating}</Badge>
+                  {/* Provenance vérifiable (audit final #1) : lien cliquable vers la source, comme sur l'AO.
+                      Un signal invérifiable d'un clic n'inspire pas confiance (crédibilité DG/analyste). */}
+                  {s.url && (
+                    <a href={s.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: T.steel, textDecoration: "none", alignSelf: "center" }} title={s.sourceName || s.url}>🔗 source</a>
+                  )}
                   <Badge c={T.faint}>{s.date}</Badge>
                 </div>
                 {s.soWhat && (
