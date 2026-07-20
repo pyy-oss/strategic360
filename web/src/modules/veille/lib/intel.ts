@@ -86,6 +86,7 @@ export interface IntelItem {
   evalScore?: number | null; // note de pertinence (0-100) attribuée par l'évaluateur avant publication
   evalReason?: string; // raison de publication / rejet (1 phrase) — traçabilité de la porte de qualité
   evalFailed?: boolean; // true si publié par défaut sur panne IA (non réellement évalué) — score plancher 50
+  floorPublished?: boolean; // true si publié d'office par le plancher AO cœur de métier (audit alignement 2026-07)
   createdBy: string;
   createdAt?: Timestamp | FieldValue;
 }
