@@ -309,9 +309,18 @@ const {
   sanitizePermissionsMatrix,
 } = require("./domain/rbac");
 
+/** Rôle de l'appelant — claim NAMESPACÉ `sentinelRole` en priorité (audit final : Auth partagée entre
+ * apps du même projet Firebase ; on préfère notre claim propre au générique `role` qu'un autre app
+ * pourrait poser). Repli sur `role` (comptes non encore migrés) → aucun lock-out. Miroir de `role()`
+ * dans firestore.rules. */
+function authRole(request) {
+  const t = request.auth?.token || {};
+  return t.sentinelRole != null ? t.sentinelRole : t.role;
+}
+
 /** Mirrors `exec()` in firestore.rules: direction/strategie/innovation. */
 function isExecCaller(request) {
-  const role = request.auth?.token?.role;
+  const role = authRole(request);
   return request.auth != null && EXEC_ROLES.includes(role);
 }
 function requireExecCaller(request, action) {
@@ -322,7 +331,7 @@ function requireExecCaller(request, action) {
 
 /** Copilote Commercial : rôles commerciaux + exécutifs (le copilote est un outil de vente). */
 function requireCommercialCaller(request, action) {
-  const role = request.auth?.token?.role;
+  const role = authRole(request);
   if (!request.auth || !COMMERCIAL_ROLES.includes(role)) {
     throw new HttpsError("permission-denied", `Seuls les profils commerciaux/exécutifs peuvent ${action}.`);
   }
@@ -3631,7 +3640,7 @@ function assertAccountId(accountId) {
  */
 async function assertAccountInScope(db, request, accountId) {
   if (!accountId) return;
-  const role = request.auth?.token?.role;
+  const role = authRole(request);
   if (COPILOTE_UNSCOPED_ROLES.includes(role)) return;
   const accSnap = await db.doc(`copiloteAccounts/${accountId}`).get();
   if (!accSnap.exists) return; // compte inexistant → assembleCopiloteContext renverra un contexte vide (pas de fuite)
@@ -4368,7 +4377,7 @@ exports.syncCopiloteAccountsNow = onCall(HEAVY_CALLABLE_OPTS, async (request) =>
 exports.listCopiloteAccounts = onCall(CALLABLE_OPTS, async (request) => {
   requireCommercialCaller(request, "consulter les comptes du copilote");
   const db = firestoreDb();
-  const role = request.auth?.token?.role;
+  const role = authRole(request);
   const snap = await db.collection("copiloteAccounts").get();
   const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   const unscoped = COPILOTE_UNSCOPED_ROLES.includes(role);
@@ -4391,7 +4400,7 @@ exports.listCopiloteAccounts = onCall(CALLABLE_OPTS, async (request) => {
 
 /** Rôles autorisés à administrer le cloisonnement (profils + owners). */
 function requireCopiloteAdmin(request, action) {
-  const role = request.auth?.token?.role;
+  const role = authRole(request);
   const allowed = ["commercial_dir", "direction"];
   if (!request.auth || !allowed.includes(role)) {
     throw new HttpsError("permission-denied", `Seuls la Direction et les directeurs commerciaux peuvent ${action}.`);
@@ -4726,7 +4735,7 @@ exports.setUserRole = onCall(CALLABLE_OPTS, async (request) => {
   const bootstrapSnap = await bootstrapRef.get();
   const bootstrapDone = bootstrapSnap.exists && bootstrapSnap.data()?.done === true;
 
-  const callerRole = request.auth?.token?.role;
+  const callerRole = authRole(request);
   const isCallerDirection = request.auth != null && callerRole === "direction";
 
   if (!bootstrapDone) {
@@ -4767,7 +4776,9 @@ exports.setUserRole = onCall(CALLABLE_OPTS, async (request) => {
   // any claim another app already set on this same account. Merge into the existing claims
   // instead, so this app only ever touches its own `role` key.
   const existingClaims = (await getAuth().getUser(uid)).customClaims || {};
-  await getAuth().setCustomUserClaims(uid, { ...existingClaims, role });
+  // Double-écriture (audit final) : on pose le claim NAMESPACÉ `sentinelRole` (source de vérité, préférée
+  // par les règles/callables) ET `role` (compat descendante tant que la migration n'est pas terminée).
+  await getAuth().setCustomUserClaims(uid, { ...existingClaims, role, sentinelRole: role });
 
   await db.collection("auditLog").add({
     uid: request.auth?.uid ?? null,
@@ -4788,6 +4799,40 @@ exports.setUserRole = onCall(CALLABLE_OPTS, async (request) => {
 });
 
 /**
+ * backfillRoleClaims — callable (DG uniquement) : MIGRATION one-shot du claim `role` vers le claim
+ * namespacé `sentinelRole` (audit final). Parcourt tous les comptes Auth ; pour chaque compte portant
+ * un `role` valide mais pas encore de `sentinelRole`, copie l'un dans l'autre (double-écriture). Idempotent
+ * (relançable sans effet de bord). Après passage, tous les comptes sont sur le claim propre et le repli
+ * `role` des règles/callables n'a plus d'usage — sans jamais avoir verrouillé un compte.
+ */
+exports.backfillRoleClaims = onCall(CALLABLE_OPTS, async (request) => {
+  if (authRole(request) !== "direction") {
+    throw new HttpsError("permission-denied", "Seule la Direction peut migrer les rôles.");
+  }
+  const auth = getAuth();
+  let migrated = 0, scanned = 0, pageToken;
+  do {
+    const res = await auth.listUsers(1000, pageToken);
+    for (const u of res.users) {
+      scanned += 1;
+      const claims = u.customClaims || {};
+      const r = claims.role;
+      if (typeof r === "string" && VALID_ROLES.includes(r) && claims.sentinelRole !== r) {
+        await auth.setCustomUserClaims(u.uid, { ...claims, sentinelRole: r });
+        migrated += 1;
+      }
+    }
+    pageToken = res.pageToken;
+  } while (pageToken);
+  await firestoreDb().collection("auditLog").add({
+    uid: request.auth?.uid ?? null, action: "backfillRoleClaims", module: "config", entity: "users",
+    detail: { scanned, migrated }, ts: FieldValue.serverTimestamp(),
+  });
+  logger.info(`backfillRoleClaims: ${migrated}/${scanned} comptes migrés (role→sentinelRole).`);
+  return { scanned, migrated };
+});
+
+/**
  * setPermissionsMatrix — callable (DG uniquement) : met à jour la MATRICE RBAC (rôle × module) dans
  * config/permissions, sans redéploiement ni re-seed. `data.matrix` est nettoyée par
  * sanitizePermissionsMatrix (n'accepte que rôles/modules connus, valeurs none/read/write). Réservé
@@ -4795,7 +4840,7 @@ exports.setUserRole = onCall(CALLABLE_OPTS, async (request) => {
  * on peut ne pousser qu'un sous-ensemble de rôles. Audité dans auditLog.
  */
 exports.setPermissionsMatrix = onCall(CALLABLE_OPTS, async (request) => {
-  if (request.auth?.token?.role !== "direction") {
+  if (authRole(request) !== "direction") {
     throw new HttpsError("permission-denied", "Seule la Direction peut modifier la matrice des droits.");
   }
   const clean = sanitizePermissionsMatrix(request.data?.matrix);
@@ -4842,7 +4887,7 @@ function sanitizeLensWeights(obj) {
   return out;
 }
 exports.setLensWeights = onCall(CALLABLE_OPTS, async (request) => {
-  if (request.auth?.token?.role !== "direction") {
+  if (authRole(request) !== "direction") {
     throw new HttpsError("permission-denied", "Seule la Direction peut modifier les pondérations de focale.");
   }
   const clean = sanitizeLensWeights(request.data?.weights);
@@ -4961,7 +5006,7 @@ exports.onActionCreated = onDocumentCreated(
  * `invite` (crée si besoin + assigne + e-mail de mot de passe), `assign`, `revoke`.
  */
 exports.userAdmin = onCall(CALLABLE_OPTS, async (request) => {
-  if (request.auth?.token?.role !== "direction") {
+  if (authRole(request) !== "direction") {
     throw new HttpsError("permission-denied", "Réservé à la Direction.");
   }
   const db = firestoreDb();
@@ -4977,7 +5022,7 @@ exports.userAdmin = onCall(CALLABLE_OPTS, async (request) => {
     do {
       const res = await auth.listUsers(1000, pageToken);
       for (const u of res.users) {
-        const role = u.customClaims?.role;
+        const role = u.customClaims?.sentinelRole ?? u.customClaims?.role; // claim namespacé prioritaire
         if (typeof role === "string" && VALID_ROLES.includes(role)) {
           users.push({
             uid: u.uid, email: u.email || null, displayName: u.displayName || null, role,
@@ -5005,12 +5050,12 @@ exports.userAdmin = onCall(CALLABLE_OPTS, async (request) => {
     if (action === "assign") {
       const role = request.data?.role;
       if (!VALID_ROLES.includes(role)) throw new HttpsError("invalid-argument", `role doit être l'un de : ${VALID_ROLES.join(", ")}.`);
-      await auth.setCustomUserClaims(uid, { ...existing, role });
+      await auth.setCustomUserClaims(uid, { ...existing, role, sentinelRole: role }); // double-écriture (claim namespacé + compat)
       await audit("assignRole", uid, { role });
       return { ok: true, uid, role };
     }
     const next = { ...existing };
-    delete next.role; // révocation par-app = retrait du claim role (le compte Auth global reste intact)
+    delete next.role; delete next.sentinelRole; // révocation par-app = retrait des DEUX claims (Auth global intact)
     await auth.setCustomUserClaims(uid, next);
     await audit("revokeRole", uid, {});
     return { ok: true, uid, role: null };
@@ -5026,7 +5071,7 @@ exports.userAdmin = onCall(CALLABLE_OPTS, async (request) => {
     try { user = await auth.getUserByEmail(email); }
     catch (e) { if (e.code !== "auth/user-not-found") throw e; user = await auth.createUser({ email, emailVerified: false }); created = true; }
     const existing = user.customClaims || {};
-    await auth.setCustomUserClaims(user.uid, { ...existing, role });
+    await auth.setCustomUserClaims(user.uid, { ...existing, role, sentinelRole: role }); // double-écriture (claim namespacé + compat)
     // E-mail « définissez votre mot de passe » via Identity Toolkit (clé web NON secrète). Aucun mot de
     // passe ne transite jamais. Nécessite WEB_API_KEY (functions/.env) — sinon on saute l'e-mail.
     // (nom sans préfixe FIREBASE_ : réservé par firebase deploy pour les .env.)
@@ -5054,7 +5099,7 @@ exports.userAdmin = onCall(CALLABLE_OPTS, async (request) => {
  * création/rotation (ensuite masqués). Aucune écriture cliente directe de ces collections (règles).
  */
 exports.webhookAdmin = onCall(CALLABLE_OPTS, async (request) => {
-  if (request.auth?.token?.role !== "direction") {
+  if (authRole(request) !== "direction") {
     throw new HttpsError("permission-denied", "Réservé à la Direction.");
   }
   const db = firestoreDb();
