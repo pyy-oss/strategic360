@@ -139,9 +139,12 @@ const SUBTYPE_BUSINESS = {
 // suivi ni géo CI/UEMOA, n'est pas une opportunité — elle doit être décotée comme une CVE mondiale.
 const ANCHOR_REQUIRED_SUBTYPES = new Set(["vulnerability", "cve", "supply", "regulation"]);
 const UNANCHORED_DECOTE = 0.6;
-// Défauts géographiques Neurones (CI/UEMOA/Afrique). Externalisables par le profil client (Phase 0
-// produit) via `cfg.anchorGeoMarkers` / `cfg.localGeoMarkers`.
-const DEFAULT_ANCHOR_GEO = ["ci", "ivoire", "uemoa", "afrique"];
+// Défauts géographiques Neurones (CI/UEMOA/Afrique de l'Ouest). Externalisables par le profil client
+// (Phase 0 produit) via `cfg.anchorGeoMarkers` / `cfg.localGeoMarkers`. Élargi (audit alignement
+// 2026-07) aux codes pays UEMOA/CEDEAO — un AO/réglementation au Sénégal, Mali, Bénin… est EN ZONE et
+// ne doit plus être vu comme « hors-zone » faute de figurer dans la liste (les codes ≤2 car. exigent
+// l'égalité exacte via geoMatches ; « ivoire/uemoa/cedeao/afrique » matchent par inclusion).
+const DEFAULT_ANCHOR_GEO = ["ci", "sn", "ml", "bf", "bj", "tg", "ne", "gw", "gn", "ivoire", "uemoa", "cedeao", "afrique"];
 const DEFAULT_LOCAL_GEO = [
   { markers: ["ci", "ivoire"], bonus: 0.15 },
   { markers: ["uemoa", "afrique"], bonus: 0.08 },
@@ -162,6 +165,22 @@ function hasLocalAnchor(item, markers) {
 }
 
 /**
+ * isOutOfZone(item, markers) — l'item est-il EXPLICITEMENT hors de la zone de marché ? (audit alignement
+ * 2026-07 : « ne pas punir l'absence de géo »). Auparavant, un subtype technique SANS géo était décoté
+ * comme du mondial ; or une géo absente est une AMBIGUÏTÉ de classification, pas une preuve de hors-zone
+ * — cela enterrait des opportunités potentiellement locales. Désormais on ne décote QUE si la géo est
+ * PRÉSENTE et étrangère (« international », « monde », « fr »…). Ancré via un compte suivi (`ent`) ou
+ * géo absente → PAS hors-zone (bénéfice du doute). PUR.
+ */
+function isOutOfZone(item, markers) {
+  if (item && typeof item.ent === "string" && item.ent.trim()) return false;
+  const geo = typeof item?.geo === "string" ? item.geo.toLowerCase().trim() : "";
+  if (!geo) return false; // géo inconnue → on ne décote pas
+  const list = Array.isArray(markers) ? markers : DEFAULT_ANCHOR_GEO;
+  return !list.some((m) => geoMatches(geo, m)); // présente mais hors zone → décote
+}
+
+/**
  * businessFactor(item, cfg?) — cfg (profil client, Phase 0 produit) surcharge les tables ; ABSENT →
  * défauts Neurones (comportement identique). PUR.
  */
@@ -174,8 +193,9 @@ function businessFactor(item, cfg) {
   const anchorReq = Array.isArray(c.anchorRequiredSubtypes) ? new Set(c.anchorRequiredSubtypes) : ANCHOR_REQUIRED_SUBTYPES;
   const decote = Number.isFinite(c.unanchoredDecote) ? c.unanchoredDecote : UNANCHORED_DECOTE;
   let f = table[item?.subtype] ?? def;
-  // Décote des subtypes techniques sans ancrage local (parc/compte ou zone) — cf. commentaire ci-dessus.
-  if (anchorReq.has(item?.subtype) && !hasLocalAnchor(item, c.anchorGeoMarkers)) f *= decote;
+  // Décote des subtypes techniques EXPLICITEMENT hors-zone (géo étrangère présente). Une géo absente
+  // n'est PLUS décotée (audit alignement 2026-07 : ne pas enterrer une opportunité ambiguë) — cf. isOutOfZone.
+  if (anchorReq.has(item?.subtype) && isOutOfZone(item, c.anchorGeoMarkers)) f *= decote;
   if (item?.stance === "opportunity") f = Math.min(1, f + oppBonus);
   if (item?.budgetIdentified) f = Math.min(1, f + budgetBonus);
   return f;

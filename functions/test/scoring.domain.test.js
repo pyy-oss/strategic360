@@ -127,11 +127,14 @@ describe("businessFactor (Action 5.2)", () => {
     expect(businessFactor({ subtype: "product_launch" })).toBe(0.45);
     expect(SUBTYPE_BUSINESS.tender).toBe(1.0);
   });
-  it("regulation HORS-ZONE (sans ancrage local) est décotée comme une CVE mondiale (passe finale 2026-07)", () => {
-    // Une réglementation sans compte suivi ni géo CI/UEMOA n'est pas monétisable → décote 0.6.
-    expect(businessFactor({ subtype: "regulation" })).toBeCloseTo(0.85 * 0.6, 5);
+  it("regulation EXPLICITEMENT hors-zone est décotée ; géo absente ne l'est plus (audit alignement 2026-07)", () => {
+    // Géo étrangère PRÉSENTE (« international ») → non monétisable → décote 0.6.
+    expect(businessFactor({ subtype: "regulation", geo: "international" })).toBeCloseTo(0.85 * 0.6, 5);
+    // Géo ABSENTE → ambiguïté, plus de décote (on ne punit pas l'absence de géo) → pleine valeur.
+    expect(businessFactor({ subtype: "regulation" })).toBe(0.85);
     // Ancrée (compte suivi via ent, ou géo locale) → pleine valeur.
     expect(businessFactor({ subtype: "regulation", ent: "BCEAO" })).toBe(0.85);
+    expect(businessFactor({ subtype: "regulation", geo: "sn" })).toBe(0.85);
   });
   it("defaults unknown/missing subtype to 0.4", () => {
     expect(businessFactor({})).toBe(0.4);
@@ -146,16 +149,21 @@ describe("businessFactor (Action 5.2)", () => {
   it("is clamped at 1.0 (tender + both bonuses does not overflow)", () => {
     expect(businessFactor({ subtype: "tender", stance: "opportunity", budgetIdentified: true })).toBe(1.0);
   });
-  it("décote vulnerability/cve/supply SANS ancrage local (ni ent ni geo) — anti-biais cyber (audit 2026-07)", () => {
-    // Sans ancrage : ×0.6 (une CVE éditeur mondiale sans parc/compte n'est pas une opportunité NT).
-    expect(businessFactor({ subtype: "vulnerability" })).toBeCloseTo(0.8 * 0.6, 6);
-    expect(businessFactor({ subtype: "cve" })).toBeCloseTo(0.8 * 0.6, 6);
-    expect(businessFactor({ subtype: "supply" })).toBeCloseTo(0.85 * 0.6, 6);
-    // Avec un ent résolu OU une zone locale → plein tarif rétabli.
+  it("décote vulnerability/cve/supply seulement si géo EXPLICITEMENT hors-zone (audit alignement 2026-07)", () => {
+    // Géo étrangère présente (« monde ») : ×0.6 — une CVE éditeur mondiale sans parc/compte n'est pas une opportunité NT.
+    expect(businessFactor({ subtype: "vulnerability", geo: "monde" })).toBeCloseTo(0.8 * 0.6, 6);
+    expect(businessFactor({ subtype: "cve", geo: "international" })).toBeCloseTo(0.8 * 0.6, 6);
+    expect(businessFactor({ subtype: "supply", geo: "france" })).toBeCloseTo(0.85 * 0.6, 6);
+    // Géo ABSENTE → plus de décote (bénéfice du doute, ne pas enterrer une opportunité ambiguë).
+    expect(businessFactor({ subtype: "vulnerability" })).toBe(0.8);
+    expect(businessFactor({ subtype: "cve" })).toBe(0.8);
+    expect(businessFactor({ subtype: "supply" })).toBe(0.85);
+    // Avec un ent résolu OU une zone locale (y compris UEMOA hors-CI) → plein tarif.
     expect(businessFactor({ subtype: "vulnerability", ent: "SGBCI" })).toBe(0.8);
     expect(businessFactor({ subtype: "cve", geo: "ci" })).toBe(0.8);
     expect(businessFactor({ subtype: "supply", geo: "Afrique de l'Ouest" })).toBe(0.85);
-    // Un subtype non concerné n'est jamais décoté, ancrage ou pas.
+    expect(businessFactor({ subtype: "vulnerability", geo: "sn" })).toBe(0.8);
+    // Un subtype non concerné n'est jamais décoté.
     expect(businessFactor({ subtype: "tender" })).toBe(1.0);
   });
 });

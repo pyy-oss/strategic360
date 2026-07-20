@@ -10,7 +10,58 @@
  * PUR : builder de prompt + parser. Aucun accès réseau/Firestore (testé unitairement).
  */
 
+const { isAoSubtype, isoDeadline } = require("./tenderEnrich");
+const { isOpenNotice } = require("./noticeStatus");
+
 const RELEVANCE_MIN = 55; // seuil de publication (relevé — la porte doit écarter le « médiocre mais pas absurde »)
+
+// Zone de marché NT (code pays UEMOA/CEDEAO + mots-clés). Un AO ancré ici est « chez nous » ; hors de
+// cette liste (« international », géo étrangère) il n'est PAS un cœur de métier local. Aligné sur l'enum
+// geo du classifieur.
+const LOCAL_GEO = new Set(["ci", "sn", "ml", "bf", "bj", "tg", "ne", "gw", "gn", "afrique_ouest", "afrique"]);
+const LOCAL_GEO_MARKERS = ["ivoire", "uemoa", "cedeao"];
+
+/** Un AO est-il ancré LOCALEMENT (compte/institution nommé OU zone UEMOA/Afrique de l'Ouest) ? PUR. */
+function hasLocalAnchor(item) {
+  const it = item || {};
+  if (typeof it.ent === "string" && it.ent.trim()) return true;
+  const geo = typeof it.geo === "string" ? it.geo.trim().toLowerCase() : "";
+  if (!geo) return false;
+  if (LOCAL_GEO.has(geo)) return true;
+  return LOCAL_GEO_MARKERS.some((m) => geo.includes(m));
+}
+
+/**
+ * deterministicPublishFloor(item, opts) -> boolean — PLANCHER DÉTERMINISTE DE PUBLICATION (audit
+ * alignement stratégique 2026-07 : « améliorer la connaissance du marché pour générer PLUS DE BUSINESS »).
+ * Le cœur de métier de NT, ce sont les appels d'offres IT/télécom/cyber/cloud/formation EN ZONE. Un tel
+ * AO OUVERT (pas une attribution), ancré localement, avec une URL vérifiable et — si une échéance est
+ * lisible — NON DÉPASSÉE, ne DOIT JAMAIS être écarté par le jugement subjectif du LLM (« trop petit »,
+ * « acheteur secondaire »). Cette porte le PUBLIE d'office. Conditions cumulatives :
+ *   - subtype AO (tender/funding/budget) ET URL source non vide (traçable) ;
+ *   - avis OUVERT (isOpenNotice ≠ attribution/résultat) ;
+ *   - ancrage local (compte nommé OU zone UEMOA/Afrique de l'Ouest) ;
+ *   - échéance : si une date est extractible du businessAngle, elle doit être ≥ aujourd'hui (on ne
+ *     force pas la publication d'un AO expiré) ; échéance absente/non datée → tolérée (avis ouvert).
+ * PUR (now injecté pour testabilité). Renvoie false si l'item n'est pas concerné.
+ */
+function deterministicPublishFloor(item, opts = {}) {
+  const it = item && typeof item === "object" ? item : {};
+  if (!isAoSubtype(it.subtype)) return false;
+  const url = typeof it.url === "string" ? it.url.trim() : "";
+  if (!url) return false;
+  if (!isOpenNotice({ noticeType: it.noticeType, title: it.title, url, subtype: it.subtype })) return false;
+  if (!hasLocalAnchor(it)) return false;
+  // Échéance : ne pas forcer un AO manifestement expiré. On ne bloque QUE si une date est lisible ET passée.
+  const ba = it.businessAngle && typeof it.businessAngle === "object" ? it.businessAngle : {};
+  const iso = isoDeadline(ba.deadline) || (typeof it.dueDate === "string" ? isoDeadline(it.dueDate) : null);
+  if (iso) {
+    const nowMs = Number.isFinite(opts.nowMs) ? opts.nowMs : Date.now();
+    const dueMs = Date.parse(`${iso}T23:59:59Z`);
+    if (Number.isFinite(dueMs) && dueMs < nowMs) return false;
+  }
+  return true;
+}
 
 function coerce(v) {
   return typeof v === "string" ? v.trim() : v == null ? "" : String(v);
@@ -97,8 +148,9 @@ JSON uniquement.`;
  * parseEvaluateResponse(raw) -> { pertinence, publier, raison } | null. La publication est COUPLÉE au
  * score : on ne publie que si `publier` n'est pas explicitement false ET que le score atteint le seuil
  * (un `publier:true` avec un score sous le seuil est requalifié en NON publié — sinon la porte ne mord
- * jamais). Fail-open borné : un score absent ne bloque pas (réponse partielle → on publie) ; une
- * réponse non-objet renvoie null (l'appelant publiera par défaut, jamais de signal masqué sur panne).
+ * jamais). FAIL-CLOSED BORNÉ (et non fail-open) : une réponse non-objet OU un objet sans score numérique
+ * renvoie null ; l'appelant ne publie PAS par défaut sur null — il garde l'item `pending` et le
+ * ré-évalue au tick suivant (handleEvalUnusable), pour ne jamais publier de bruit non revu sur panne.
  */
 function parseEvaluateResponse(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -128,4 +180,4 @@ function isFalsey(v) {
   return false;
 }
 
-module.exports = { RELEVANCE_MIN, buildEvaluatePrompt, parseEvaluateResponse };
+module.exports = { RELEVANCE_MIN, buildEvaluatePrompt, parseEvaluateResponse, deterministicPublishFloor, hasLocalAnchor };

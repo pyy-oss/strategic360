@@ -292,6 +292,13 @@ const SOURCES_SEED = [
   { name: "AWS — What's New / Africa (RSS)", kind: "rss", url: "https://aws.amazon.com/about-aws/whats-new/recent/feed/", axis: "concurrents", active: true },
   { name: "Google Cloud — Blog (RSS)", kind: "rss", url: "https://cloudblog.withgoogle.com/rss/", axis: "concurrents", active: true },
   { name: "Microsoft Azure — Blog announcements (RSS)", kind: "rss", url: "https://azure.microsoft.com/en-us/blog/feed/", axis: "concurrents", active: true },
+  // FORMATION — BU historique de Neurones (formation IT/certifiante), jusqu'ici sans capteur dédié
+  // (audit alignement 2026-07). Les financements et AO de formation professionnelle en CI transitent
+  // par le FDFP/AGEFOP/METFP : un plan de formation financé = une opportunité directe pour la BU
+  // FORMATION. Candidates best-effort (auto-désactivées si stériles/403, comme les autres portails).
+  { name: "FDFP — Fonds de Développement de la Formation Professionnelle (CI)", kind: "web-js", url: "https://www.fdfp.ci/", axis: "clients_prospects", active: true },
+  { name: "AGEFOP — Agence de la Formation Professionnelle (CI)", kind: "web-js", url: "https://www.agefop.ci/", axis: "clients_prospects", active: true },
+  { name: "Ministère Enseignement Technique & Formation Professionnelle (CI)", kind: "web-js", url: "https://www.metfp.gouv.ci/", axis: "reglementaire", active: true },
 ];
 
 /**

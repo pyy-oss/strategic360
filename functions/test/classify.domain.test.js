@@ -263,6 +263,18 @@ describe("parseClassificationResponse — businessAngle / dueDate / budgetIdenti
     // budgetIdentified: "oui" (non-booléen) → false strict
     expect(parseClassificationResponse({ title: "x", budgetIdentified: "oui" }, {}).budgetIdentified).toBe(false);
   });
+
+  it("couple budgetIdentified à un estAmount RÉEL (audit alignement 2026-07) — true sans montant → false", () => {
+    // budgetIdentified:true SANS montant concret dans le businessAngle → NON étayé → false.
+    expect(parseClassificationResponse({ title: "AO sans montant", budgetIdentified: true }, {}).budgetIdentified).toBe(false);
+    expect(parseClassificationResponse(
+      { title: "AO sans montant", budgetIdentified: true, businessAngle: { buyer: "MTND" } }, {}
+    ).budgetIdentified).toBe(false);
+    // budgetIdentified:true AVEC un estAmount concret → true (le budget est réellement identifié).
+    expect(parseClassificationResponse(
+      { title: "AO chiffré", budgetIdentified: true, businessAngle: { estAmount: "300 MFCFA" } }, {}
+    ).budgetIdentified).toBe(true);
+  });
 });
 
 describe("parseClassificationResponse — missing fields", () => {
