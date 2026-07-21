@@ -299,6 +299,22 @@ function isAggregatorRssHost(url) {
   } catch { return false; }
 }
 
+/**
+ * aggregatorFallbackUrl(url) -> string | null — REPLI D'AGRÉGATEUR (audit veille 2026-07). Les ~180
+ * monitors dynamiques (watchlist + AO clients) reposent sur le seul endpoint RSS de Google News :
+ * point de défaillance unique n°1 du système. Quand Google News refuse (403/429), la MÊME requête
+ * (`q=`) est rejouée sur Bing News RSS — format d'items compatible avec extractRssItems. On ne
+ * traduit que les recherches (`/rss/search?q=…`) ; toute autre URL n'a pas d'équivalent → null.
+ */
+function aggregatorFallbackUrl(url) {
+  try {
+    const u = new URL(String(url));
+    const q = u.searchParams.get("q");
+    if (!q || !/news\.google\.com$/i.test(u.hostname.replace(/^www\./, ""))) return null;
+    return `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss`;
+  } catch { return null; }
+}
+
 // Modèle RBAC (13 profils ESN × 7 modules) — SOURCE UNIQUE dans domain/rbac.js, partagée avec
 // seed.js et le front (web/src/lib/rbac.ts, tenu en miroir). Voir ce fichier pour la matrice.
 const {
@@ -1550,13 +1566,26 @@ async function runSyncSources(db) {
           // Agrégateur RSS fiable (audit final pré-prod 2026-07) : sur news.google.com un 403/429 est un
           // RATE-LIMIT, pas un défi anti-bot JS que Chromium résout. Rendre en headless donnerait la même
           // réponse tout en gaspillant navigations/mémoire (jusqu'à MAX_SOURCES_PER_RUN sources same-host
-          // via la surveillance d'entités). On propage donc l'échec sans repli headless.
-          if (isAggregatorRssHost(source.url)) throw fetchErr;
+          // via la surveillance d'entités). Pas de repli headless — mais un REPLI D'AGRÉGATEUR (audit
+          // veille 2026-07, point de défaillance unique n°1) : la même requête est retentée sur Bing
+          // News RSS. Un blocage Google News ne coupe plus d'un coup les ~180 monitors watchlist/AO
+          // clients ; si Bing échoue aussi, l'échec d'origine remonte (compteurs de santé inchangés).
+          if (isAggregatorRssHost(source.url)) {
+            const fallbackUrl = aggregatorFallbackUrl(source.url);
+            if (!fallbackUrl) throw fetchErr;
+            try {
+              const fb = await fetchSource(fallbackUrl);
+              if (!fb || !/<(rss|feed|rdf)[\s>]/i.test(fb)) throw fetchErr;
+              logger.info(`syncSources: repli Bing News pour ${source.name || source.url}`);
+              xml = fb;
+            } catch { throw fetchErr; }
+          } else {
           const rendered = await fetchRendered(source.url, { raw: true }); // échec du rendu aussi → remonte au catch global
           // Le rendu doit ramener un flux EXPLOITABLE (racine rss/feed/rdf) ; sinon on conserve l'échec
           // d'origine (pas de faux « ok » sur un flux toujours bloqué / réponse 403 en HTML).
           if (!rendered || !/<(rss|feed|rdf)[\s>]/i.test(rendered)) throw fetchErr;
           xml = rendered;
+          }
         }
         // Rééquilibrage du fil : les flux tech/cyber MONDIAUX sont prolifiques et noyaient les
         // signaux locaux — plafond réduit à 2 items/run pour l'axe tech, 5 pour les axes locaux.
@@ -1901,8 +1930,21 @@ const MAX_EVAL_ATTEMPTS = 3;
  * on garde l'item `pending` (non publié → pas de bruit non revu, non perdu → ré-évalué au prochain
  * tick) tant que le nombre de tentatives < MAX_EVAL_ATTEMPTS ; au-delà, publication marquée en dernier
  * recours (jamais masqué indéfiniment, ni boucle de coût IA infinie). Retourne 1 si publié, 0 sinon.
+ *
+ * DISJONCTEUR PANNE (audit veille 2026-07) : `aiDown=true` (canari summaries/aiHealth KO) gèle le
+ * dernier recours — pendant une panne Vertex AVÉRÉE, chaque tick horaire incrémentait les tentatives
+ * et, au 3ᵉ, force-publiait TOUT le stock `pending` non revu (le bornage devenait la fuite). En panne
+ * confirmée on garde `pending` SANS incrémenter (la panne n'est pas un « échec de l'item ») ; le
+ * compteur et le dernier recours reprennent quand le canari repasse vert.
  */
-async function handleEvalUnusable(db, it, stamp, reason) {
+async function handleEvalUnusable(db, it, stamp, reason, aiDown = false) {
+  if (aiDown) {
+    await db.doc(`intelItems/${it.id}`).update({
+      status: "pending", evalFailed: true,
+      evalReason: `${reason} — panne IA confirmée (canari), ré-évaluation gelée`, updatedAt: stamp(),
+    });
+    return 0;
+  }
   const attempts = (Number(it.evalAttempts) || 0) + 1;
   if (attempts < MAX_EVAL_ATTEMPTS) {
     await db.doc(`intelItems/${it.id}`).update({
@@ -1916,6 +1958,14 @@ async function handleEvalUnusable(db, it, stamp, reason) {
     evalReason: `${reason} — publié par défaut après ${attempts} tentatives`, updatedAt: stamp(),
   });
   return 1;
+}
+
+/** Vrai si le canari aiHealth a confirmé une panne Vertex (best-effort : lecture ratée → pas de gel). */
+async function isAiDown(db) {
+  try {
+    const snap = await db.doc("summaries/aiHealth").get();
+    return snap.exists && snap.data().ok === false;
+  } catch { return false; }
 }
 
 /**
@@ -1943,6 +1993,9 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
   }
   let published = 0, rejected = 0;
   const stamp = () => FieldValue.serverTimestamp();
+  // Disjoncteur (audit veille 2026-07) : lu UNE fois par passe — si le canari confirme une panne
+  // Vertex, les réponses inexploitables gèlent le compteur de dernier recours (voir handleEvalUnusable).
+  const aiDown = await isAiDown(db);
   try {
   await runInBatches(items, AI_CONCURRENCY, async (it) => {
     try {
@@ -1982,11 +2035,11 @@ async function runEvaluateIntelItems(db, { limit = 150 } = {}) {
         // RÉ-ÉVALUÉ au prochain tick (un hoquet transitoire du juge se résout au retry). Après
         // MAX_EVAL_ATTEMPTS échecs consécutifs, on publie EN DERNIER RECOURS (marqué evalFailed) pour ne
         // pas le masquer indéfiniment ni reboucler sur le coût IA.
-        published += await handleEvalUnusable(db, it, stamp, "évaluation indisponible");
+        published += await handleEvalUnusable(db, it, stamp, "évaluation indisponible", aiDown);
       }
     } catch (err) {
       logger.warn(`runEvaluateIntelItems: éval échouée pour ${it.id} — mise en attente (${err.message})`);
-      try { published += await handleEvalUnusable(db, it, stamp, "évaluation échouée"); } catch (_e) { /* ignore */ }
+      try { published += await handleEvalUnusable(db, it, stamp, "évaluation échouée", aiDown); } catch (_e) { /* ignore */ }
     }
   });
   logger.info(`runEvaluateIntelItems: ${items.length} évalués — ${published} publiés, ${rejected} écartés`);
@@ -2281,8 +2334,11 @@ async function runAiHealthCheck(db) {
   return health;
 }
 
+// 05:45 — AVANT la sync de 06:00 (audit veille 2026-07 : planifié à 06:15, le canari « avant les
+// syncs » de sa doc arrivait en réalité APRÈS — une panne modèle n'était détectée qu'une fois le run
+// de classification parti brûler ses retries). L'état écrit sert aussi de disjoncteur à l'évaluateur.
 exports.aiHealthCheck = onSchedule(
-  { schedule: "15 6 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 120, memory: "256MiB" },
+  { schedule: "45 5 * * *", timeZone: TENANT_TIMEZONE, region: "europe-west1", timeoutSeconds: 120, memory: "256MiB" },
   async () => {
     await runAiHealthCheck(firestoreDb());
   }

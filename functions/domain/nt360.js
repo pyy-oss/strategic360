@@ -312,6 +312,29 @@ function hashName(name) {
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
   return h.toString(36);
 }
+// Marqueurs de FICHE PERSONNE dans le CRM source (audit veille 2026-07, inspection prod) : nt360
+// mélange comptes ENTREPRISE et contacts PERSONNE PHYSIQUE dans le même champ `client` (« ADAMA
+// KABORE PROJECT MANAGER MINE D'OR », « BATHINE KONE ÉPOUSE DOSSO, CHARGÉE DE COMMUNICATION… »).
+// Dérivés en « comptes » copilote, ces contacts polluaient le portefeuille, généraient des
+// opportunités cross-sell absurdes et pouvaient fausser l'accountValueFactor. Heuristique par
+// INTITULÉS DE FONCTION/CIVILITÉ — un nom d'entreprise n'embarque pas de titre de poste. En cas de
+// doute (aucun marqueur), on GARDE : mieux vaut un contact résiduel qu'un vrai compte perdu.
+const PERSON_NAME_RE = new RegExp(
+  [
+    // Civilités en tête de libellé.
+    String.raw`^(?:m|mr|mme|mlle|dr)\.?\s`,
+    // Intitulés de fonction (fr/en) — jamais présents dans une raison sociale.
+    String.raw`\b(?:responsable|manager|ing[ée]nieur[e]?|charg[ée]e?\s+de|g[ée]rant[e]?|directeur|directrice|[ée]pouse|[ée]poux|consultant[e]?\s+(?:ind[ée]pendant|senior|junior)|coordinateur|coordinatrice|technicien(?:ne)?|analyste|secr[ée]taire|assistant[e]?\s+de|project\s+manager|engineer|officer|specialist)\b`,
+  ].join("|"),
+  "i"
+);
+/** Vrai si le libellé `client` ressemble à une FICHE PERSONNE (contact CRM), pas à une entreprise. PUR. */
+function isPersonAccountName(nom) {
+  const n = String(nom || "").trim();
+  if (!n) return false;
+  return PERSON_NAME_RE.test(n.normalize("NFC"));
+}
+
 function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
   const byClient = new Map();
   const get = (client) => {
@@ -390,7 +413,10 @@ function deriveCopiloteAccounts(nt360Orders, nt360Opps) {
     }
   }
   return [...byClient.values()]
-    .filter((a) => a.slug)
+    // Filtre fiches-personnes (voir isPersonAccountName) : les contacts CRM ne deviennent pas des
+    // « comptes » — leur CAS éventuel reste dans les agrégats quanti (orders), seule la projection
+    // portefeuille copilote est nettoyée.
+    .filter((a) => a.slug && !isPersonAccountName(a.nom))
     .map((a) => ({
       slug: a.slug,
       nom: a.nom,
@@ -836,6 +862,7 @@ module.exports = {
   PLACEHOLDER_BU,
   isMeaningfulBu,
   isManagedOffer,
+  isPersonAccountName,
   mapOrders,
   mapOpportunities,
   mapInvoices,

@@ -330,6 +330,20 @@ describe("pickSignalsForEnrichment", () => {
     expect(picked.map((s) => s.title)).toEqual(["A", "B", "C-newer", "C-older"]);
   });
 
+  it("ne consomme QUE des signaux PUBLIÉS — pending/rejected exclus (audit veille 2026-07 : la porte de qualité ne doit pas être contournée par l'enrichissement)", () => {
+    const mixed = [
+      ...items,
+      { title: "EnAttente", summary: "s", axis: "tech", impact: "high", stance: "threat", date: "2026-06-29", priorityScore: 95, status: "pending" },
+      { title: "Ecarte", summary: "s", axis: "tech", impact: "high", stance: "threat", date: "2026-06-29", priorityScore: 94, status: "rejected" },
+      { title: "SansStatut", summary: "s", axis: "tech", impact: "low", stance: "neutral", date: "2026-06-29", priorityScore: 93 },
+    ];
+    const titles = pickSignalsForEnrichment(mixed).map((s) => s.title);
+    expect(titles).not.toContain("EnAttente");
+    expect(titles).not.toContain("Ecarte");
+    expect(titles).not.toContain("SansStatut");
+    expect(titles).toContain("A"); // reviewed reste inclus
+  });
+
   it("stratifie la SÉLECTION : un axe dominant en tête de score ne coupe pas les autres à l'entonnoir", () => {
     const many = [
       ...Array.from({ length: 6 }, (_, i) => ({ title: `tech${i}`, summary: "s", axis: "tech", impact: "high", stance: "neutral", date: "2026-06-10", priorityScore: 90 - i, status: "new" })),
