@@ -165,7 +165,11 @@ function startClaimsSource() {
       // Force refresh so a role granted server-side (setUserRole) is picked up without
       // requiring the user to sign out/in again.
       const tokenResult = await user.getIdTokenResult(true);
-      const role = (tokenResult.claims.role as Role | undefined) ?? null;
+      // Miroir des règles Firestore (hygiène audit 10/10 2026-07) : le claim NAMESPACÉ `sentinelRole`
+      // prime, repli sur `role` (comptes historiques). Sans ça, en Auth partagée, une autre app posant
+      // un `role` générique ferait diverger les droits AFFICHÉS de ceux réellement honorés côté serveur.
+      const role = (tokenResult.claims.sentinelRole as Role | undefined)
+        ?? (tokenResult.claims.role as Role | undefined) ?? null;
       emitClaims({ user, role, loading: false });
     } catch {
       emitClaims({ user, role: null, loading: false });

@@ -175,6 +175,73 @@ function computeCasSummary({ orders } = {}) {
 }
 
 /* ------------------------------------------------------------------------------------------- *
+ * Moteur de MARGE (audit 10/10 2026-07) — le nerf d'une ESN, jusqu'ici absent : `marginAvg` était
+ * câblé à null et `objectives.targetMargin` stocké sans jamais être confronté au réalisé.
+ * ------------------------------------------------------------------------------------------- */
+
+/**
+ * computeMargin({orders, opportunities, objectives}) ->
+ *   { avgPct, byBu, targetPct, deltaVsTargetPts, pipelineExpectedPct }
+ *
+ * - avgPct           : taux de marge brute RÉALISÉ = Σmb / Σcas (orders P&L, année courante), en %
+ *                      arrondi à 0,1 pt. null si aucun CA (pas de données ≠ 0 %).
+ * - byBu             : [{ n, mb, cas, pct }] par BU — révèle le mix (le hardware ICT à ~7-21 % vs la
+ *                      formation/services à forte marge). Trié par CA décroissant.
+ * - targetPct        : objectif de marge nt360 (`objectives.targetMargin`). Toléré en fraction
+ *                      (0.35) comme en pourcentage (35) — normalisé en % ; null si absent.
+ * - deltaVsTargetPts : réalisé − objectif, en POINTS de marge (négatif = sous l'objectif). null si
+ *                      l'un des deux manque — jamais de comparaison inventée.
+ * - pipelineExpectedPct : marge ATTENDUE du pipeline ouvert = moyenne des `mbPct` des opportunités
+ *                      ouvertes pondérée par leur montant (les opps sans mbPct sont ignorées ; null
+ *                      si aucune n'en porte). Anticipe la dérive de mix AVANT qu'elle ne se réalise.
+ * PUR — mêmes conventions graceful-null que computeCasSummary/computePipeline.
+ */
+function computeMargin({ orders, opportunities, objectives } = {}) {
+  const out = { avgPct: null, byBu: [], targetPct: null, deltaVsTargetPts: null, pipelineExpectedPct: null };
+  // Réalisé (orders P&L) : global + par BU.
+  if (Array.isArray(orders) && orders.length) {
+    const byBu = new Map();
+    let mbTotal = 0, casTotal = 0;
+    for (const r of orders) {
+      const cas = Number(r && r.cas) || 0;
+      const mb = Number(r && r.mb) || 0;
+      mbTotal += mb; casTotal += cas;
+      const bu = (r && r.bu) || "AUTRE";
+      const e = byBu.get(bu) || { mb: 0, cas: 0 };
+      e.mb += mb; e.cas += cas;
+      byBu.set(bu, e);
+    }
+    if (casTotal > 0) out.avgPct = Math.round((mbTotal / casTotal) * 1000) / 10;
+    out.byBu = [...byBu.entries()]
+      .map(([n, v]) => ({ n, mb: Math.round(v.mb), cas: Math.round(v.cas), pct: v.cas > 0 ? Math.round((v.mb / v.cas) * 1000) / 10 : null }))
+      .sort((a, b) => b.cas - a.cas);
+  }
+  // Objectif : targetMargin accepté en fraction (≤1) ou en % (>1..100) — au-delà, donnée aberrante → ignorée.
+  const rawTarget = Number(objectives && objectives.targetMargin);
+  if (Number.isFinite(rawTarget) && rawTarget > 0 && rawTarget <= 100) {
+    out.targetPct = rawTarget <= 1 ? Math.round(rawTarget * 1000) / 10 : Math.round(rawTarget * 10) / 10;
+  }
+  if (out.avgPct != null && out.targetPct != null) {
+    out.deltaVsTargetPts = Math.round((out.avgPct - out.targetPct) * 10) / 10;
+  }
+  // Marge attendue du pipeline OUVERT (mbPct pondéré par montant) — les affaires closes n'anticipent rien.
+  if (Array.isArray(opportunities) && opportunities.length) {
+    let wSum = 0, wTotal = 0;
+    for (const o of opportunities) {
+      if (!o || o.etape === "Gagné" || o.etape === "Perdu") continue;
+      const montant = Number(o.montant) || 0;
+      const pct = Number(o.mbPct);
+      if (montant <= 0 || !Number.isFinite(pct)) continue;
+      // mbPct nt360 toléré en fraction ou en % (même convention que targetMargin).
+      const pctNorm = pct <= 1 ? pct * 100 : pct;
+      wSum += montant * pctNorm; wTotal += montant;
+    }
+    if (wTotal > 0) out.pipelineExpectedPct = Math.round((wSum / wTotal) * 10) / 10;
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------------------------------- *
  * Pipeline pondéré / win rate (BUILD_KIT.md §9 "LIVE → pipeline pondéré, win rate")
  * ------------------------------------------------------------------------------------------- */
 
@@ -465,6 +532,7 @@ module.exports = {
   normalizeEntityName,
   computeBcg,
   computeCasSummary,
+  computeMargin,
   computePipeline,
   computeKris,
   computeValueAtStake,

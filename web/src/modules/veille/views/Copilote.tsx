@@ -20,6 +20,8 @@ import {
   createCopiloteAccount,
   copiloteGenerate,
   copiloteChat,
+  saveDeliverable,
+  loadDeliverable,
   syncCopiloteAccountsFromNt360,
   setCopiloteAccountOwners,
   setCopiloteScope,
@@ -817,10 +819,21 @@ function useAgent<T>(agent: CopiloteAgent, accountId?: string) {
   const justRan = useRef(false);
   // Changement de compte/agent : on réhydrate depuis le cache (livrable déjà généré ré-affiché
   // instantanément) au lieu de repartir vide — tout en garantissant que le livrable montré
-  // correspond au compte courant (la clé de cache porte l'accountId).
+  // correspond au compte courant (la clé de cache porte l'accountId). Cache local vide → on tente
+  // le livrable PERSISTÉ Firestore (audit 10/10 2026-07 : un business case généré hier sur un autre
+  // poste, ou par un collègue, redevient visible au lieu d'être perdu).
   useEffect(() => {
     const cached = cacheGet<T>(cacheKey);
     setData(cached ?? null); setErr(null); setDone(Boolean(cached));
+    if (cached || !accountId) return;
+    let cancelled = false;
+    void loadDeliverable<T>(accountId, agent).then((persisted) => {
+      if (cancelled || persisted == null) return;
+      cacheSet(cacheKey, persisted);
+      setData(persisted); setDone(true);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheKey]);
   // Remontée uniquement après une génération fraîche (justRan), jamais sur une réhydratation cache.
   useEffect(() => {
@@ -838,6 +851,9 @@ function useAgent<T>(agent: CopiloteAgent, accountId?: string) {
       const res = await copiloteGenerate<T>(agent, accountId || undefined, extra);
       if (forKey !== `${agent}:${accountId || ""}`) return; // course : compte changé → on jette
       cacheSet(forKey, res);
+      // Persistance Firestore (audit 10/10) : le livrable devient un actif partagé — best-effort,
+      // jamais bloquant pour l'affichage.
+      if (accountId) void saveDeliverable(accountId, agent, res);
       justRan.current = true;
       setData(res); setDone(true);
     } catch (e) {

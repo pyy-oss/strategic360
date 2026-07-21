@@ -5,7 +5,8 @@ import { Select, Input } from "../../../design/fields";
 import { Modal, useToast } from "../../../design/overlay";
 import { T, RING, QUAD_TECH, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Tip, Badge } from "../../../design/ui";
-import { useClaims } from "../../../lib/rbac";
+import { useClaims, useCan } from "../../../lib/rbac";
+import { useAuthClaims } from "../../../lib/AuthProvider";
 import {
   createInnovationBet,
   createTechRadarBlip,
@@ -15,6 +16,7 @@ import {
   type TechRadarMomentum,
   type TechRadarRing,
 } from "../lib/innovation";
+import { createInitiative } from "../lib/execution";
 
 const labelStyle: React.CSSProperties = { fontSize: 11, color: T.faint, display: "block", marginBottom: 4 };
 
@@ -185,8 +187,34 @@ export function Innovation() {
   const { bets: liveBets, loading: loadingInnov } = useInnovationPortfolio();
   const { role } = useClaims();
   const canContribute = role === "direction" || role === "innovation";
+  const { canWrite: canWriteStrategie } = useCan("strategie");
+  const { user } = useAuthClaims();
+  const toast = useToast();
   const [showBlipForm, setShowBlipForm] = useState(false);
   const [showBetForm, setShowBetForm] = useState(false);
+  const [launched, setLaunched] = useState<Set<string>>(new Set());
+  const launchBet = async (o: (typeof liveBets)[number]) => {
+    const key = o.id ?? o.title;
+    if (launched.has(key)) return;
+    try {
+      await createInitiative({
+        title: `Pari d'innovation : ${o.title}`.slice(0, 200),
+        objective: [
+          o.offre ? `Offre : ${o.offre}.` : "",
+          Array.isArray(o.comptesCibles) && o.comptesCibles.length ? `Comptes cibles : ${o.comptesCibles.join(", ")}.` : "",
+          o.rationale || "",
+        ].filter(Boolean).join(" ").slice(0, 500) || o.title,
+        keyResults: [],
+        owner: user?.displayName || user?.email || "",
+        status: "à lancer",
+        horizon: "H3",
+        progress: 0,
+        linkedItems: [], // sourceSignals du pari = indices numériques (pas des ids de docs) — non reportables
+      });
+      setLaunched((s) => new Set(s).add(key));
+      toast.success("Initiative créée (Exécution & Décisions).");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); }
+  };
 
   const RADAR_TECH = liveBlips.map((b) => ({ n: b.name, quad: b.quadrant, ring: b.ring, mom: b.momentum }));
   const INNOV = liveBets.map((b) => ({ n: b.title, reach: b.reach, impact: b.impact, conf: b.confidence, effort: b.effort }));
@@ -350,6 +378,19 @@ export function Innovation() {
                   <span style={{ color: T.faint, flexShrink: 0, whiteSpace: "nowrap" }}>
                     R{o.reach}·I{o.impact}·C{pct(o.confidence)}·E{o.effort}
                   </span>
+                  {/* Conversion pari→initiative (audit 10/10 2026-07) : un pari RICE priorisé doit
+                      pouvoir se LANCER — avant, le portefeuille était purement contemplatif. H3
+                      (option de rupture) par défaut ; l'initiative porte l'offre et les comptes cibles. */}
+                  {canWriteStrategie && (
+                    <button
+                      className={`pill ${launched.has(o.id ?? o.title) ? "on" : ""}`}
+                      disabled={launched.has(o.id ?? o.title)}
+                      onClick={() => void launchBet(o)}
+                      style={{ fontSize: 10.5, padding: "2px 8px", flexShrink: 0 }}
+                    >
+                      {launched.has(o.id ?? o.title) ? "✓ Lancée" : "＋ Lancer en initiative"}
+                    </button>
+                  )}
                 </div>
               ))}
             <Pager {...betsPaged} />

@@ -312,6 +312,55 @@ describe("marketingContent — module marketing + commercial, createdBy imposé"
   });
 });
 
+// Livrables Copilote persistés (audit 10/10 2026-07) — module copilote, updatedBy imposé.
+describe("copiloteDeliverables — module copilote, updatedBy imposé", () => {
+  const COP_WRITE = rolesWith("copilote", ["write"]);
+  const COP_READ = rolesWith("copilote", ["read", "write"]);
+  const COP_NOREAD = ALL_ROLES.filter((r) => !COP_READ.includes(r));
+
+  it.each(COP_READ)("read allowed for role=%s", async (role) => {
+    await assertSucceeds(ctxFor(role).firestore().doc("copiloteDeliverables/acc__meddic").get());
+  });
+  it.each(COP_NOREAD)("read rejected for role=%s", async (role) => {
+    await assertFails(ctxFor(role).firestore().doc("copiloteDeliverables/acc__meddic").get());
+  });
+  it.each(COP_WRITE)("write allowed for role=%s with own updatedBy", async (role) => {
+    await assertSucceeds(ctxFor(role).firestore().doc(`copiloteDeliverables/a__m-${role}`)
+      .set({ accountId: "a", agent: "meddic", data: { score: 50 }, updatedBy: `user-${role}` }));
+  });
+  it("write rejected when updatedBy is not the caller (traçabilité)", async () => {
+    await assertFails(ctxFor("commercial").firestore().doc("copiloteDeliverables/a__m")
+      .set({ accountId: "a", agent: "meddic", data: {}, updatedBy: "someone-else" }));
+  });
+  it("write rejected for a copilote read-only role (ex. pmo)", async () => {
+    await assertFails(ctxFor("pmo").firestore().doc("copiloteDeliverables/a__m")
+      .set({ accountId: "a", agent: "meddic", data: {}, updatedBy: "user-pmo" }));
+  });
+});
+
+// Décisions GO/NO-GO tracées (audit 10/10 2026-07) — module veille, createdBy imposé.
+describe("bidDecisions — grille go/no-go tracée", () => {
+  const doc = (uid, role, id = "item1") => testEnv.authenticatedContext(uid, { role }).firestore().doc(`bidDecisions/${id}`);
+  it("un rôle veille-write crée sa décision (createdBy = lui-même)", async () => {
+    await assertSucceeds(ctxFor("commercial_dir").firestore().doc("bidDecisions/item1")
+      .set({ itemId: "item1", title: "AO SOC", decision: "go", scores: {}, score: 72, createdBy: "user-commercial_dir" }));
+  });
+  it("createdBy usurpé → refusé", async () => {
+    await assertFails(ctxFor("commercial_dir").firestore().doc("bidDecisions/item2")
+      .set({ itemId: "item2", title: "AO", decision: "nogo", scores: {}, score: 30, createdBy: "someone-else" }));
+  });
+  it("lecture ouverte aux rôles veille (dont lecture) ; le décideur ré-édite, un tiers non-exec non", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc("bidDecisions/owned").set({ itemId: "owned", decision: "go", score: 60, createdBy: "user-commercial_dir" });
+    });
+    await assertSucceeds(ctxFor("lecture").firestore().doc("bidDecisions/owned").get());
+    await assertSucceeds(ctxFor("commercial_dir").firestore().doc("bidDecisions/owned").update({ decision: "nogo", createdBy: "user-commercial_dir" }));
+    await assertFails(doc("user-autre", "commercial", "owned").update({ decision: "go" }));
+    // Un exécutif garde la main (re-décision en comité).
+    await assertSucceeds(ctxFor("direction").firestore().doc("bidDecisions/owned").update({ decision: "go" }));
+  });
+});
+
 // RBAC décomposé — module `innovation` (techRadar / innovationPortfolio).
 describe("innovation (techRadar/innovationPortfolio)", () => {
   const INNO_WRITE = rolesWith("innovation", ["write"]);

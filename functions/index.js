@@ -23,7 +23,7 @@ const { parsePnl } = require("./parsers/pnl");
 const { parseLive } = require("./parsers/live");
 const { parseFacturationDf } = require("./parsers/facturationDf");
 const { parseFiche } = require("./parsers/fiche");
-const { computePorterForces, computeBcg, computeCasSummary, computePipeline, computeKris, computeValueAtStake, computePipelineInfluenced, computeGranularite } = require("./domain/quanti");
+const { computePorterForces, computeBcg, computeCasSummary, computeMargin, computePipeline, computeKris, computeValueAtStake, computePipelineInfluenced, computeGranularite } = require("./domain/quanti");
 const dns = require("node:dns/promises");
 const { intelItemId } = require("./domain/ids");
 const { isForbiddenIp, checkPublicHttpUrl } = require("./domain/netguard");
@@ -826,12 +826,14 @@ const INGEST_KINDS = {
  * V3's aggregateVeilleExec/computeVeilleExecSummary) rather than blocking the whole summary on
  * having all 4 files present at once.
  *
+ * CHEMIN LEGACY (hygiène audit 10/10 2026-07) : depuis le branchement nt360, la source de vérité de
+ * `summaries/quanti` est runInternalQuantiSync ; ce chemin Excel n'écrit plus que le doc de repli
+ * `summaries/quanti_excel` (non lu par l'UI). Conservé pour un tenant SANS app sœur nt360 (imports
+ * Excel manuels) — à retirer si ce cas d'usage disparaît.
+ *
  * Not computed here (documented, out of V4 scope / not derivable from these 4 sources alone):
  *   - `ge9`: GE-McKinsey 9-box needs a market-attractiveness axis with no internal-data proxy
  *     (see web/src/modules/veille/views/Portefeuille.tsx comment) — left null.
- *   - `marginAvg`: BUILD_KIT.md §6 lists this field but doesn't specify a formula distinct from
- *     BCG's per-BU `marge`; left null here rather than inventing an aggregation. A future phase
- *     can define it (e.g. Σ mb / Σ cas across all orders) once real P&L units are confirmed.
  *   - `recurrentShare`: same prerequisite gap as the "Part de récurrent" KRI (DELTA_01 §3bis.F) —
  *     left null.
  */
@@ -857,6 +859,7 @@ async function computeSummaryQuanti(db) {
   const kris = computeKris({ orders, opportunities, invoices });
   const valueAtStake = computeValueAtStake({ opportunities });
   const granularite = computeGranularite({ orders });
+  const margin = computeMargin({ orders, opportunities }); // pas d'objectifs dans le chemin Excel
 
   return {
     porterForces,
@@ -870,7 +873,8 @@ async function computeSummaryQuanti(db) {
     pipelinePondere,
     pipelineRealise, // CA déjà gagné (Gagné) — exposé à part du pondéré (prévision = affaires ouvertes)
     winRate,
-    marginAvg: null, // not specified beyond BCG's per-BU marge — see comment above
+    marginAvg: margin.avgPct, // Σmb/Σcas (%) — moteur de marge (audit 10/10)
+    margin,
     supplierSaturation: porterForces.pouvoirFournisseurs, // reuse Top-3 fournisseur concentration
     recurrentShare: null, // prerequisite tag missing — DELTA_01 §3bis.F
     kris,
@@ -4085,6 +4089,9 @@ async function runInternalQuantiSyncLocked(db) {
   const kris = computeKris({ orders: supplierRows, opportunities, invoices });
   const valueAtStake = computeValueAtStake({ opportunities });
   const granularite = computeGranularite({ orders });
+  // Moteur de marge (audit 10/10 2026-07) : réalisé Σmb/Σcas + mix par BU + réalisé-vs-objectif
+  // (targetMargin nt360, enfin exploité) + marge attendue du pipeline ouvert (mbPct pondéré).
+  const margin = computeMargin({ orders, opportunities, objectives });
 
   const summary = {
     porterForces,
@@ -4096,12 +4103,13 @@ async function runInternalQuantiSyncLocked(db) {
     pipelinePondere,
     pipelineRealise, // CA déjà gagné (Gagné) — exposé à part du pondéré (prévision = affaires ouvertes)
     winRate,
-    marginAvg: null, // see computeSummaryQuanti's comment — formula unspecified beyond BCG's per-BU marge
+    marginAvg: margin.avgPct, // taux de marge brute réalisé (%) — Σmb/Σcas (audit 10/10, plus jamais null en dur)
+    margin, // moteur de marge complet : { avgPct, byBu, targetPct, deltaVsTargetPts, pipelineExpectedPct }
     supplierSaturation: porterForces.pouvoirFournisseurs,
     recurrentShare: null, // récurrent/projet tag still absent from nt360's orders/opportunities
     kris,
     valueAtStake,
-    objectives, // nt360 targets (targetCas/targetInvoiced/targetMargin) for future realized-vs-target UI
+    objectives, // nt360 targets (targetCas/targetInvoiced/targetMargin) — targetMargin désormais confronté au réalisé via `margin`
     source: `nt360 (fy=${currentFy})`,
     updatedAt: FieldValue.serverTimestamp(),
   };

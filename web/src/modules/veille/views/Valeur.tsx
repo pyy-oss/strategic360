@@ -19,6 +19,7 @@ import { usePaged, Pager } from "../components/Pager";
  */
 export function Valeur() {
   const { data: quanti } = useQuantiSummary();
+  const marg = quanti?.margin ?? null;
   const liveVas = quanti?.valueAtStake && quanti.valueAtStake.length > 0 ? quanti.valueAtStake : null;
   const vas = (liveVas ?? []).map((v) => ({ ...v, ev: Math.round(v.p * v.impact) })).sort((a, b) => Math.abs(b.ev) - Math.abs(a.ev));
   const evOpp = vas.filter((v) => v.type === "opp").reduce((s, v) => s + v.ev, 0);
@@ -86,6 +87,38 @@ export function Valeur() {
           </div>
         )}
       </Card>
+      {/* Moteur de marge (audit 10/10 2026-07) — le nerf d'une ESN : réalisé, objectif, mix par BU
+          et marge attendue du pipeline. Masqué tant que la synchro nt360 n'a pas produit de marge. */}
+      {marg && marg.avgPct != null && (
+        <Card style={{ marginBottom: 14 }}>
+          <Eyebrow color={T.clay}>Marge brute — réalisé vs objectif</Eyebrow>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginTop: 12 }}>
+            <Kpi label="Marge réalisée" value={`${marg.avgPct} %`} accent={T.emerald} sub="Σ marge brute / Σ CAS" />
+            {marg.targetPct != null && <Kpi label="Objectif" value={`${marg.targetPct} %`} accent={T.gold} sub="cible nt360" />}
+            {marg.deltaVsTargetPts != null && (
+              <Kpi label="Écart vs objectif" value={`${marg.deltaVsTargetPts > 0 ? "+" : ""}${marg.deltaVsTargetPts} pt`} accent={marg.deltaVsTargetPts >= 0 ? T.emerald : T.clay} sub={marg.deltaVsTargetPts >= 0 ? "au-dessus de la cible" : "sous la cible"} />
+            )}
+            {marg.pipelineExpectedPct != null && (
+              <Kpi label="Marge attendue du pipeline" value={`${marg.pipelineExpectedPct} %`} accent={marg.avgPct != null && marg.pipelineExpectedPct < marg.avgPct ? T.clay : T.steel} sub="anticipe la dérive de mix" />
+            )}
+          </div>
+          {marg.byBu.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 12 }}>
+              {marg.byBu.map((b) => (
+                <div key={b.n} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12 }}>
+                  <span style={{ width: 110, color: T.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.n}</span>
+                  <div style={{ flex: 1, height: 8, background: T.panel2, borderRadius: 4 }}>
+                    <div style={{ width: `${Math.min(100, Math.max(0, b.pct ?? 0))}%`, height: "100%", background: (b.pct ?? 0) >= 25 ? T.emerald : (b.pct ?? 0) >= 12 ? T.gold : T.clay, borderRadius: 4 }} />
+                  </div>
+                  <span style={{ width: 52, textAlign: "right", color: T.ink, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{b.pct != null ? `${b.pct} %` : "—"}</span>
+                  <span style={{ width: 110, textAlign: "right", color: T.faint, fontVariantNumeric: "tabular-nums" }}>{fmt(b.cas)}</span>
+                </div>
+              ))}
+              <div style={{ fontSize: 10.5, color: T.faint, marginTop: 3 }}>Le mix révèle où se gagne la marge : un CA hardware volumineux à faible taux ne vaut pas un managé/formation récurrent.</div>
+            </div>
+          )}
+        </Card>
+      )}
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

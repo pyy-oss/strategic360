@@ -146,6 +146,29 @@ service cloud.firestore {
             || request.resource.data.createdBy == request.auth.uid);
     }
 
+    // — Copilote : livrables IA PERSISTÉS (audit 10/10 2026-07). Un MEDDIC/business case/analyse de
+    // deal généré est un ACTIF commercial : il doit survivre à la session, être partageable et visible
+    // du manager (avant : cache navigateur uniquement — perdu au reload d'un autre poste). Clé de doc
+    // `${accountId}__${agent}` (un livrable courant par compte×agent, la régénération remplace).
+    // Lecture/écriture = module copilote (le cloisonnement fin par périmètre reste porté par la
+    // GÉNÉRATION — copiloteGenerate refuse un compte hors périmètre, donc un commercial cloisonné ne
+    // peut produire ici que des livrables de SES comptes). `updatedBy` imposé à l'appelant (traçabilité).
+    match /copiloteDeliverables/{id} {
+      allow read: if canRead('copilote');
+      allow create, update: if canWrite('copilote') && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if canWrite('copilote');
+    }
+
+    // — Bid management : décisions GO/NO-GO tracées (audit 10/10 2026-07). La grille pondérée
+    // (sponsor, staffing, concurrence, marge, alignement offre) produit une DÉCISION persistée par AO
+    // — sans trace, pas de taux de transformation ni de post-mortem possible. Création par tout rôle
+    // habilité veille (createdBy imposé) ; édition/suppression par les exec ou le décideur lui-même.
+    match /bidDecisions/{id} {
+      allow read: if canRead('veille');
+      allow create: if canWrite('veille') && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if exec() || (canWrite('veille') && resource.data.createdBy == request.auth.uid);
+    }
+
     // — Copilote : périmètres de cloisonnement par commercial (clé = e-mail ; écrits par callable
     // Admin uniquement). Lecture réservée au propriétaire du périmètre ou aux admins (audit 2026-07 :
     // le périmètre d'un collègue — ses am/BU — ne doit pas être lisible par tout le monde). La liste

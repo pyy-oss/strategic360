@@ -4,6 +4,7 @@ import { Eyebrow, Card, Kpi, Badge } from "../../../design/ui";
 import { useNavigate } from "react-router-dom";
 import { useIntelItems, useSources, withDetectionFields, createSource, updateSource, reactivateSource, deactivateSource, deleteSource, runSyncSourcesNow, runDedupeIntelItemsNow, runEvaluateIntelItemsNow, type IntelSource, type IntelSourceKind, type IntelAxis } from "../lib/intel";
 import { createAction } from "../lib/execution";
+import { useAuthClaims } from "../../../lib/AuthProvider";
 import { useCan, useIsExec } from "../../../lib/rbac";
 import { effectiveProx, isPastDue } from "../lib/freshness";
 import { lensAdjustedScore, type LensWeights } from "../lib/ranking";
@@ -256,18 +257,20 @@ export function Detection({ lens = "dg", weights }: { lens?: string; weights?: L
 function DetectionActionCta({ title, impact, prox, due, ent }: { title: string; impact: string; prox: string; due?: string; ent?: string }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const { user } = useAuthClaims();
   const run = async () => {
     setBusy(true);
     try {
       // Action non orpheline (audit 2026-07) : on reporte l'échéance réelle du signal et on trace
-      // l'entité source pour que l'action reste exploitable dans le plan d'exécution.
+      // l'entité source. Owner = créateur connecté (audit 10/10 — « — » rendait l'action non
+      // assignable, incohérent avec le Fil/AO/Copilote).
       await createAction({
         title,
         impact: impact === "high" ? 5 : impact === "medium" ? 4 : 3,
         urgence: prox === "imminent" ? 5 : prox === "court" ? 4 : 3,
         effort: 3,
         ev: 0,
-        owner: "—",
+        owner: user?.displayName || user?.email || "",
         echeance: due || "",
         statut: "À planifier",
         source: `Détection${ent ? ` · ${ent}` : ""} : ${title}`,

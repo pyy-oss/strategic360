@@ -2,6 +2,9 @@ import React, { useState } from "react";
 import { T } from "../../../design/tokens";
 import { Eyebrow, Card, Badge } from "../../../design/ui";
 import { useIsExec } from "../../../lib/rbac";
+import { useToast } from "../../../design/overlay";
+import { auth } from "../../../lib/firebase";
+import { createDecision } from "../lib/execution";
 import { exportBriefingPdf, generateBriefing, reviewBriefing, useLatestBriefing, type Briefing as BriefingDoc } from "../lib/briefings";
 
 /**
@@ -85,9 +88,39 @@ function ActionBar({ briefing, isExec }: { briefing: BriefingDoc | null; isExec:
   );
 }
 
+/** Bouton « Acter » : crée l'entrée du registre de décisions depuis une décision demandée du briefing. */
+function ActerBtn({ briefing, decision, added, onDone }: { briefing: BriefingDoc; decision: string; added: boolean; onDone: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const acter = async () => {
+    if (added || busy) return;
+    setBusy(true);
+    try {
+      await createDecision({
+        title: decision.slice(0, 200),
+        context: `Demandée par le briefing (${briefing.period || "période courante"})`,
+        options: [],
+        chosen: "",
+        decidedBy: auth.currentUser?.displayName || auth.currentUser?.email || "",
+        date: new Date().toISOString().slice(0, 10),
+        linkedItems: [],
+        statut: "En attente",
+      });
+      onDone();
+      toast.success("Décision inscrite au registre (Exécution & Décisions).");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); } finally { setBusy(false); }
+  };
+  return (
+    <button className={`pill ${added ? "on" : ""}`} disabled={added || busy} onClick={() => void acter()} style={{ fontSize: 10.5, padding: "2px 8px", flexShrink: 0 }}>
+      {added ? "✓ Actée" : busy ? "…" : "＋ Acter au registre"}
+    </button>
+  );
+}
+
 export function Briefing() {
   const { briefing, loading } = useLatestBriefing();
   const isExec = useIsExec();
+  const [acted, setActed] = useState<Set<number>>(new Set());
 
   if (!loading && !briefing) {
     return (
@@ -206,11 +239,17 @@ export function Briefing() {
           {decisionsRequested.length > 0 && (
             <div style={{ marginTop: 12, padding: "12px 14px", background: T.panel2, borderRadius: 10, borderLeft: `3px solid ${T.clay}` }}>
               <div style={{ fontSize: 12, color: T.clay, fontWeight: 600, marginBottom: 6 }}>Décisions demandées au comité</div>
-              <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.8, color: T.ink, fontSize: 12.5 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {decisionsRequested.map((d, i) => (
-                  <li key={i}>{d}</li>
+                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <div style={{ flex: 1, fontSize: 12.5, color: T.ink, lineHeight: 1.6 }}>• {d}</div>
+                    {/* Fermeture de la boucle de gouvernance (audit 10/10 2026-07) : une décision
+                        demandée par le board pack s'ACTE dans le registre en un clic — avant, elle
+                        restait du texte que rien ne consommait. */}
+                    {isExec && <ActerBtn briefing={briefing} decision={d} added={acted.has(i)} onDone={() => setActed((s) => new Set(s).add(i))} />}
+                  </div>
                 ))}
-              </ul>
+              </div>
             </div>
           )}
         </div>

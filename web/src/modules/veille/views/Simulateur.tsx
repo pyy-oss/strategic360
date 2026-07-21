@@ -5,6 +5,10 @@ import { Eyebrow, Card, Kpi, Badge, Slider, Gauge } from "../../../design/ui";
 import { Select } from "../../../design/fields";
 import { SIM_BASE, SCEN_OPTS, LEVMETA, PRESETS, simCompute, SimParams, SimBase } from "../data";
 import { useQuantiSummary } from "../lib/quanti";
+import { createInitiative } from "../lib/execution";
+import { useCan } from "../../../lib/rbac";
+import { useAuthClaims } from "../../../lib/AuthProvider";
+import { useToast } from "../../../design/overlay";
 
 /**
  * Calibrates `SIM_BASE` from `summaries/quanti` (BUILD_KIT.md §8.2 "SIM_BASE ← calibrer sur
@@ -81,6 +85,33 @@ export function Simulateur() {
   const params: SimParams = { managed, cloud, aoBad, win, newAcc, mix, tarif, attrition, invest, horizon, scenario };
   const deps = [managed, cloud, aoBad, win, newAcc, mix, tarif, attrition, invest, horizon, scenario, BASE];
   const R = useMemo(() => simCompute(params, BASE), deps); // eslint-disable-line react-hooks/exhaustive-deps
+  const { canWrite: canWriteStrategie } = useCan("strategie");
+  const { user } = useAuthClaims();
+  const toast = useToast();
+  const [saved, setSaved] = useState(false);
+  // Sérialise les leviers actifs (≠ défaut) + le résultat projeté dans l'objectif de l'initiative —
+  // la simulation devient traçable et actionnable au lieu de disparaître au reload.
+  const saveAsInitiative = async () => {
+    const leverLines = LEVMETA.filter((m) => params[m.k] !== D[m.k]).map((m) => `${m.l}: ${params[m.k]}`);
+    try {
+      await createInitiative({
+        title: `Trajectoire simulée — score ${R.score}/100, horizon ${horizon} an(s)`.slice(0, 200),
+        objective: [
+          `Revenu projeté : ${fmt(R.revenu * 1e6)} (Δ ${fmt(R.delta * 1e6)}) · marge ${Math.round(R.margin)}% · récurrent ${Math.round(R.recShare)}%.`,
+          leverLines.length ? `Leviers ajustés : ${leverLines.join(" · ")}.` : "Leviers aux valeurs de référence.",
+          `Scénario : ${scenario}.`,
+        ].join(" "),
+        keyResults: [],
+        owner: user?.displayName || user?.email || "",
+        status: "à lancer",
+        horizon: "H2",
+        progress: 0,
+        linkedItems: [],
+      });
+      setSaved(true);
+      toast.success("Simulation enregistrée comme initiative (Exécution & Décisions).");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Échec de l'enregistrement."); }
+  };
   const tor = useMemo(
     () =>
       LEVMETA.map((m) => {
@@ -143,11 +174,21 @@ export function Simulateur() {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(300px,360px) 1fr", gap: 16, alignItems: "start" }} className="g2">
         <Card>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 6, flexWrap: "wrap" }}>
             <Eyebrow color={T.gold}>Leviers stratégiques</Eyebrow>
-            <button className="pill" onClick={reset}>
-              Réinitialiser
-            </button>
+            <div style={{ display: "flex", gap: 6 }}>
+              {/* Fermeture de boucle (audit 10/10 2026-07) : une simulation ne s'évapore plus — elle
+                  devient une INITIATIVE consommable (Exécution & Décisions), leviers et résultats
+                  capturés dans l'objectif. */}
+              {canWriteStrategie && (
+                <button className={`pill ${saved ? "on" : ""}`} disabled={saved} onClick={() => void saveAsInitiative()}>
+                  {saved ? "✓ Initiative créée" : "＋ Enregistrer comme initiative"}
+                </button>
+              )}
+              <button className="pill" onClick={reset}>
+                Réinitialiser
+              </button>
+            </div>
           </div>
           <div style={{ fontSize: 10.5, letterSpacing: ".1em", textTransform: "uppercase", color: T.emerald, fontWeight: 600, margin: "6px 0 8px" }}>Croissance</div>
           <Slider label="Récurrent (SOC / Managed)" val={valOf.managed} set={setterOf.managed} color={T.emerald} hint="Développement des contrats managés" />

@@ -81,7 +81,11 @@ async function main() {
   }
 
   const existingClaims = user.customClaims || {};
-  await auth.setCustomUserClaims(user.uid, { ...existingClaims, role });
+  // DOUBLE-ÉCRITURE role + sentinelRole (hygiène audit 10/10 2026-07) : les règles Firestore priorisent
+  // le claim namespacé `sentinelRole` (Auth partagée entre apps du projet) avec repli sur `role`. Ce
+  // script n'écrivait que `role` — cassant l'invariant maintenu par setUserRole/userAdmin (index.js) :
+  // un rôle posé via CI restait sans claim namespacé, exposé à l'écrasement de `role` par une autre app.
+  await auth.setCustomUserClaims(user.uid, { ...existingClaims, role, sentinelRole: role });
 
   const bootstrapRef = db.doc("config/bootstrap");
   if (role === "direction") {

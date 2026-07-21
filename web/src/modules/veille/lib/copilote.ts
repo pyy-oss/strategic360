@@ -12,7 +12,9 @@ import {
   setDoc,
   addDoc,
   deleteDoc,
+  getDoc,
   getDocs,
+  serverTimestamp,
   type FieldValue,
   type Timestamp,
 } from "firebase/firestore";
@@ -254,6 +256,41 @@ export async function copiloteGenerate<T>(agent: CopiloteAgent, accountId?: stri
   const call = httpsCallable<{ agent: string; accountId?: string; extra?: Record<string, unknown> }, T>(functions, "copiloteGenerate", HEAVY_CALL);
   const { data } = await call({ agent, accountId, extra });
   return data;
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Livrables IA persistés (audit 10/10 2026-07) — un MEDDIC/business case/analyse de deal généré est
+ * un ACTIF commercial : il doit survivre au reload sur un autre poste, être partageable et visible du
+ * manager. Un doc par compte×agent (`${accountId}__${agent}`) ; la régénération REMPLACE (le livrable
+ * courant fait foi ; l'historique fin n'est pas le besoin). Écrit best-effort : un échec de
+ * persistance (droits lecture seule, hors-ligne) ne casse jamais l'affichage du livrable généré.
+ * ------------------------------------------------------------------------------------------- */
+
+function deliverableRef(accountId: string, agent: string) {
+  return doc(db, "copiloteDeliverables", `${accountId}__${agent}`);
+}
+
+/** Persiste le livrable courant d'un compte×agent (remplace). Best-effort, jamais bloquant. */
+export async function saveDeliverable(accountId: string, agent: string, data: unknown): Promise<void> {
+  const u = auth.currentUser;
+  if (!u || !accountId) return;
+  try {
+    await setDoc(deliverableRef(accountId, agent), {
+      accountId, agent, data,
+      updatedBy: u.uid,
+      updatedByName: u.displayName || u.email || "",
+      updatedAt: serverTimestamp(),
+    });
+  } catch { /* lecture seule / offline : le cache local reste la copie de travail */ }
+}
+
+/** Charge le livrable persisté d'un compte×agent (ou null). Best-effort. */
+export async function loadDeliverable<T>(accountId: string, agent: string): Promise<T | null> {
+  if (!accountId) return null;
+  try {
+    const snap = await getDoc(deliverableRef(accountId, agent));
+    return snap.exists() ? ((snap.data().data as T) ?? null) : null;
+  } catch { return null; }
 }
 
 /** Chat multi-turn : envoie l'historique complet + contexte compte. */
