@@ -43,6 +43,12 @@ function hasLocalAnchor(item) {
  *   - ancrage local (compte nommé OU zone UEMOA/Afrique de l'Ouest) ;
  *   - échéance : si une date est extractible du businessAngle, elle doit être ≥ aujourd'hui (on ne
  *     force pas la publication d'un AO expiré) ; échéance absente/non datée → tolérée (avis ouvert).
+ *   - PROVENANCE STRUCTURÉE exigée (audit veille 2026-07) : `businessAngle.provenanceVerified === true`,
+ *     posé UNIQUEMENT par le serveur pour les avis issus de flux structurés (API Banque mondiale,
+ *     portails BOAD/BCEAO/UEMOA). Sans ce garde-fou, le plancher court-circuitait le juge sur la seule
+ *     foi du `subtype` — un champ ASSIGNÉ PAR LE LLM : une actu mal étiquetée « tender » en zone avec
+ *     une URL quelconque était publiée d'office à 70. Un AO non structuré reste soumis au juge (le
+ *     prompt le note déjà haut s'il est réel) — le court-circuit est réservé au traçable non-IA.
  * PUR (now injecté pour testabilité). Renvoie false si l'item n'est pas concerné.
  */
 function deterministicPublishFloor(item, opts = {}) {
@@ -50,10 +56,11 @@ function deterministicPublishFloor(item, opts = {}) {
   if (!isAoSubtype(it.subtype)) return false;
   const url = typeof it.url === "string" ? it.url.trim() : "";
   if (!url) return false;
+  const ba = it.businessAngle && typeof it.businessAngle === "object" ? it.businessAngle : {};
+  if (ba.provenanceVerified !== true) return false;
   if (!isOpenNotice({ noticeType: it.noticeType, title: it.title, url, subtype: it.subtype })) return false;
   if (!hasLocalAnchor(it)) return false;
   // Échéance : ne pas forcer un AO manifestement expiré. On ne bloque QUE si une date est lisible ET passée.
-  const ba = it.businessAngle && typeof it.businessAngle === "object" ? it.businessAngle : {};
   const iso = isoDeadline(ba.deadline) || (typeof it.dueDate === "string" ? isoDeadline(it.dueDate) : null);
   if (iso) {
     const nowMs = Number.isFinite(opts.nowMs) ? opts.nowMs : Date.now();

@@ -58,9 +58,16 @@ function slugId(name) {
     .replace(/^-+|-+$/g, "");
 }
 
+// Statuts PUBLIÉS (audit veille 2026-07) : l'enrichissement ne consomme QUE des signaux passés par
+// la porte de qualité. Avant, seul `archived` était exclu — les battlecards/SWOT/opportunités
+// présentés au comité pouvaient se nourrir de signaux `pending` (non validés) ou `rejected` (écartés
+// comme bruit par le juge de pertinence), contournant tout le gate. Miroir de PUBLISHED_STATUSES
+// (index.js) — dupliqué ici car ce module est PUR (aucun import d'index).
+const ENRICH_PUBLISHED_STATUSES = new Set(["new", "reviewed", "actioned"]);
+
 /**
  * Filters/sorts/truncates real `intelItems` docs into the lightweight signal shape the enrichment
- * prompts consume: drops archived items, sorts by priorityScore desc then date desc, keeps at
+ * prompts consume: keeps ONLY published items (quality-gate-approved), sorts by priorityScore desc then date desc, keeps at
  * most `maxTotal`, and maps each to {title, summary (≤~300 chars), axis, impact, stance, soWhat,
  * date, ent, subtype, prox, recommendedAction} — everything else (urls, ratings, internal fields)
  * is deliberately excluded to keep the prompt compact. (ent/subtype/prox/recommendedAction added
@@ -82,7 +89,7 @@ function pickSignalsForEnrichment(items, options) {
   const list = Array.isArray(items) ? items : [];
 
   const sorted = list
-    .filter((it) => it && typeof it === "object" && it.status !== "archived")
+    .filter((it) => it && typeof it === "object" && ENRICH_PUBLISHED_STATUSES.has(it.status))
     .sort((a, b) => {
       const scoreA = typeof a.priorityScore === "number" ? a.priorityScore : -Infinity;
       const scoreB = typeof b.priorityScore === "number" ? b.priorityScore : -Infinity;

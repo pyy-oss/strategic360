@@ -299,6 +299,19 @@ const SOURCES_SEED = [
   { name: "FDFP — Fonds de Développement de la Formation Professionnelle (CI)", kind: "web-js", url: "https://www.fdfp.ci/", axis: "clients_prospects", active: true },
   { name: "AGEFOP — Agence de la Formation Professionnelle (CI)", kind: "web-js", url: "https://www.agefop.ci/", axis: "clients_prospects", active: true },
   { name: "Ministère Enseignement Technique & Formation Professionnelle (CI)", kind: "web-js", url: "https://www.metfp.gouv.ci/", axis: "reglementaire", active: true },
+  // SECTEURS ACHETEURS D'IT sans capteur (audit veille 2026-07, contexte SS2I) : la captation AO
+  // couvrait bien les projets FINANCÉS PAR LES BAILLEURS mais restait aveugle sur les grands donneurs
+  // d'ordre nationaux — énergie/eau, santé/protection sociale, budget de l'État (commande publique
+  // autofinancée), banques comme ÉMETTEURS de projets IT, enseignement supérieur (où Huawei attaque).
+  // Candidates best-effort : auto-désactivées si stériles/403 (santé des sources), aucune casse.
+  { name: "CIE — Compagnie Ivoirienne d'Électricité (actualités & AO)", kind: "web-js", url: "https://www.cie.ci/", axis: "clients_prospects", active: true },
+  { name: "SODECI — eau CI (actualités & AO)", kind: "web-js", url: "https://www.sodeci.ci/", axis: "clients_prospects", active: true },
+  { name: "Petroci — hydrocarbures CI (actualités & AO)", kind: "web-js", url: "https://www.petroci.ci/", axis: "clients_prospects", active: true },
+  { name: "Ministère de la Santé CI — programmes & SI santé", kind: "web-js", url: "https://www.sante.gouv.ci/", axis: "clients_prospects", active: true },
+  { name: "CNAM CI — Couverture Maladie Universelle (SI protection sociale)", kind: "web-js", url: "https://www.cnam.ci/", axis: "clients_prospects", active: true },
+  { name: "DGBF — Direction Générale du Budget (CI, commande publique autofinancée)", kind: "web-js", url: "https://www.dgbf.gouv.ci/", axis: "clients_prospects", active: true },
+  { name: "Ecobank — actualités groupe (projets IT bancaires)", kind: "web", url: "https://ecobank.com/group/news", axis: "clients_prospects", active: true },
+  { name: "Ministère Enseignement Supérieur & Recherche CI (SI universitaire)", kind: "web-js", url: "https://www.enseignement.gouv.ci/", axis: "clients_prospects", active: true },
 ];
 
 /**

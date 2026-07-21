@@ -98,18 +98,23 @@ describe("evaluate — porte de pertinence des signaux de veille", () => {
   });
 });
 
-describe("deterministicPublishFloor — plancher AO IT ouvert en zone (audit alignement 2026-07)", () => {
+describe("deterministicPublishFloor — plancher AO IT ouvert en zone (audit alignement + veille 2026-07)", () => {
   const NOW = Date.parse("2026-07-20T00:00:00Z");
   const openAo = {
     subtype: "tender", url: "https://boad.org/avis/soc-ci", title: "Avis d'appel d'offres — SOC managé",
-    geo: "ci", businessAngle: { deadline: "2026-09-30" },
+    geo: "ci", businessAngle: { deadline: "2026-09-30", provenanceVerified: true },
   };
-  it("publie d'office un AO IT ouvert, ancré en zone, traçable, échéance future", () => {
+  it("publie d'office un AO IT ouvert, ancré en zone, à provenance STRUCTURÉE, échéance future", () => {
     expect(deterministicPublishFloor(openAo, { nowMs: NOW })).toBe(true);
     // Ancrage par compte nommé (ent) suffit aussi.
-    expect(deterministicPublishFloor({ subtype: "funding", url: "https://x/y", title: "AMI", ent: "BCEAO" }, { nowMs: NOW })).toBe(true);
+    expect(deterministicPublishFloor({ subtype: "funding", url: "https://x/y", title: "AMI", ent: "BCEAO", businessAngle: { provenanceVerified: true } }, { nowMs: NOW })).toBe(true);
     // Zone UEMOA hors-CI acceptée.
     expect(deterministicPublishFloor({ ...openAo, geo: "sn" }, { nowMs: NOW })).toBe(true);
+  });
+  it("EXIGE la provenance structurée (garde-fou non-IA, audit veille 2026-07) — un subtype LLM seul ne suffit plus", () => {
+    // Sans provenanceVerified (source non structurée, subtype posé par le LLM) → passe au juge, pas de court-circuit.
+    expect(deterministicPublishFloor({ ...openAo, businessAngle: { deadline: "2026-09-30" } }, { nowMs: NOW })).toBe(false);
+    expect(deterministicPublishFloor({ ...openAo, businessAngle: { deadline: "2026-09-30", provenanceVerified: false } }, { nowMs: NOW })).toBe(false);
   });
   it("ne s'applique PAS hors du cœur AO ou sans traçabilité", () => {
     expect(deterministicPublishFloor({ ...openAo, subtype: "trend" }, { nowMs: NOW })).toBe(false); // pas un AO
@@ -121,8 +126,8 @@ describe("deterministicPublishFloor — plancher AO IT ouvert en zone (audit ali
     // Attribution (award) : ce n'est pas une opportunité ouverte.
     expect(deterministicPublishFloor({ ...openAo, title: "PV d'attribution du marché SOC" }, { nowMs: NOW })).toBe(false);
     // Échéance passée → ne force pas.
-    expect(deterministicPublishFloor({ ...openAo, businessAngle: { deadline: "2026-06-01" } }, { nowMs: NOW })).toBe(false);
+    expect(deterministicPublishFloor({ ...openAo, businessAngle: { deadline: "2026-06-01", provenanceVerified: true } }, { nowMs: NOW })).toBe(false);
     // Échéance absente/non datée → toléré (avis ouvert, on ne peut prouver l'expiration).
-    expect(deterministicPublishFloor({ ...openAo, businessAngle: {} }, { nowMs: NOW })).toBe(true);
+    expect(deterministicPublishFloor({ ...openAo, businessAngle: { provenanceVerified: true } }, { nowMs: NOW })).toBe(true);
   });
 });

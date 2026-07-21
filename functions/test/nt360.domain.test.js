@@ -604,3 +604,37 @@ describe("canonicalClientKey — normalisation des noms clients nt360 (zero conf
     expect(orange[0].casTotal).toBe(175); // CAS agrege
   });
 });
+
+describe("isPersonAccountName — filtre des fiches-personnes du CRM (audit veille 2026-07)", () => {
+  it("détecte les contacts personne physique par intitulé de fonction ou civilité", async () => {
+    const { isPersonAccountName } = await import("../domain/nt360.js");
+    // Cas RÉELS observés en prod (inspection sentinel360).
+    expect(isPersonAccountName("ADAMA KABORE PROJECT MANAGER MINE D'OR")).toBe(true);
+    expect(isPersonAccountName("ADAMS TEHOUA RESPONSABLE MARKETING DIGITAL")).toBe(true);
+    expect(isPersonAccountName("BATHINE KONE EPOUSE DOSSO, CHARGÉ DE COMMUNICATION ET RELATIONS PUBLIQUES")).toBe(true);
+    expect(isPersonAccountName("AKPA SMITH ISMAEL NETWORK SECURITY ENGINEER HUAWEI")).toBe(true);
+    expect(isPersonAccountName("ASSI CLAUDE-INGÉNIEUR EN BÂTIMENT/ GÉRANT D'ENTREPRISE")).toBe(true);
+    expect(isPersonAccountName("M. Kouassi Jean")).toBe(true);
+    expect(isPersonAccountName("Mme Diabaté Awa")).toBe(true);
+  });
+  it("GARDE les vraies entreprises (aucun faux positif sur les raisons sociales connues)", async () => {
+    const { isPersonAccountName } = await import("../domain/nt360.js");
+    for (const nom of [
+      "Orange CI", "SGCI", "BANQUE ATLANTIQUE BENIN", "AZITO ENERGIE", "BOLLORE TRANSPORT & LOGISTICS CI",
+      "ADVANS-CI", "NSIA Assurances", "AFRICA CYBERSECURITY MARKET", "CIE", "Deloitte Consulting",
+      "", null,
+    ]) {
+      expect(isPersonAccountName(nom), `« ${nom} » ne doit PAS être filtré`).toBe(false);
+    }
+  });
+  it("deriveCopiloteAccounts exclut les fiches-personnes du portefeuille", async () => {
+    const { deriveCopiloteAccounts } = await import("../domain/nt360.js");
+    const orders = [
+      { client: "Orange SA", bu: "ICT", cas: 100 },
+      { client: "ADAMA KABORE PROJECT MANAGER MINE D'OR", bu: "ICT", cas: 10 },
+    ];
+    const accts = deriveCopiloteAccounts(orders, []);
+    expect(accts.some((a) => /project manager/i.test(a.nom))).toBe(false);
+    expect(accts.some((a) => a.slug === "orange")).toBe(true);
+  });
+});
