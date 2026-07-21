@@ -150,39 +150,38 @@ summaries/quanti        { porterForces, bcg[], ge9[], pipelinePondere, winRate, 
 ---
 
 ## 7. RBAC — rôles & Security Rules
-**8 profils** (dont exécutifs) : `direction`, `strategie`, `innovation`, `commercial_dir`, `commercial`, `pmo`, `achats`, `lecture`.
-**Défauts `config/permissions` pour le module `veille`** : `write` → direction/strategie/innovation ; **contribution** (create items) → commercial_dir/commercial ; **read** → pmo/achats/lecture.
-**Sous-domaines à droits particuliers :** cadres/scénarios/décisions/OKR → exécutifs (direction/strategie/innovation) ; battlecards → contribution commerciale ; techRadar/innovationPortfolio → innovation.
-```
-rules_version='2';
-service cloud.firestore { match /databases/{db}/documents {
-  function role(){return request.auth.token.role;}
-  function matrix(){return get(/databases/$(db)/documents/config/permissions).data.matrix;}
-  function lvl(m){return role() in ['direction'] ? 'write' : matrix()[role()][m];}
-  function canRead(m){return request.auth!=null && lvl(m) in ['read','write'];}
-  function canWrite(m){return request.auth!=null && lvl(m)=='write';}
-  function exec(){return role() in ['direction','strategie','innovation'];}
 
-  match /intelItems/{id}{
-    allow read: if canRead('veille');
-    allow create: if canWrite('veille') && request.resource.data.createdBy==request.auth.uid;
-    allow update,delete: if canWrite('veille');
-  }
-  match /intelWatchlist/{id}{ allow read: if canRead('veille'); allow write: if canWrite('veille'); }
-  match /intelSources/{id}{ allow read: if canRead('veille'); allow write: if exec(); }
-  match /frameworks/{k}{ allow read: if canRead('veille'); allow write: if exec(); }
-  match /{c}/{id} where c in ['scenarios','decisions','strategicThemes','initiatives']{ allow read: if canRead('veille'); allow write: if exec(); }
-  match /{c}/{id} where c in ['techRadar','innovationPortfolio']{ allow read: if canRead('veille'); allow write: if role() in ['direction','innovation']; }
-  match /battlecards/{id}{ allow read: if canRead('veille'); allow write: if canWrite('veille'); }
-  match /{c}/{id} where c in ['winLoss','actions','briefings']{ allow read: if canRead('veille'); allow write: if exec(); }
-  match /summaries/{d}{ allow read: if request.auth!=null; allow write: if false; }   // Functions
-  match /config/permissions{ allow read: if request.auth!=null; allow write: if role()=='direction'; }
-  match /config/{d}{ allow read: if request.auth!=null; allow write: if false; }
-  match /auditLog/{id}{ allow read: if role()=='direction'; allow write: if false; }
-  match /users/{uid}{ allow read: if role()=='direction' || request.auth.uid==uid; allow write: if false; }
-}}
+> **Mise à jour 2026-07 (post-décomposition RBAC)** — cette section décrivait le modèle V0 (8 rôles,
+> claim `role`, module unique `veille`). Le modèle DÉPLOYÉ est plus riche ; la SOURCE DE VÉRITÉ est
+> `firestore.rules` (racine) + `functions/domain/rbac.js` (rôles/modules/matrice par défaut) + les
+> tests `functions/test/firestore.rules.test.js`. Résumé du modèle réel :
+
+**13 profils ESN** : `direction`, `strategie`, `innovation`, `commercial_dir`, `commercial`,
+`avant_vente`, `marketing`, `pmo`, `technique`, `finance`, `achats`, `rh`, `lecture`.
+
+**7 modules de droits** (matrice `config/permissions.matrix[role][module]` ∈ none/read/write,
+éditable par la direction via `setPermissionsMatrix` / écran Réglages) :
+`veille` · `strategie` · `innovation` · `finance` · `copilote` · `marketing` · `admin`.
+
+**Claim d'identité** : les règles lisent le claim **namespacé `sentinelRole`** en priorité, avec
+repli sur `role` (comptes historiques, Auth partagée entre apps du projet). Tout chemin d'attribution
+de rôle (callable `userAdmin`/`setUserRole`, script CI `adminSetUserRole.js`) DOUBLE-ÉCRIT les deux
+claims. Le miroir client (`web/src/lib/rbac.ts`) applique la même priorité.
+
 ```
-> Note : la syntaxe `match … where c in […]` est indicative ; en pratique, dupliquer un bloc `match` par collection. Imports & agrégats écrits par l'Admin SDK (Functions) contournent les rules. MFA pour profils exécutifs + App Check.
+function role() { return request.auth.token.get('sentinelRole', request.auth.token.get('role', null)); }
+function matrix(){ return get(/databases/$(db)/documents/config/permissions).data.matrix; }
+function lvl(m) { return role() in ['direction'] ? 'write' : matrix()[role()][m]; }
+function canRead(m) / canWrite(m) / exec() / commercial() / copiloteUnscoped() / copiloteOwned()
+```
+
+**Mapping collections → modules (voir firestore.rules pour le détail exact)** :
+veille → intelItems/intelWatchlist/intelSources/battlecards/winLoss/actions/briefings/bizOpportunities/bidDecisions ;
+strategie → frameworks/scenarios/decisions/strategicThemes/initiatives ; innovation → techRadar/innovationPortfolio ;
+finance → summaries financiers (veille_exec/quanti/kpiHistory) ; copilote → copiloteAccounts/copiloteDeliverables/salesTargets ;
+marketing → marketingContent ; admin → config/*/users/auditLog (direction).
+
+> Imports & agrégats écrits par l'Admin SDK (Functions) contournent les rules. MFA pour profils exécutifs + App Check.
 
 ---
 

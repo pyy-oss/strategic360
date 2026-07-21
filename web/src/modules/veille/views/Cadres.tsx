@@ -14,8 +14,11 @@ import {
 import { T, QCOL, pct } from "../../../design/tokens";
 import { Eyebrow, Card, Tip, Badge } from "../../../design/ui";
 import { Select } from "../../../design/fields";
-import { useIsExec } from "../../../lib/rbac";
+import { useIsExec, useCan } from "../../../lib/rbac";
+import { useAuthClaims } from "../../../lib/AuthProvider";
+import { useToast } from "../../../design/overlay";
 import { useFramework, updateFramework } from "../lib/frameworks";
+import { createInitiative } from "../lib/execution";
 import { CitedText, SourcesFooter } from "../components/Citations";
 import { useQuantiSummary } from "../lib/quanti";
 
@@ -163,8 +166,36 @@ function SwotEditor({ initial, onClose }: { initial: SwotContent | null; onClose
 function SwotTab() {
   const { data: fw, loading } = useFramework<SwotContent>("swot");
   const isExec = useIsExec();
+  // Les initiatives relèvent du module `strategie` (rules) — un exec `innovation` lit mais n'écrit pas.
+  const { canWrite: canWriteStrategie } = useCan("strategie");
+  const { user } = useAuthClaims();
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
+  const [converted, setConverted] = useState<Set<string>>(new Set());
   const swotC: Record<string, string> = { Forces: T.emerald, Faiblesses: T.clay, Opportunités: T.steel, Menaces: T.gold };
+  // Pont cadre→action (audit 10/10 2026-07) : une menace/faiblesse/opportunité du SWOT devient une
+  // INITIATIVE en un clic — l'analyse ne reste plus contemplative. Menace/faiblesse → défendre (H1),
+  // opportunité → construire (H2). Les forces n'appellent pas d'initiative (elles s'exploitent via
+  // les opportunités).
+  const convert = async (k: string, x: string) => {
+    const key = `${k}:${x}`;
+    if (converted.has(key)) return;
+    const verb = k === "Menaces" ? "Parer la menace" : k === "Faiblesses" ? "Corriger la faiblesse" : "Saisir l'opportunité";
+    try {
+      await createInitiative({
+        title: `${verb} : ${x}`.slice(0, 200),
+        objective: `Issue du SWOT (${k}) — ${x}`.slice(0, 500),
+        keyResults: [],
+        owner: user?.displayName || user?.email || "",
+        status: "à lancer",
+        horizon: k === "Opportunités" ? "H2" : "H1",
+        progress: 0,
+        linkedItems: [],
+      });
+      setConverted((s) => new Set(s).add(key));
+      toast.success("Initiative créée (Exécution & Décisions).");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Échec."); }
+  };
   if (loading) return <Card><div style={{ fontSize: 12.5, color: T.faint }}>Chargement…</div></Card>;
   const content = fw?.content ?? null;
   const hasContent = !!content && SWOT_KEYS.some((k) => (content[k] ?? []).length > 0);
@@ -189,7 +220,19 @@ function SwotTab() {
                 <Eyebrow color={swotC[k]}>{k}</Eyebrow>
                 <ul style={{ margin: "10px 0 0", paddingLeft: 18, fontSize: 12.5, color: T.dim, lineHeight: 1.7 }}>
                   {(content?.[k] ?? []).map((x, i) => (
-                    <li key={i}><CitedText text={x} sources={fw?.sources} /></li>
+                    <li key={i}>
+                      <CitedText text={x} sources={fw?.sources} />
+                      {canWriteStrategie && k !== "Forces" && (
+                        <button
+                          className={`pill ${converted.has(`${k}:${x}`) ? "on" : ""}`}
+                          disabled={converted.has(`${k}:${x}`)}
+                          onClick={() => void convert(k, x)}
+                          style={{ fontSize: 10, padding: "1px 7px", marginLeft: 8, verticalAlign: "middle" }}
+                        >
+                          {converted.has(`${k}:${x}`) ? "✓" : "＋ Initiative"}
+                        </button>
+                      )}
+                    </li>
                   ))}
                 </ul>
               </Card>

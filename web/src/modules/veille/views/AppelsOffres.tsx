@@ -10,6 +10,7 @@ import { effectiveProx, isPastDue } from "../lib/freshness";
 import { useIsExec } from "../../../lib/rbac";
 import { useAuthClaims } from "../../../lib/AuthProvider";
 import { useCopiloteAccounts, slugifyClient, type CopiloteAccount } from "../lib/copilote";
+import { BID_CRITERIA, computeBidScore, bidRecommendation, saveBidDecision, useBidDecisions, type BidScores, type BidDecision } from "../lib/bid";
 import { SignalMessageButton } from "../components/SignalMessage";
 
 /**
@@ -87,12 +88,59 @@ function shareToken(a: Set<string>, b: Set<string>): boolean {
   return false;
 }
 
-function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
+/**
+ * Grille GO/NO-GO pondérée (audit 10/10 2026-07) : 5 critères notés 0-5, score /100, recommandation.
+ * S'ouvre au clic Go/No-go — la décision est TRACÉE (bidDecisions) avant d'exécuter l'acte
+ * (créer l'action de réponse / archiver l'AO). Le décideur peut passer outre la recommandation.
+ */
+function BidGrid({ it, onDecide, onCancel }: { it: IntelItem; onDecide: (decision: "go" | "nogo", scores: Partial<BidScores>, score: number) => Promise<void>; onCancel: () => void }) {
+  const [scores, setScores] = useState<Partial<BidScores>>({});
+  const [busy, setBusy] = useState(false);
+  const score = computeBidScore(scores);
+  const reco = bidRecommendation(score);
+  const recoC = reco.verdict === "go" ? T.emerald : reco.verdict === "nogo" ? T.clay : T.gold;
+  const decide = async (decision: "go" | "nogo") => {
+    setBusy(true);
+    try { await onDecide(decision, scores, score); } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: "10px 12px", marginTop: 4, background: T.panel2 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: T.ink, marginBottom: 8 }}>Grille de décision bid / no-bid</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        {BID_CRITERIA.map((c) => (
+          <div key={c.key} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span title={c.hint} style={{ flex: "1 1 220px", fontSize: 12, color: T.dim }}>{c.label} <span style={{ color: T.faint }}>({c.weight}%)</span></span>
+            <div style={{ display: "flex", gap: 4 }}>
+              {[0, 1, 2, 3, 4, 5].map((n) => (
+                <button key={n} onClick={() => setScores((s) => ({ ...s, [c.key]: n }))}
+                  style={{ width: 26, height: 24, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${scores[c.key] === n ? T.gold : T.line}`, background: scores[c.key] === n ? T.gold + "22" : "transparent", color: scores[c.key] === n ? T.gold : T.faint }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: recoC, fontFamily: "'Bricolage Grotesque',sans-serif" }}>{score}/100</span>
+        <Badge c={recoC}>{reco.label}</Badge>
+        <span style={{ flex: 1 }} />
+        <button className="pill" disabled={busy} onClick={onCancel} style={{ fontSize: 11, padding: "3px 10px" }}>Annuler</button>
+        <button className="pill" disabled={busy} onClick={() => void decide("nogo")} style={{ fontSize: 11, padding: "3px 10px", color: T.clay }}>✗ Confirmer No-go</button>
+        <button className="pill on" disabled={busy} onClick={() => void decide("go")} style={{ fontSize: 11, padding: "3px 10px" }}>{busy ? "…" : "✓ Confirmer Go"}</button>
+      </div>
+      <div style={{ fontSize: 10.5, color: T.faint, marginTop: 6 }}>La décision est tracée ({it.businessAngle?.tenderRef || it.title.slice(0, 40)}…) — le taux de transformation se lit dans les KPI.</div>
+    </div>
+  );
+}
+
+function AoRow({ it, account, prior }: { it: IntelItem; account?: CopiloteAccount; prior?: BidDecision }) {
   const toast = useToast();
   const navigate = useNavigate();
   const { user } = useAuthClaims();
   const [busy, setBusy] = useState(false);
   const [nogoBusy, setNogoBusy] = useState(false);
+  const [gridOpen, setGridOpen] = useState(false);
   const [sp, setSp] = useSearchParams();
   const ba = it.businessAngle || {};
   const prox = effectiveProx(it) ?? it.prox ?? "horizon";
@@ -182,10 +230,30 @@ function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
         <SignalMessageButton item={it} />
         {/* Pont insight→proposition : ouvre le Copilote sur la CVP du compte pour construire l'offre. */}
         {!award && <button className="pill" style={{ fontSize: 11, padding: "3px 10px" }} onClick={prepareProposal} title="Ouvrir le Copilote pour construire la proposition de valeur">Préparer la proposition ↗</button>}
-        {/* Décision go/no-go explicite. */}
-        <button className="pill on" style={{ fontSize: 11, padding: "3px 10px" }} disabled={busy} onClick={() => void createLinkedAction()}>{busy ? "…" : "✓ Go — créer l'action"}</button>
-        {!award && <button className="pill" style={{ fontSize: 11, padding: "3px 10px", color: T.clay }} disabled={nogoBusy} onClick={() => void markNoGo()} title="Décider de ne pas répondre — archive l'AO">{nogoBusy ? "…" : "✗ No-go"}</button>}
+        {/* Décision go/no-go via la GRILLE PONDÉRÉE (audit 10/10) — plus jamais un go/no-go sans critères. */}
+        {prior && (
+          <span title={`Décidé par ${prior.createdByName || "?"} — grille ${prior.score}/100`} style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: (prior.decision === "go" ? T.emerald : T.clay) + "22", color: prior.decision === "go" ? T.emerald : T.clay }}>
+            {prior.decision === "go" ? "✓ GO" : "✗ NO-GO"} · {prior.score}/100
+          </span>
+        )}
+        <button className="pill on" style={{ fontSize: 11, padding: "3px 10px" }} disabled={busy || nogoBusy} onClick={() => setGridOpen((v) => !v)}>
+          {gridOpen ? "Fermer la grille" : prior ? "Re-décider (grille)" : "Décider Go / No-go"}
+        </button>
       </div>
+      {gridOpen && (
+        <BidGrid
+          it={it}
+          onCancel={() => setGridOpen(false)}
+          onDecide={async (decision, scores, score) => {
+            try {
+              await saveBidDecision({ itemId: it.id, title: it.title, decision, scores, score });
+              if (decision === "go") await createLinkedAction();
+              else await markNoGo();
+              setGridOpen(false);
+            } catch (e) { toast.error(e instanceof Error ? e.message : "Échec de la décision."); }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -193,6 +261,7 @@ function AoRow({ it, account }: { it: IntelItem; account?: CopiloteAccount }) {
 export function AppelsOffres() {
   const { items, loading, error } = useIntelItems();
   const { accounts } = useCopiloteAccounts();
+  const { byItem: bidByItem, goCount, nogoCount } = useBidDecisions();
   const isExec = useIsExec();
   const toast = useToast();
   const [enriching, setEnriching] = useState(false);
@@ -296,6 +365,8 @@ export function AppelsOffres() {
   const kpiMontant = aoItems.filter((s) => !!s.businessAngle?.estAmount).length;
   const kpiEcheance = aoItems.filter((s) => !!deadlineOf(s)).length;
   const kpiComptes = accIndex.length ? aoItems.filter((s) => !!matchAccount(s)).length : 0;
+  // Taux de transformation des décisions bid (audit 10/10) : go / (go + no-go) — l'appétit réel.
+  const tauxGo = goCount + nogoCount > 0 ? Math.round((goCount / (goCount + nogoCount)) * 100) : null;
 
   // Échéances proches (audit final #6) : panneau in-app des avis OUVERTS dont l'échéance est imminente
   // ou courte — pour ne pas rater une deadline sans ouvrir chaque ligne. Trié par date d'échéance.
@@ -330,6 +401,7 @@ export function AppelsOffres() {
         {kpiResultats > 0 && <Kpi label="Résultats / attributions" value={String(kpiResultats)} />}
         <Kpi label="Montant chiffré" value={String(kpiMontant)} />
         <Kpi label="Avec échéance" value={String(kpiEcheance)} />
+        {tauxGo != null && <Kpi label={`Taux de go (${goCount} go / ${nogoCount} no-go)`} value={`${tauxGo} %`} />}
         {accIndex.length > 0 && <Kpi label="Sur comptes connus" value={String(kpiComptes)} />}
       </div>
 
@@ -375,7 +447,7 @@ export function AppelsOffres() {
 
       <LoadError error={error} what="les appels d'offres" style={{ marginTop: 12 }} />
       <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-        {paged.pageItems.map((it) => <AoRow key={it.id} it={it} account={matchAccount(it)} />)}
+        {paged.pageItems.map((it) => <AoRow key={it.id} it={it} account={matchAccount(it)} prior={bidByItem.get(it.id)} />)}
         {!loading && !error && !rows.length && (
           <div style={{ padding: "18px 14px", color: T.dim, fontSize: 12.5 }}>
             {aoItems.length

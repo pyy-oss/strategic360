@@ -59,6 +59,15 @@ export interface QuantiGranulariteEntry {
   delta: number; // casN − casN1 (XOF, peut être négatif)
 }
 
+/** Moteur de marge (audit 10/10 2026-07) — voir functions/domain/quanti.js#computeMargin. */
+export interface QuantiMargin {
+  avgPct: number | null; // marge brute réalisée (%) = Σmb/Σcas
+  byBu: { n: string; mb: number; cas: number; pct: number | null }[]; // mix par BU (hardware vs services)
+  targetPct: number | null; // objectif nt360 (targetMargin normalisé en %)
+  deltaVsTargetPts: number | null; // réalisé − objectif, en points (négatif = sous l'objectif)
+  pipelineExpectedPct: number | null; // marge attendue du pipeline ouvert (mbPct pondéré par montant)
+}
+
 export interface QuantiSummary {
   porterForces: QuantiPorterForces;
   bcg: QuantiBcgEntry[];
@@ -68,7 +77,8 @@ export interface QuantiSummary {
   casN1Total: number | null; // portfolio-wide CAS (prior year), from P&L `orders`
   pipelinePondere: number | null;
   winRate: number | null;
-  marginAvg: number | null; // not specified beyond BCG's per-BU marge — left null (see functions/index.js)
+  marginAvg: number | null; // taux de marge brute réalisé (%) — Σmb/Σcas (moteur de marge, audit 10/10)
+  margin?: QuantiMargin | null; // moteur de marge complet (réalisé, mix BU, vs objectif, pipeline attendu)
   supplierSaturation: number | null; // == porterForces.pouvoirFournisseurs
   recurrentShare: number | null; // prerequisite tag missing (DELTA_01 §3bis.F)
   kris: QuantiKri[];

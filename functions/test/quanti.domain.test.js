@@ -14,6 +14,7 @@ import {
   computePorterForces,
   computeBcg,
   computeCasSummary,
+  computeMargin,
   computePipeline,
   computeKris,
   computeValueAtStake,
@@ -258,5 +259,44 @@ describe("computeCasSummary", () => {
     expect(computeCasSummary({})).toEqual({ casTotal: null, casN1Total: null });
     expect(computeCasSummary({ orders: [] })).toEqual({ casTotal: null, casN1Total: null });
     expect(computeCasSummary(undefined)).toEqual({ casTotal: null, casN1Total: null });
+  });
+});
+
+describe("computeMargin — moteur de marge (audit 10/10 2026-07)", () => {
+  const orders = [
+    { bu: "ICT", cas: 1000, mb: 100 },      // 10 % — hardware faible marge
+    { bu: "ICT", cas: 500, mb: 50 },        // 10 %
+    { bu: "FORMATION", cas: 500, mb: 250 }, // 50 % — services forte marge
+  ];
+  it("avgPct = Σmb/Σcas en %, avec mix par BU trié par CA décroissant", () => {
+    const m = computeMargin({ orders });
+    expect(m.avgPct).toBe(20); // 400/2000
+    expect(m.byBu).toEqual([
+      { n: "ICT", mb: 150, cas: 1500, pct: 10 },
+      { n: "FORMATION", mb: 250, cas: 500, pct: 50 },
+    ]);
+  });
+  it("targetPct accepté en fraction (0.35) ou en % (35) ; delta réalisé−objectif en points", () => {
+    expect(computeMargin({ orders, objectives: { targetMargin: 0.25 } }).targetPct).toBe(25);
+    const m = computeMargin({ orders, objectives: { targetMargin: 25 } });
+    expect(m.targetPct).toBe(25);
+    expect(m.deltaVsTargetPts).toBe(-5); // 20 réalisé vs 25 cible → sous l'objectif
+  });
+  it("pipelineExpectedPct = mbPct pondéré par montant sur les opps OUVERTES uniquement", () => {
+    const opportunities = [
+      { etape: "Proposition", montant: 1000, mbPct: 10 },
+      { etape: "Négociation", montant: 1000, mbPct: 30 },
+      { etape: "Gagné", montant: 5000, mbPct: 90 },  // close → exclue
+      { etape: "Qualification", montant: 500 },        // sans mbPct → ignorée
+    ];
+    expect(computeMargin({ opportunities }).pipelineExpectedPct).toBe(20);
+    // mbPct en fraction toléré (0.2 → 20 %).
+    expect(computeMargin({ opportunities: [{ etape: "Proposition", montant: 100, mbPct: 0.2 }] }).pipelineExpectedPct).toBe(20);
+  });
+  it("graceful-null : pas de données → null partout (jamais un vrai 0 inventé)", () => {
+    expect(computeMargin({})).toEqual({ avgPct: null, byBu: [], targetPct: null, deltaVsTargetPts: null, pipelineExpectedPct: null });
+    // CA nul → avgPct null (division par zéro interdite), cible aberrante (>100) ignorée.
+    expect(computeMargin({ orders: [{ bu: "ICT", cas: 0, mb: 0 }], objectives: { targetMargin: 350 } }).avgPct).toBeNull();
+    expect(computeMargin({ objectives: { targetMargin: 350 } }).targetPct).toBeNull();
   });
 });
