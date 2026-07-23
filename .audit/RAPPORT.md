@@ -45,3 +45,22 @@ convertit chaque retouche d'une fonction en ~20-45 builds Cloud Build + autant d
   --limit=unlimited` depuis un poste authentifié, ou l'export BigQuery.
 
 **STOP — validation demandée avant l'Étape 2 (pose des barrières).**
+
+---
+
+## Annexe — Étude barrière 3 : découpage en codebases multiples (verdict)
+
+**Faisabilité vérifiée** : `firebase.json` accepte bien un TABLEAU de codebases
+(`[{source, codebase}]` — le nôtre en a déjà la forme, avec un seul élément « veille »).
+Chaque codebase exige cependant un **répertoire source séparé avec son propre package.json**.
+
+**État réel du code** : 45 fonctions dans UN `index.js` de 5 439 lignes partageant 31 modules
+`domain/` — un découpage impose soit un npm-workspace, soit la duplication des modules partagés,
+ET la re-création des fonctions déplacées (delete+create : interruption de service, ré-abonnement
+Eventarc des triggers, ré-application des invoker IAM).
+
+**Verdict : NON recommandé maintenant.** Le même gain de coût est obtenu sans aucun risque par le
+déploiement **par fonctions nommées** (`--only functions:veille:fnA,functions:veille:fnB`), que
+Firebase supporte nativement et que le script `scripts/deploy-changed.sh` (barrière 4) automatise.
+À reconsidérer uniquement si le codebase dépasse ~80 fonctions ou si deux équipes déploient
+indépendamment.
