@@ -38,3 +38,6 @@ npm-debug.log*
 
 # Test coverage reports
 coverage/
+
+# Cibles de bascule projet (config du nouveau projet — jamais commité)
+migration/target.env
