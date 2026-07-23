@@ -43,6 +43,47 @@ let cachedClient = null;
 let cachedClientKey = null;
 
 /**
+ * Barrière 6 (audit coûts GCP 2026-07, .audit/RAPPORT.md) : plafond de DÉBIT global au point de
+ * passage unique vers Gemini. Tous les appelants (classify/evaluate/enrich/copilote/briefing)
+ * passent par generateJson — un emballement (boucle, cron dérégulé, backfill massif) est donc
+ * mécaniquement écrêté ici, quel que soit le code appelant.
+ *
+ * Fenêtre glissante de 60 s, plafond par instance : `VERTEX_MAX_CALLS_PER_MIN` (défaut 30 —
+ * confortable pour la sync quotidienne ~50-300 appels étalés, bloquant pour un emballement).
+ * Quand le plafond est atteint, on ATTEND la libération d'un créneau (pas d'erreur : les
+ * pipelines restent corrects, juste ralentis).
+ *
+ * Fabrique pure et injectable (now/sleep) pour les tests unitaires.
+ */
+const RATE_WINDOW_MS = 60000;
+function createRateLimiter({ maxPerWindow, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  const max = Math.max(1, Number(maxPerWindow) || 1);
+  const stamps = [];
+  return async function acquire() {
+    for (;;) {
+      const t = now();
+      while (stamps.length && t - stamps[0] >= RATE_WINDOW_MS) stamps.shift();
+      if (stamps.length < max) {
+        stamps.push(t);
+        return;
+      }
+      await sleep(stamps[0] + RATE_WINDOW_MS - t);
+    }
+  };
+}
+
+let sharedLimiter = null;
+let sharedLimiterMax = null;
+function getLimiter() {
+  const max = Math.max(1, Number(process.env.VERTEX_MAX_CALLS_PER_MIN) || 30);
+  if (!sharedLimiter || sharedLimiterMax !== max) {
+    sharedLimiter = createRateLimiter({ maxPerWindow: max });
+    sharedLimiterMax = max;
+  }
+  return sharedLimiter;
+}
+
+/**
  * Lazily constructs (and memoizes) the Gen AI client in Vertex AI mode. Lazy so that importing
  * this module (e.g. transitively via functions/index.js) never throws in environments without
  * `GCLOUD_PROJECT` set (local `node --check`, unit tests of domain/classify.js and
@@ -89,6 +130,13 @@ function getClient() {
 async function generateJson(prompt, opts) {
   if (typeof prompt !== "string" || !prompt.trim()) {
     throw new Error("generateJson: prompt (non-empty string) is required.");
+  }
+  // Coupe-circuit environnements de test/CI (barrière 6, coûts) : VERTEX_DISABLED=1 garantit
+  // qu'AUCUN environnement non-prod ne peut générer de facturation Vertex, même par accident
+  // (émulateur pointé sur le vrai projet, seed lancé au mauvais endroit…). Erreur franche plutôt
+  // que réponse vide : un appel qui n'aurait pas dû partir doit se voir.
+  if (/^(1|true|yes)$/i.test(String(process.env.VERTEX_DISABLED || "").trim())) {
+    throw new Error("generateJson: VERTEX_DISABLED est actif — appel Gemini refusé (environnement de test/CI).");
   }
   // Normalise `opts` : soit un sac d'options {temperature, schema, maxOutputTokens}, soit (rétro-compat)
   // un schéma nu passé en 2ᵉ argument.
@@ -169,6 +217,8 @@ async function generateJson(prompt, opts) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     let serverDelay = null;
     try {
+      // Plafond de débit global (barrière 6) — chaque tentative consomme un créneau.
+      await getLimiter()();
       const response = await ai.models.generateContent({ model: modelName, contents: dated, config });
       text = extractText(response);
       if (text.trim()) break;
@@ -242,4 +292,4 @@ function matchingClose(s, startIdx) {
   return -1;
 }
 
-module.exports = { generateJson, getClient, DEFAULT_LOCATION, DEFAULT_MODEL };
+module.exports = { generateJson, getClient, createRateLimiter, DEFAULT_LOCATION, DEFAULT_MODEL };

@@ -1,0 +1,812 @@
+run_id,workflow_name,path,event,status,conclusion,created_at,updated_at,run_started_at,head_branch
+28576682693,CI,.github/workflows/ci.yml,push,completed,success,2026-07-02T08:34:15Z,2026-07-02T08:36:22Z,2026-07-02T08:34:15Z,main
+28576902792,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T08:38:08Z,2026-07-02T08:40:11Z,2026-07-02T08:38:08Z,claude/go-q6wmrk
+28577014986,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T08:40:07Z,2026-07-02T08:42:10Z,2026-07-02T08:40:07Z,claude/go-q6wmrk
+28577179254,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T08:43:02Z,2026-07-02T08:44:45Z,2026-07-02T08:43:02Z,claude/go-q6wmrk
+28577185007,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T08:43:08Z,2026-07-02T08:44:48Z,2026-07-02T08:43:08Z,claude/go-q6wmrk
+28577300291,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T08:45:09Z,2026-07-02T08:46:54Z,2026-07-02T08:45:09Z,claude/go-q6wmrk
+28577596946,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T08:50:20Z,2026-07-02T08:52:03Z,2026-07-02T08:50:20Z,claude/go-q6wmrk
+28578166503,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T09:00:19Z,2026-07-02T09:02:07Z,2026-07-02T09:00:19Z,claude/go-q6wmrk
+28578518404,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T09:06:13Z,2026-07-02T09:07:58Z,2026-07-02T09:06:13Z,claude/go-q6wmrk
+28579024088,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T09:14:54Z,2026-07-02T09:16:39Z,2026-07-02T09:14:54Z,claude/go-q6wmrk
+28579374873,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T09:20:59Z,2026-07-02T09:22:48Z,2026-07-02T09:20:59Z,claude/go-q6wmrk
+28579695654,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T09:26:28Z,2026-07-02T09:28:19Z,2026-07-02T09:26:28Z,claude/go-q6wmrk
+28580330020,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T09:37:07Z,2026-07-02T09:39:02Z,2026-07-02T09:37:07Z,claude/go-q6wmrk
+28582996144,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T10:23:44Z,2026-07-02T10:25:33Z,2026-07-02T10:23:44Z,claude/go-q6wmrk
+28583636546,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T10:35:27Z,2026-07-02T10:37:22Z,2026-07-02T10:35:27Z,claude/go-q6wmrk
+28583822479,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T10:38:54Z,2026-07-02T10:40:47Z,2026-07-02T10:38:54Z,claude/go-q6wmrk
+28583918902,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-02T10:40:42Z,2026-07-02T10:43:32Z,2026-07-02T10:40:42Z,claude/go-q6wmrk
+28586982356,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-02T11:36:33Z,2026-07-02T11:39:14Z,2026-07-02T11:36:33Z,claude/go-q6wmrk
+28587217396,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T11:40:49Z,2026-07-02T11:45:49Z,2026-07-02T11:40:49Z,claude/go-q6wmrk
+28587217141,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T11:40:49Z,2026-07-02T11:42:40Z,2026-07-02T11:40:49Z,claude/go-q6wmrk
+28587967298,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T11:54:11Z,2026-07-02T11:56:02Z,2026-07-02T11:54:11Z,claude/go-q6wmrk
+28588102303,Set user role (propulse-business-87f7a / strategic360),.github/workflows/set-user-role.yml,workflow_dispatch,completed,success,2026-07-02T11:56:34Z,2026-07-02T11:58:37Z,2026-07-02T11:56:34Z,claude/go-q6wmrk
+28588140972,Set user role (propulse-business-87f7a / strategic360),.github/workflows/set-user-role.yml,workflow_dispatch,completed,success,2026-07-02T11:57:16Z,2026-07-02T11:59:15Z,2026-07-02T11:57:16Z,claude/go-q6wmrk
+28590346516,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-02T12:34:21Z,2026-07-02T12:37:18Z,2026-07-02T12:34:21Z,claude/go-q6wmrk
+28590348435,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T12:34:22Z,2026-07-02T12:36:16Z,2026-07-02T12:34:22Z,claude/go-q6wmrk
+28590573977,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T12:38:05Z,2026-07-02T12:39:58Z,2026-07-02T12:38:05Z,claude/go-q6wmrk
+28590574548,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T12:38:06Z,2026-07-02T12:42:33Z,2026-07-02T12:38:06Z,claude/go-q6wmrk
+28591217092,Set user role (propulse-business-87f7a / strategic360),.github/workflows/set-user-role.yml,workflow_dispatch,completed,success,2026-07-02T12:48:29Z,2026-07-02T12:50:27Z,2026-07-02T12:48:29Z,claude/go-q6wmrk
+28592125527,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T13:02:51Z,2026-07-02T13:04:40Z,2026-07-02T13:02:51Z,claude/go-q6wmrk
+28592127096,Seed data (propulse-business-87f7a / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-02T13:02:53Z,2026-07-02T13:05:06Z,2026-07-02T13:02:53Z,claude/go-q6wmrk
+28595307494,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T13:51:30Z,2026-07-02T13:53:41Z,2026-07-02T13:51:30Z,claude/go-q6wmrk
+28595309900,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T13:51:32Z,2026-07-02T13:55:52Z,2026-07-02T13:51:32Z,claude/go-q6wmrk
+28596261052,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-02T14:05:21Z,2026-07-02T14:05:41Z,2026-07-02T14:05:21Z,claude/go-q6wmrk
+28597456710,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-02T14:23:07Z,2026-07-02T14:23:52Z,2026-07-02T14:23:07Z,claude/go-q6wmrk
+28597458204,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T14:23:08Z,2026-07-02T14:25:04Z,2026-07-02T14:23:08Z,claude/go-q6wmrk
+28598564817,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T14:39:19Z,2026-07-02T14:44:14Z,2026-07-02T14:39:19Z,claude/go-q6wmrk
+28598565175,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T14:39:19Z,2026-07-02T14:41:16Z,2026-07-02T14:39:19Z,claude/go-q6wmrk
+28599095546,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-02T14:47:12Z,2026-07-02T14:48:23Z,2026-07-02T14:47:12Z,claude/go-q6wmrk
+28599303930,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T14:50:17Z,2026-07-02T14:55:04Z,2026-07-02T14:50:17Z,claude/go-q6wmrk
+28599307773,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T14:50:20Z,2026-07-02T14:52:10Z,2026-07-02T14:50:20Z,claude/go-q6wmrk
+28599913372,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-02T14:59:16Z,2026-07-02T15:00:02Z,2026-07-02T14:59:16Z,claude/go-q6wmrk
+28600307765,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T15:05:01Z,2026-07-02T15:10:07Z,2026-07-02T15:05:01Z,claude/go-q6wmrk
+28600308910,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T15:05:03Z,2026-07-02T15:07:02Z,2026-07-02T15:05:03Z,claude/go-q6wmrk
+28600844746,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-02T15:13:09Z,2026-07-02T15:13:53Z,2026-07-02T15:13:09Z,claude/go-q6wmrk
+28601484631,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T15:22:55Z,2026-07-02T15:26:58Z,2026-07-02T15:22:55Z,claude/go-q6wmrk
+28601484752,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T15:22:55Z,2026-07-02T15:25:19Z,2026-07-02T15:22:55Z,claude/go-q6wmrk
+28601766803,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-02T15:27:15Z,2026-07-02T15:28:05Z,2026-07-02T15:27:15Z,claude/go-q6wmrk
+28609830017,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T17:38:53Z,2026-07-02T17:43:17Z,2026-07-02T17:38:53Z,claude/go-q6wmrk
+28609830451,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T17:38:54Z,2026-07-02T17:40:42Z,2026-07-02T17:38:54Z,claude/go-q6wmrk
+28610262939,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-02T17:46:10Z,2026-07-02T17:46:55Z,2026-07-02T17:46:10Z,claude/go-q6wmrk
+28611093994,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T18:00:24Z,2026-07-02T18:02:12Z,2026-07-02T18:00:24Z,claude/go-q6wmrk
+28611353227,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T18:04:38Z,2026-07-02T18:06:30Z,2026-07-02T18:04:38Z,claude/go-q6wmrk
+28611356037,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T18:04:41Z,2026-07-02T18:09:19Z,2026-07-02T18:04:41Z,claude/go-q6wmrk
+28611851828,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-02T18:13:19Z,2026-07-02T18:14:04Z,2026-07-02T18:13:19Z,claude/go-q6wmrk
+28612067590,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T18:17:02Z,2026-07-02T18:18:55Z,2026-07-02T18:17:02Z,claude/go-q6wmrk
+28612072917,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T18:17:07Z,2026-07-02T18:21:58Z,2026-07-02T18:17:07Z,claude/go-q6wmrk
+28612966942,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-02T18:32:19Z,2026-07-02T18:33:10Z,2026-07-02T18:32:19Z,claude/go-q6wmrk
+28613386557,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T18:39:20Z,2026-07-02T18:41:09Z,2026-07-02T18:39:20Z,claude/go-q6wmrk
+28613390275,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T18:39:24Z,2026-07-02T18:43:58Z,2026-07-02T18:39:24Z,claude/go-q6wmrk
+28613681266,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-02T18:44:17Z,2026-07-02T18:45:11Z,2026-07-02T18:44:17Z,claude/go-q6wmrk
+28613940465,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T18:48:45Z,2026-07-02T18:50:36Z,2026-07-02T18:48:45Z,claude/go-q6wmrk
+28614008058,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T18:49:56Z,2026-07-02T18:51:50Z,2026-07-02T18:49:56Z,claude/go-q6wmrk
+28614220855,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T18:53:33Z,2026-07-02T18:55:24Z,2026-07-02T18:53:33Z,claude/go-q6wmrk
+28614405914,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T18:56:43Z,2026-07-02T18:58:35Z,2026-07-02T18:56:43Z,claude/go-q6wmrk
+28614556686,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T18:59:22Z,2026-07-02T19:01:08Z,2026-07-02T18:59:22Z,claude/go-q6wmrk
+28614561004,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T18:59:27Z,2026-07-02T19:03:56Z,2026-07-02T18:59:27Z,claude/go-q6wmrk
+28614852509,Cleanup sample data (propulse-business-87f7a / strategic360),.github/workflows/cleanup-sample-data.yml,workflow_dispatch,completed,success,2026-07-02T19:04:16Z,2026-07-02T19:06:14Z,2026-07-02T19:04:16Z,claude/go-q6wmrk
+28615431448,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T19:14:41Z,2026-07-02T19:16:31Z,2026-07-02T19:14:41Z,claude/go-q6wmrk
+28615632486,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T19:18:25Z,2026-07-02T19:20:34Z,2026-07-02T19:18:25Z,claude/go-q6wmrk
+28615641937,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T19:18:35Z,2026-07-02T19:23:29Z,2026-07-02T19:18:35Z,claude/go-q6wmrk
+28615942458,Seed data (propulse-business-87f7a / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-02T19:24:05Z,2026-07-02T19:26:13Z,2026-07-02T19:24:05Z,claude/go-q6wmrk
+28616131273,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-02T19:27:28Z,2026-07-02T19:28:15Z,2026-07-02T19:27:28Z,claude/go-q6wmrk
+28616344331,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-02T19:31:18Z,2026-07-02T19:32:44Z,2026-07-02T19:31:18Z,claude/go-q6wmrk
+28619036277,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T20:20:06Z,2026-07-02T20:21:59Z,2026-07-02T20:20:06Z,claude/go-q6wmrk
+28619039459,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T20:20:09Z,2026-07-02T20:25:07Z,2026-07-02T20:20:09Z,claude/go-q6wmrk
+28619852436,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T20:34:54Z,2026-07-02T20:36:40Z,2026-07-02T20:34:54Z,claude/go-q6wmrk
+28619854196,Inspect internal data (propulse-business-87f7a — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-02T20:34:56Z,2026-07-02T20:37:26Z,2026-07-02T20:34:56Z,claude/go-q6wmrk
+28620087294,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T20:39:07Z,2026-07-02T20:40:53Z,2026-07-02T20:39:07Z,claude/go-q6wmrk
+28620088368,Inspect internal data (propulse-business-87f7a — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-02T20:39:08Z,2026-07-02T20:41:07Z,2026-07-02T20:39:08Z,claude/go-q6wmrk
+28620278576,Inspect internal data (propulse-business-87f7a — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-02T20:42:31Z,2026-07-02T20:44:34Z,2026-07-02T20:42:31Z,claude/go-q6wmrk
+28620691605,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T20:49:58Z,2026-07-02T20:51:44Z,2026-07-02T20:49:58Z,claude/go-q6wmrk
+28620694070,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T20:50:01Z,2026-07-02T20:54:59Z,2026-07-02T20:50:01Z,claude/go-q6wmrk
+28620995108,Run syncInternalQuanti now (propulse-business-87f7a / strategic360),.github/workflows/run-quanti-now.yml,workflow_dispatch,completed,success,2026-07-02T20:55:30Z,2026-07-02T20:56:31Z,2026-07-02T20:55:30Z,claude/go-q6wmrk
+28622532608,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T21:24:44Z,2026-07-02T21:26:32Z,2026-07-02T21:24:44Z,claude/go-q6wmrk
+28622534458,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T21:24:46Z,2026-07-02T21:29:35Z,2026-07-02T21:24:46Z,claude/go-q6wmrk
+28623392408,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T21:41:55Z,2026-07-02T21:43:45Z,2026-07-02T21:41:55Z,claude/go-q6wmrk
+28623394058,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T21:41:58Z,2026-07-02T21:46:34Z,2026-07-02T21:41:58Z,claude/go-q6wmrk
+28623930503,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T21:52:53Z,2026-07-02T21:54:43Z,2026-07-02T21:52:53Z,claude/go-q6wmrk
+28623933979,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T21:52:58Z,2026-07-02T21:57:18Z,2026-07-02T21:52:58Z,claude/go-q6wmrk
+28624193383,Run syncInternalQuanti now (propulse-business-87f7a / strategic360),.github/workflows/run-quanti-now.yml,workflow_dispatch,completed,success,2026-07-02T21:58:26Z,2026-07-02T21:59:28Z,2026-07-02T21:58:26Z,claude/go-q6wmrk
+28624331598,CI,.github/workflows/ci.yml,push,completed,success,2026-07-02T22:01:14Z,2026-07-02T22:03:05Z,2026-07-02T22:01:14Z,main
+28624842541,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T22:11:54Z,2026-07-02T22:14:00Z,2026-07-02T22:11:54Z,claude/go-q6wmrk
+28624849142,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T22:12:02Z,2026-07-02T22:17:05Z,2026-07-02T22:12:02Z,claude/go-q6wmrk
+28625107579,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-02T22:17:40Z,2026-07-02T22:19:03Z,2026-07-02T22:17:40Z,claude/go-q6wmrk
+28625112280,Run generateBriefingWeekly now (propulse-business-87f7a / strategic360),.github/workflows/run-briefing-now.yml,workflow_dispatch,completed,success,2026-07-02T22:17:47Z,2026-07-02T22:18:55Z,2026-07-02T22:17:47Z,claude/go-q6wmrk
+28625319542,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T22:22:28Z,2026-07-02T22:24:22Z,2026-07-02T22:22:28Z,claude/go-q6wmrk
+28625321890,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T22:22:31Z,2026-07-02T22:27:03Z,2026-07-02T22:22:31Z,claude/go-q6wmrk
+28625581826,Run generateBriefingWeekly now (propulse-business-87f7a / strategic360),.github/workflows/run-briefing-now.yml,workflow_dispatch,completed,success,2026-07-02T22:28:26Z,2026-07-02T22:29:49Z,2026-07-02T22:28:26Z,claude/go-q6wmrk
+28627788840,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T23:21:41Z,2026-07-02T23:23:30Z,2026-07-02T23:21:41Z,claude/go-q6wmrk
+28627874721,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T23:23:49Z,2026-07-02T23:25:37Z,2026-07-02T23:23:49Z,claude/go-q6wmrk
+28627988767,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T23:26:44Z,2026-07-02T23:28:37Z,2026-07-02T23:26:44Z,claude/go-q6wmrk
+28627992808,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T23:26:50Z,2026-07-02T23:31:32Z,2026-07-02T23:26:50Z,claude/go-q6wmrk
+28628227928,Seed data (propulse-business-87f7a / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-02T23:32:44Z,2026-07-02T23:34:55Z,2026-07-02T23:32:44Z,claude/go-q6wmrk
+28628228642,Rescore intelItems (propulse-business-87f7a / strategic360),.github/workflows/rescore-items.yml,workflow_dispatch,completed,success,2026-07-02T23:32:45Z,2026-07-02T23:34:53Z,2026-07-02T23:32:45Z,claude/go-q6wmrk
+28628387886,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T23:36:55Z,2026-07-02T23:40:45Z,2026-07-02T23:39:12Z,claude/go-q6wmrk
+28628405137,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T23:37:22Z,2026-07-02T23:42:21Z,2026-07-02T23:37:22Z,claude/go-q6wmrk
+28628635256,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-02T23:43:29Z,2026-07-02T23:44:15Z,2026-07-02T23:43:29Z,claude/go-q6wmrk
+28628849027,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T23:49:19Z,2026-07-02T23:51:07Z,2026-07-02T23:49:19Z,claude/go-q6wmrk
+28628851751,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-02T23:49:24Z,2026-07-02T23:53:46Z,2026-07-02T23:49:24Z,claude/go-q6wmrk
+28629088877,Seed data (propulse-business-87f7a / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-02T23:55:43Z,2026-07-02T23:57:57Z,2026-07-02T23:55:43Z,claude/go-q6wmrk
+28629219721,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-02T23:59:24Z,2026-07-03T00:00:42Z,2026-07-02T23:59:24Z,claude/go-q6wmrk
+28629237706,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-02T23:59:55Z,2026-07-03T00:01:45Z,2026-07-02T23:59:55Z,claude/go-q6wmrk
+28629389785,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T00:03:44Z,2026-07-03T00:05:36Z,2026-07-03T00:03:44Z,claude/go-q6wmrk
+28629391870,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T00:03:48Z,2026-07-03T00:08:19Z,2026-07-03T00:03:48Z,claude/go-q6wmrk
+28630210286,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T00:26:19Z,2026-07-03T00:28:07Z,2026-07-03T00:26:19Z,claude/go-q6wmrk
+28630212857,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T00:26:23Z,2026-07-03T00:31:18Z,2026-07-03T00:26:23Z,claude/go-q6wmrk
+28630430942,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-03T00:32:32Z,2026-07-03T00:34:00Z,2026-07-03T00:32:32Z,claude/go-q6wmrk
+28642786195,CI,.github/workflows/ci.yml,push,completed,success,2026-07-03T06:27:31Z,2026-07-03T06:29:23Z,2026-07-03T06:27:31Z,main
+28643546232,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T06:45:41Z,2026-07-03T06:47:33Z,2026-07-03T06:45:41Z,claude/go-q6wmrk
+28643551118,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T06:45:48Z,2026-07-03T06:50:13Z,2026-07-03T06:45:48Z,claude/go-q6wmrk
+28643763088,Seed data (propulse-business-87f7a / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-03T06:50:48Z,2026-07-03T06:53:07Z,2026-07-03T06:50:48Z,claude/go-q6wmrk
+28643764103,Rescore intelItems (propulse-business-87f7a / strategic360),.github/workflows/rescore-items.yml,workflow_dispatch,completed,success,2026-07-03T06:50:49Z,2026-07-03T06:52:57Z,2026-07-03T06:50:49Z,claude/go-q6wmrk
+28643927172,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-03T06:54:37Z,2026-07-03T06:55:27Z,2026-07-03T06:54:37Z,claude/go-q6wmrk
+28644432519,CI,.github/workflows/ci.yml,push,completed,success,2026-07-03T07:05:44Z,2026-07-03T07:07:29Z,2026-07-03T07:05:44Z,main
+28651351999,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T09:24:18Z,2026-07-03T09:26:06Z,2026-07-03T09:24:18Z,claude/go-q6wmrk
+28651358834,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T09:24:26Z,2026-07-03T09:29:08Z,2026-07-03T09:24:26Z,claude/go-q6wmrk
+28657531684,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T11:26:49Z,2026-07-03T11:28:39Z,2026-07-03T11:26:49Z,claude/go-q6wmrk
+28657537429,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T11:26:57Z,2026-07-03T11:31:35Z,2026-07-03T11:26:57Z,claude/go-q6wmrk
+28657859367,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-03T11:33:31Z,2026-07-03T11:34:55Z,2026-07-03T11:33:31Z,claude/go-q6wmrk
+28658136845,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-03T11:39:25Z,2026-07-03T11:40:43Z,2026-07-03T11:39:25Z,claude/go-q6wmrk
+28658715454,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T11:51:22Z,2026-07-03T11:56:06Z,2026-07-03T11:51:22Z,claude/go-q6wmrk
+28658715751,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T11:51:23Z,2026-07-03T11:53:14Z,2026-07-03T11:51:23Z,claude/go-q6wmrk
+28658722267,Seed data (propulse-business-87f7a / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-03T11:51:31Z,2026-07-03T11:53:57Z,2026-07-03T11:51:31Z,claude/go-q6wmrk
+28659057863,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-03T11:58:25Z,2026-07-03T11:59:50Z,2026-07-03T11:58:25Z,claude/go-q6wmrk
+28659268110,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-03T12:02:33Z,2026-07-03T12:04:01Z,2026-07-03T12:02:33Z,claude/go-q6wmrk
+28661070046,CI,.github/workflows/ci.yml,push,completed,success,2026-07-03T12:38:32Z,2026-07-03T12:40:23Z,2026-07-03T12:38:32Z,main
+28662604183,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T13:08:09Z,2026-07-03T13:09:57Z,2026-07-03T13:08:09Z,claude/go-q6wmrk
+28662607637,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T13:08:13Z,2026-07-03T13:12:44Z,2026-07-03T13:08:13Z,claude/go-q6wmrk
+28662946027,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-03T13:14:31Z,2026-07-03T13:15:51Z,2026-07-03T13:14:31Z,claude/go-q6wmrk
+28663173895,Inspect internal data (propulse-business-87f7a — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-03T13:18:56Z,2026-07-03T13:20:51Z,2026-07-03T13:18:56Z,claude/go-q6wmrk
+28667140078,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T14:34:38Z,2026-07-03T14:36:31Z,2026-07-03T14:34:38Z,claude/go-q6wmrk
+28667469145,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T14:41:08Z,2026-07-03T14:42:56Z,2026-07-03T14:41:08Z,claude/go-q6wmrk
+28667864988,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T14:48:51Z,2026-07-03T14:50:45Z,2026-07-03T14:48:51Z,claude/go-q6wmrk
+28668013850,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T14:51:45Z,2026-07-03T14:53:34Z,2026-07-03T14:51:45Z,claude/go-q6wmrk
+28668026707,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-03T14:52:00Z,2026-07-03T14:54:58Z,2026-07-03T14:52:00Z,claude/go-q6wmrk
+28668072031,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T14:52:53Z,2026-07-03T14:54:46Z,2026-07-03T14:52:53Z,claude/go-q6wmrk
+28668196287,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T14:55:18Z,2026-07-03T15:00:26Z,2026-07-03T14:55:18Z,claude/go-q6wmrk
+28668628642,Seed data (propulse-business-87f7a / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-03T15:03:33Z,2026-07-03T15:05:48Z,2026-07-03T15:03:33Z,claude/go-q6wmrk
+28668823911,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-03T15:07:19Z,2026-07-03T15:08:41Z,2026-07-03T15:07:19Z,claude/go-q6wmrk
+28669065605,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-03T15:12:09Z,2026-07-03T15:13:30Z,2026-07-03T15:12:09Z,claude/go-q6wmrk
+28670000046,CI,.github/workflows/ci.yml,push,completed,success,2026-07-03T15:31:08Z,2026-07-03T15:32:59Z,2026-07-03T15:31:08Z,main
+28670903505,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T15:49:42Z,2026-07-03T15:51:35Z,2026-07-03T15:49:42Z,claude/go-q6wmrk
+28670906585,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T15:49:46Z,2026-07-03T15:54:10Z,2026-07-03T15:49:46Z,claude/go-q6wmrk
+28671228666,Seed data (propulse-business-87f7a / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-03T15:56:41Z,2026-07-03T15:58:53Z,2026-07-03T15:56:41Z,claude/go-q6wmrk
+28674769180,CI,.github/workflows/ci.yml,push,completed,success,2026-07-03T17:19:38Z,2026-07-03T17:21:29Z,2026-07-03T17:19:38Z,main
+28674774905,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-03T17:19:47Z,2026-07-03T17:20:39Z,2026-07-03T17:19:47Z,claude/go-q6wmrk
+28674984628,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-03T17:24:55Z,2026-07-03T17:25:42Z,2026-07-03T17:24:55Z,claude/go-q6wmrk
+28675570316,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T17:39:10Z,2026-07-03T17:41:01Z,2026-07-03T17:39:10Z,claude/go-q6wmrk
+28675573766,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T17:39:15Z,2026-07-03T17:43:48Z,2026-07-03T17:39:15Z,claude/go-q6wmrk
+28675861100,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-03T17:46:12Z,2026-07-03T17:47:03Z,2026-07-03T17:46:12Z,claude/go-q6wmrk
+28676065461,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-03T17:51:28Z,2026-07-03T17:52:14Z,2026-07-03T17:51:28Z,claude/go-q6wmrk
+28676329057,CI,.github/workflows/ci.yml,push,completed,success,2026-07-03T17:58:12Z,2026-07-03T18:00:04Z,2026-07-03T17:58:12Z,main
+28676529722,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T18:03:10Z,2026-07-03T18:05:02Z,2026-07-03T18:03:10Z,claude/go-q6wmrk
+28676533469,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T18:03:15Z,2026-07-03T18:08:05Z,2026-07-03T18:03:15Z,claude/go-q6wmrk
+28676860474,Seed data (propulse-business-87f7a / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-03T18:11:32Z,2026-07-03T18:13:52Z,2026-07-03T18:11:32Z,claude/go-q6wmrk
+28677010311,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-03T18:15:11Z,2026-07-03T18:15:57Z,2026-07-03T18:15:11Z,claude/go-q6wmrk
+28677105104,Run syncSources now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-03T18:17:37Z,2026-07-03T18:18:23Z,2026-07-03T18:17:37Z,claude/go-q6wmrk
+28677278857,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T18:22:08Z,2026-07-03T18:23:55Z,2026-07-03T18:22:08Z,claude/go-q6wmrk
+28677280166,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T18:22:10Z,2026-07-03T18:27:08Z,2026-07-03T18:22:10Z,claude/go-q6wmrk
+28678279304,CI,.github/workflows/ci.yml,push,completed,success,2026-07-03T18:47:42Z,2026-07-03T18:49:36Z,2026-07-03T18:47:42Z,main
+28678302935,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T18:48:22Z,2026-07-03T18:50:16Z,2026-07-03T18:48:22Z,claude/go-q6wmrk
+28678305530,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T18:48:26Z,2026-07-03T18:53:02Z,2026-07-03T18:48:26Z,claude/go-q6wmrk
+28680814521,CI,.github/workflows/ci.yml,push,completed,success,2026-07-03T19:54:54Z,2026-07-03T19:56:44Z,2026-07-03T19:54:54Z,main
+28681763912,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T20:20:52Z,2026-07-03T20:22:40Z,2026-07-03T20:20:52Z,claude/go-q6wmrk
+28681767705,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T20:20:58Z,2026-07-03T20:25:59Z,2026-07-03T20:20:58Z,claude/go-q6wmrk
+28682098849,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T20:30:09Z,2026-07-03T20:32:04Z,2026-07-03T20:30:09Z,claude/go-q6wmrk
+28682103865,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T20:30:16Z,2026-07-03T20:34:59Z,2026-07-03T20:30:16Z,claude/go-q6wmrk
+28682379529,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T20:37:40Z,2026-07-03T20:39:35Z,2026-07-03T20:37:40Z,claude/go-q6wmrk
+28682379224,Run syncCopiloteAccounts now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-copilote-now.yml,workflow_dispatch,completed,success,2026-07-03T20:37:40Z,2026-07-03T20:38:34Z,2026-07-03T20:37:40Z,claude/go-q6wmrk
+28682450743,Run syncCopiloteAccounts now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-copilote-now.yml,workflow_dispatch,completed,success,2026-07-03T20:39:39Z,2026-07-03T20:40:27Z,2026-07-03T20:39:39Z,claude/go-q6wmrk
+28682714493,CI,.github/workflows/ci.yml,push,completed,success,2026-07-03T20:46:57Z,2026-07-03T20:48:51Z,2026-07-03T20:46:57Z,main
+28682995049,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T20:55:12Z,2026-07-03T20:57:00Z,2026-07-03T20:55:12Z,claude/go-q6wmrk
+28682997186,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T20:55:15Z,2026-07-03T21:00:05Z,2026-07-03T20:55:15Z,claude/go-q6wmrk
+28684033639,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T21:25:50Z,2026-07-03T21:27:42Z,2026-07-03T21:25:50Z,claude/go-q6wmrk
+28684034502,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T21:25:52Z,2026-07-03T21:30:54Z,2026-07-03T21:25:52Z,claude/go-q6wmrk
+28684323927,CI,.github/workflows/ci.yml,push,completed,success,2026-07-03T21:34:25Z,2026-07-03T21:36:19Z,2026-07-03T21:34:25Z,main
+28684767937,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-03T21:48:12Z,2026-07-03T21:53:39Z,2026-07-03T21:48:12Z,claude/go-q6wmrk
+28684768573,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T21:48:13Z,2026-07-03T21:50:06Z,2026-07-03T21:48:13Z,claude/go-q6wmrk
+28685045006,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T21:56:57Z,2026-07-03T21:58:43Z,2026-07-03T21:56:57Z,claude/go-q6wmrk
+28685045505,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T21:56:58Z,2026-07-03T22:02:24Z,2026-07-03T21:56:58Z,claude/go-q6wmrk
+28685336493,CI,.github/workflows/ci.yml,push,completed,success,2026-07-03T22:06:03Z,2026-07-03T22:07:51Z,2026-07-03T22:06:03Z,main
+28685529491,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T22:12:18Z,2026-07-03T22:17:13Z,2026-07-03T22:12:18Z,claude/go-q6wmrk
+28685530056,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-03T22:12:19Z,2026-07-03T22:14:08Z,2026-07-03T22:12:19Z,claude/go-q6wmrk
+28685710205,CI,.github/workflows/ci.yml,push,completed,success,2026-07-03T22:18:07Z,2026-07-03T22:19:58Z,2026-07-03T22:18:07Z,main
+28686581853,Read Copilote function logs (diagnostic),.github/workflows/read-copilote-logs.yml,workflow_dispatch,completed,success,2026-07-03T22:47:24Z,2026-07-03T22:47:39Z,2026-07-03T22:47:24Z,claude/go-q6wmrk
+28686677006,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-03T22:50:40Z,2026-07-03T22:55:12Z,2026-07-03T22:50:40Z,claude/go-q6wmrk
+28695327827,Read Copilote function logs (diagnostic),.github/workflows/read-copilote-logs.yml,workflow_dispatch,completed,success,2026-07-04T04:47:20Z,2026-07-04T04:47:37Z,2026-07-04T04:47:20Z,claude/go-q6wmrk
+28704242400,Read Copilote function logs (diagnostic),.github/workflows/read-copilote-logs.yml,workflow_dispatch,completed,success,2026-07-04T11:06:21Z,2026-07-04T11:06:37Z,2026-07-04T11:06:21Z,claude/go-q6wmrk
+28704337801,Grant public invoker to new Copilote callables (fix),.github/workflows/grant-copilote-invoker.yml,workflow_dispatch,completed,success,2026-07-04T11:10:25Z,2026-07-04T11:10:54Z,2026-07-04T11:10:25Z,claude/go-q6wmrk
+28704469389,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T11:15:54Z,2026-07-04T11:17:43Z,2026-07-04T11:15:54Z,claude/go-q6wmrk
+28704496524,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T11:17:05Z,2026-07-04T11:18:59Z,2026-07-04T11:17:05Z,main
+28704854826,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-04T11:32:17Z,2026-07-04T11:37:33Z,2026-07-04T11:32:17Z,claude/go-q6wmrk
+28704861993,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T11:32:36Z,2026-07-04T11:34:28Z,2026-07-04T11:32:36Z,claude/go-q6wmrk
+28705066578,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T11:41:10Z,2026-07-04T11:43:01Z,2026-07-04T11:41:10Z,main
+28705458219,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-04T11:57:38Z,2026-07-04T12:02:56Z,2026-07-04T11:57:38Z,claude/go-q6wmrk
+28705465512,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T11:57:57Z,2026-07-04T11:59:47Z,2026-07-04T11:57:57Z,claude/go-q6wmrk
+28706346897,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T12:33:55Z,2026-07-04T12:35:41Z,2026-07-04T12:33:55Z,main
+28707782612,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-04T13:31:11Z,2026-07-04T13:36:29Z,2026-07-04T13:31:11Z,claude/go-q6wmrk
+28707792558,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T13:31:34Z,2026-07-04T13:33:26Z,2026-07-04T13:31:34Z,claude/go-q6wmrk
+28707965599,Run syncCopiloteAccounts now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-copilote-now.yml,workflow_dispatch,completed,success,2026-07-04T13:38:23Z,2026-07-04T13:39:20Z,2026-07-04T13:38:23Z,claude/go-q6wmrk
+28707970254,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-04T13:38:34Z,2026-07-04T13:39:53Z,2026-07-04T13:38:34Z,claude/go-q6wmrk
+28709065182,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T14:21:06Z,2026-07-04T14:22:58Z,2026-07-04T14:21:06Z,main
+28709516165,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T14:38:09Z,2026-07-04T14:40:02Z,2026-07-04T14:38:09Z,claude/go-q6wmrk
+28709687360,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T14:44:42Z,2026-07-04T14:46:34Z,2026-07-04T14:44:42Z,main
+28709709393,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,in_progress,,2026-07-04T14:45:31Z,2026-07-04T14:45:35Z,2026-07-04T14:45:31Z,main
+28709912232,Run syncCopiloteAccounts now (propulse-business-87f7a / strategic360),.github/workflows/run-sync-copilote-now.yml,workflow_dispatch,completed,success,2026-07-04T14:53:23Z,2026-07-04T14:54:18Z,2026-07-04T14:53:23Z,main
+28709912866,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-04T14:53:24Z,2026-07-04T14:54:43Z,2026-07-04T14:53:24Z,main
+28713220683,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T16:57:03Z,2026-07-04T16:58:57Z,2026-07-04T16:57:03Z,claude/go-q6wmrk
+28713301483,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T17:00:09Z,2026-07-04T17:01:59Z,2026-07-04T17:00:09Z,main
+28713305266,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-04T17:00:17Z,2026-07-04T17:05:39Z,2026-07-04T17:00:17Z,main
+28713472247,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T17:06:25Z,2026-07-04T17:08:16Z,2026-07-04T17:06:25Z,claude/go-q6wmrk
+28713542466,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T17:09:12Z,2026-07-04T17:11:04Z,2026-07-04T17:09:12Z,main
+28713549472,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-04T17:09:29Z,2026-07-04T17:15:08Z,2026-07-04T17:09:29Z,main
+28713808596,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T17:19:22Z,2026-07-04T17:21:15Z,2026-07-04T17:19:22Z,claude/go-q6wmrk
+28713974267,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T17:25:32Z,2026-07-04T17:27:26Z,2026-07-04T17:25:32Z,main
+28713978685,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-04T17:25:42Z,2026-07-04T17:30:48Z,2026-07-04T17:25:42Z,main
+28714099971,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T17:30:20Z,2026-07-04T17:32:08Z,2026-07-04T17:30:20Z,claude/go-q6wmrk
+28716496676,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T19:01:29Z,2026-07-04T19:03:20Z,2026-07-04T19:01:29Z,main
+28716513965,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-04T19:02:07Z,2026-07-04T19:07:05Z,2026-07-04T19:02:07Z,main
+28717861394,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T19:55:24Z,2026-07-04T19:57:18Z,2026-07-04T19:55:24Z,claude/go-q6wmrk
+28717989726,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T20:00:28Z,2026-07-04T20:02:17Z,2026-07-04T20:00:28Z,main
+28718007258,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-04T20:01:01Z,2026-07-04T20:06:08Z,2026-07-04T20:01:01Z,main
+28718169904,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T20:07:21Z,2026-07-04T20:09:11Z,2026-07-04T20:07:21Z,claude/go-q6wmrk
+28718298298,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T20:12:31Z,2026-07-04T20:14:29Z,2026-07-04T20:12:31Z,main
+28718307011,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-04T20:12:54Z,2026-07-04T20:18:01Z,2026-07-04T20:12:54Z,main
+28719075527,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T20:42:55Z,2026-07-04T20:44:47Z,2026-07-04T20:42:55Z,claude/go-q6wmrk
+28719154806,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T20:45:57Z,2026-07-04T20:47:53Z,2026-07-04T20:45:57Z,main
+28719168137,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,in_progress,,2026-07-04T20:46:33Z,2026-07-04T20:46:37Z,2026-07-04T20:46:33Z,main
+28719271579,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T20:50:42Z,2026-07-04T20:52:35Z,2026-07-04T20:50:42Z,claude/go-q6wmrk
+28719338079,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T20:53:22Z,2026-07-04T20:55:16Z,2026-07-04T20:53:22Z,main
+28719344616,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-04T20:53:37Z,2026-07-04T20:58:16Z,2026-07-04T20:53:37Z,main
+28719871068,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-04T21:15:02Z,2026-07-04T21:16:54Z,2026-07-04T21:15:02Z,claude/go-q6wmrk
+28719939866,CI,.github/workflows/ci.yml,push,completed,success,2026-07-04T21:17:53Z,2026-07-04T21:19:42Z,2026-07-04T21:17:53Z,main
+28719945520,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-04T21:18:07Z,2026-07-04T21:23:19Z,2026-07-04T21:18:07Z,main
+28720106385,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-04T21:24:38Z,2026-07-04T21:25:58Z,2026-07-04T21:24:38Z,main
+28745541427,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-05T15:23:53Z,2026-07-05T15:25:43Z,2026-07-05T15:23:53Z,claude/go-q6wmrk
+28745628220,CI,.github/workflows/ci.yml,push,completed,success,2026-07-05T15:27:03Z,2026-07-05T15:28:53Z,2026-07-05T15:27:03Z,main
+28745637016,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-05T15:27:21Z,2026-07-05T15:32:47Z,2026-07-05T15:27:21Z,main
+28747213920,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-05T16:23:25Z,2026-07-05T16:25:14Z,2026-07-05T16:23:25Z,claude/go-q6wmrk
+28748800725,CI,.github/workflows/ci.yml,push,completed,success,2026-07-05T17:22:15Z,2026-07-05T17:24:07Z,2026-07-05T17:22:15Z,main
+28748808965,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-05T17:22:34Z,2026-07-05T17:27:54Z,2026-07-05T17:22:34Z,main
+28749447751,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-05T17:45:53Z,2026-07-05T17:47:39Z,2026-07-05T17:45:53Z,claude/go-q6wmrk
+28749654186,CI,.github/workflows/ci.yml,push,completed,success,2026-07-05T17:53:43Z,2026-07-05T17:55:37Z,2026-07-05T17:53:43Z,main
+28749655234,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-05T17:53:46Z,2026-07-05T17:58:37Z,2026-07-05T17:53:46Z,main
+28750029572,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-05T18:06:39Z,2026-07-05T18:08:23Z,2026-07-05T18:06:39Z,claude/go-q6wmrk
+28750042193,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-05T18:07:05Z,2026-07-05T18:08:54Z,2026-07-05T18:07:05Z,claude/go-q6wmrk
+28750775931,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-05T18:33:48Z,2026-07-05T18:35:40Z,2026-07-05T18:33:48Z,claude/go-q6wmrk
+28751122233,CI,.github/workflows/ci.yml,push,completed,success,2026-07-05T18:46:48Z,2026-07-05T18:48:43Z,2026-07-05T18:46:48Z,main
+28751124627,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-05T18:46:53Z,2026-07-05T18:52:13Z,2026-07-05T18:46:53Z,main
+28751418050,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-05T18:57:55Z,2026-07-05T18:59:46Z,2026-07-05T18:57:55Z,claude/go-q6wmrk
+28751478742,CI,.github/workflows/ci.yml,push,completed,success,2026-07-05T19:00:14Z,2026-07-05T19:02:03Z,2026-07-05T19:00:14Z,main
+28751480390,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-05T19:00:16Z,2026-07-05T19:05:26Z,2026-07-05T19:00:16Z,main
+28751702104,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-05T19:08:14Z,2026-07-05T19:10:05Z,2026-07-05T19:08:14Z,claude/go-q6wmrk
+28751810072,CI,.github/workflows/ci.yml,push,completed,success,2026-07-05T19:12:18Z,2026-07-05T19:14:12Z,2026-07-05T19:12:18Z,main
+28751811788,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-05T19:12:21Z,2026-07-05T19:17:34Z,2026-07-05T19:12:21Z,main
+28752781143,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-05T19:48:16Z,2026-07-05T19:50:06Z,2026-07-05T19:48:16Z,claude/go-q6wmrk
+28753068590,CI,.github/workflows/ci.yml,push,completed,success,2026-07-05T19:58:58Z,2026-07-05T20:00:50Z,2026-07-05T19:58:58Z,main
+28753069670,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-05T19:59:01Z,2026-07-05T20:04:42Z,2026-07-05T19:59:01Z,main
+28753173288,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-05T20:02:26Z,2026-07-05T20:04:16Z,2026-07-05T20:02:26Z,claude/go-q6wmrk
+28753287123,CI,.github/workflows/ci.yml,push,completed,success,2026-07-05T20:06:25Z,2026-07-05T20:08:14Z,2026-07-05T20:06:25Z,main
+28753288428,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-05T20:06:28Z,2026-07-05T20:09:19Z,2026-07-05T20:06:28Z,main
+28755632069,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-05T21:34:06Z,2026-07-05T21:35:55Z,2026-07-05T21:34:06Z,claude/go-q6wmrk
+28755964211,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-05T21:46:59Z,2026-07-05T21:48:57Z,2026-07-05T21:46:59Z,claude/go-q6wmrk
+28756540893,CI,.github/workflows/ci.yml,push,completed,success,2026-07-05T22:08:56Z,2026-07-05T22:10:48Z,2026-07-05T22:08:56Z,main
+28756542221,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-05T22:09:00Z,2026-07-05T22:14:07Z,2026-07-05T22:09:00Z,main
+28787679813,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-06T11:18:06Z,2026-07-06T11:19:58Z,2026-07-06T11:18:06Z,claude/go-q6wmrk
+28789930250,CI,.github/workflows/ci.yml,push,completed,success,2026-07-06T12:00:20Z,2026-07-06T12:02:15Z,2026-07-06T12:00:20Z,main
+28789933609,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-06T12:00:23Z,2026-07-06T12:06:14Z,2026-07-06T12:00:23Z,main
+28812854242,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-06T18:08:02Z,2026-07-06T18:09:56Z,2026-07-06T18:08:02Z,claude/go-q6wmrk
+28814240390,CI,.github/workflows/ci.yml,push,completed,success,2026-07-06T18:31:09Z,2026-07-06T18:33:04Z,2026-07-06T18:31:09Z,main
+28814243423,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-06T18:31:12Z,2026-07-06T18:36:04Z,2026-07-06T18:31:12Z,main
+28816592678,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-06T19:10:09Z,2026-07-06T19:12:02Z,2026-07-06T19:10:09Z,claude/go-q6wmrk
+28816844746,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-06T19:14:28Z,2026-07-06T19:16:23Z,2026-07-06T19:14:28Z,claude/go-q6wmrk
+28817113036,CI,.github/workflows/ci.yml,push,completed,success,2026-07-06T19:19:15Z,2026-07-06T19:21:11Z,2026-07-06T19:19:15Z,main
+28817116076,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-06T19:19:19Z,2026-07-06T19:24:13Z,2026-07-06T19:19:19Z,main
+28819025944,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-06T19:53:10Z,2026-07-06T19:55:03Z,2026-07-06T19:53:10Z,claude/go-q6wmrk
+28819783672,CI,.github/workflows/ci.yml,push,completed,success,2026-07-06T20:05:52Z,2026-07-06T20:07:44Z,2026-07-06T20:05:52Z,main
+28819787489,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-06T20:05:56Z,2026-07-06T20:11:31Z,2026-07-06T20:05:56Z,main
+28827751589,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-06T22:31:41Z,2026-07-06T22:33:30Z,2026-07-06T22:31:41Z,claude/go-q6wmrk
+28828052310,CI,.github/workflows/ci.yml,push,completed,success,2026-07-06T22:37:52Z,2026-07-06T22:39:43Z,2026-07-06T22:37:52Z,main
+28828057237,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-06T22:37:59Z,2026-07-06T22:43:03Z,2026-07-06T22:37:59Z,main
+28842091379,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T04:42:45Z,2026-07-07T04:44:48Z,2026-07-07T04:42:45Z,claude/go-q6wmrk
+28842350584,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T04:49:46Z,2026-07-07T04:51:39Z,2026-07-07T04:49:46Z,main
+28842352049,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T04:49:49Z,2026-07-07T04:54:47Z,2026-07-07T04:49:49Z,main
+28842588663,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T04:56:13Z,2026-07-07T04:58:04Z,2026-07-07T04:56:13Z,claude/go-q6wmrk
+28844078688,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T05:34:42Z,2026-07-07T05:36:33Z,2026-07-07T05:34:42Z,main
+28844083522,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T05:34:50Z,2026-07-07T05:39:39Z,2026-07-07T05:34:50Z,main
+28844109148,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T05:35:28Z,2026-07-07T05:37:26Z,2026-07-07T05:35:28Z,claude/go-q6wmrk
+28844316716,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T05:40:49Z,2026-07-07T05:42:43Z,2026-07-07T05:40:49Z,main
+28844321208,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T05:40:56Z,2026-07-07T05:45:44Z,2026-07-07T05:40:56Z,main
+28844343763,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T05:41:31Z,2026-07-07T05:43:26Z,2026-07-07T05:41:31Z,claude/go-q6wmrk
+28844529240,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T05:46:09Z,2026-07-07T05:48:03Z,2026-07-07T05:46:09Z,main
+28844531765,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T05:46:12Z,2026-07-07T05:51:22Z,2026-07-07T05:46:12Z,main
+28845788855,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T06:16:20Z,2026-07-07T06:18:13Z,2026-07-07T06:16:20Z,claude/go-q6wmrk
+28846033106,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T06:22:05Z,2026-07-07T06:23:59Z,2026-07-07T06:22:05Z,main
+28846039969,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T06:22:14Z,2026-07-07T06:26:54Z,2026-07-07T06:22:14Z,main
+28846436291,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T06:30:57Z,2026-07-07T06:32:50Z,2026-07-07T06:30:57Z,claude/go-q6wmrk
+28846546899,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T06:33:20Z,2026-07-07T06:35:13Z,2026-07-07T06:33:20Z,main
+28846549669,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T06:33:24Z,2026-07-07T06:38:23Z,2026-07-07T06:33:24Z,main
+28848287886,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T07:09:39Z,2026-07-07T07:11:32Z,2026-07-07T07:09:39Z,claude/go-q6wmrk
+28848437745,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T07:12:36Z,2026-07-07T07:14:31Z,2026-07-07T07:12:36Z,main
+28848440997,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T07:12:40Z,2026-07-07T07:17:46Z,2026-07-07T07:12:40Z,main
+28849778586,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T07:38:23Z,2026-07-07T07:40:16Z,2026-07-07T07:38:23Z,claude/go-q6wmrk
+28849906241,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T07:40:52Z,2026-07-07T07:42:38Z,2026-07-07T07:40:52Z,main
+28849908817,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T07:40:55Z,2026-07-07T07:45:51Z,2026-07-07T07:40:55Z,main
+28852087683,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T08:21:01Z,2026-07-07T08:22:55Z,2026-07-07T08:21:01Z,claude/go-q6wmrk
+28852463315,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T08:27:44Z,2026-07-07T08:29:36Z,2026-07-07T08:27:44Z,claude/go-q6wmrk
+28852836664,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T08:34:16Z,2026-07-07T08:36:05Z,2026-07-07T08:34:16Z,main
+28852840351,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T08:34:19Z,2026-07-07T08:39:33Z,2026-07-07T08:34:19Z,main
+28853127311,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T08:39:22Z,2026-07-07T08:41:09Z,2026-07-07T08:39:22Z,claude/go-q6wmrk
+28853427137,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T08:44:35Z,2026-07-07T08:46:30Z,2026-07-07T08:44:35Z,main
+28853431285,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T08:44:39Z,2026-07-07T08:49:48Z,2026-07-07T08:44:39Z,main
+28855359987,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T09:17:53Z,2026-07-07T09:19:41Z,2026-07-07T09:17:53Z,claude/go-q6wmrk
+28855556713,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T09:21:17Z,2026-07-07T09:23:04Z,2026-07-07T09:21:17Z,main
+28855561090,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T09:21:22Z,2026-07-07T09:26:25Z,2026-07-07T09:21:22Z,main
+28857443940,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T09:53:33Z,2026-07-07T09:55:24Z,2026-07-07T09:53:33Z,claude/go-q6wmrk
+28857700737,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T09:58:07Z,2026-07-07T09:59:59Z,2026-07-07T09:58:07Z,main
+28857704449,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T09:58:11Z,2026-07-07T10:03:09Z,2026-07-07T09:58:11Z,main
+28859051109,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T10:21:36Z,2026-07-07T10:23:28Z,2026-07-07T10:21:36Z,claude/go-q6wmrk
+28859199684,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T10:24:19Z,2026-07-07T10:26:06Z,2026-07-07T10:24:19Z,main
+28859203562,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T10:24:23Z,2026-07-07T10:29:55Z,2026-07-07T10:24:23Z,main
+28867442002,CI,.github/workflows/ci.yml,pull_request,completed,failure,2026-07-07T12:50:22Z,2026-07-07T12:52:27Z,2026-07-07T12:50:22Z,claude/go-q6wmrk
+28867620651,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T12:53:10Z,2026-07-07T12:55:29Z,2026-07-07T12:53:10Z,claude/go-q6wmrk
+28867862313,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T12:57:02Z,2026-07-07T12:59:25Z,2026-07-07T12:57:02Z,main
+28867866471,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T12:57:06Z,2026-07-07T13:02:37Z,2026-07-07T12:57:06Z,main
+28879729576,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T15:51:27Z,2026-07-07T15:53:51Z,2026-07-07T15:51:27Z,claude/go-q6wmrk
+28880141714,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T15:57:39Z,2026-07-07T16:00:05Z,2026-07-07T15:57:39Z,main
+28880147342,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T15:57:44Z,2026-07-07T16:03:22Z,2026-07-07T15:57:44Z,main
+28886731614,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T17:44:48Z,2026-07-07T17:47:16Z,2026-07-07T17:44:48Z,claude/go-q6wmrk
+28886983337,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T17:49:04Z,2026-07-07T17:51:30Z,2026-07-07T17:49:04Z,main
+28886987814,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T17:49:09Z,2026-07-07T17:54:19Z,2026-07-07T17:49:09Z,main
+28888040350,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T18:07:07Z,2026-07-07T18:09:30Z,2026-07-07T18:07:07Z,claude/go-q6wmrk
+28888207249,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T18:10:02Z,2026-07-07T18:12:22Z,2026-07-07T18:10:02Z,main
+28888214272,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T18:10:09Z,2026-07-07T18:15:47Z,2026-07-07T18:10:09Z,main
+28888655737,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T18:17:39Z,2026-07-07T18:19:59Z,2026-07-07T18:17:39Z,claude/go-q6wmrk
+28888900225,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T18:21:42Z,2026-07-07T18:24:02Z,2026-07-07T18:21:42Z,main
+28888902807,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T18:21:45Z,2026-07-07T18:27:40Z,2026-07-07T18:21:45Z,main
+28895083076,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-07T20:05:27Z,2026-07-07T20:06:49Z,2026-07-07T20:05:27Z,main
+28900003949,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T21:29:29Z,2026-07-07T21:31:43Z,2026-07-07T21:29:29Z,claude/go-q6wmrk
+28900193011,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T21:32:48Z,2026-07-07T21:35:02Z,2026-07-07T21:32:48Z,main
+28900195220,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T21:32:51Z,2026-07-07T21:38:17Z,2026-07-07T21:32:51Z,main
+28900496768,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T21:38:26Z,2026-07-07T21:40:51Z,2026-07-07T21:38:26Z,claude/go-q6wmrk
+28900644217,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T21:41:19Z,2026-07-07T21:43:42Z,2026-07-07T21:41:19Z,main
+28900646928,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T21:41:22Z,2026-07-07T21:46:43Z,2026-07-07T21:41:22Z,main
+28900962095,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T21:47:13Z,2026-07-07T21:49:40Z,2026-07-07T21:47:13Z,claude/go-q6wmrk
+28901295632,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T21:53:38Z,2026-07-07T21:56:00Z,2026-07-07T21:53:38Z,main
+28901298089,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T21:53:40Z,2026-07-07T21:58:58Z,2026-07-07T21:53:40Z,main
+28901560984,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T21:58:45Z,2026-07-07T22:00:58Z,2026-07-07T21:58:45Z,claude/go-q6wmrk
+28901861363,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T22:04:22Z,2026-07-07T22:06:49Z,2026-07-07T22:04:22Z,main
+28901864015,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T22:04:24Z,2026-07-07T22:09:52Z,2026-07-07T22:04:24Z,main
+28902392710,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-07T22:14:43Z,2026-07-07T22:17:14Z,2026-07-07T22:14:43Z,claude/go-q6wmrk
+28902699157,CI,.github/workflows/ci.yml,push,completed,success,2026-07-07T22:20:51Z,2026-07-07T22:23:14Z,2026-07-07T22:20:51Z,main
+28902701488,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-07T22:20:53Z,2026-07-07T22:26:33Z,2026-07-07T22:20:53Z,main
+28903106450,Run enrichStrategicArtifacts now (propulse-business-87f7a / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-07T22:29:00Z,2026-07-07T22:30:21Z,2026-07-07T22:29:00Z,main
+28926276587,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T07:44:45Z,2026-07-08T07:47:03Z,2026-07-08T07:44:45Z,claude/go-q6wmrk
+28926548062,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T07:49:46Z,2026-07-08T07:51:54Z,2026-07-08T07:49:46Z,main
+28926554984,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-08T07:49:54Z,2026-07-08T07:55:05Z,2026-07-08T07:49:54Z,main
+28926817324,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T07:54:38Z,2026-07-08T07:56:58Z,2026-07-08T07:54:38Z,claude/go-q6wmrk
+28927179693,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T08:01:01Z,2026-07-08T08:03:22Z,2026-07-08T08:01:01Z,main
+28927182880,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-08T08:01:04Z,2026-07-08T08:06:56Z,2026-07-08T08:01:04Z,main
+28930342356,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T08:55:57Z,2026-07-08T08:58:13Z,2026-07-08T08:55:57Z,claude/go-q6wmrk
+28930582390,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T09:00:03Z,2026-07-08T09:02:23Z,2026-07-08T09:00:03Z,main
+28930586853,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-08T09:00:06Z,2026-07-08T09:06:00Z,2026-07-08T09:00:06Z,main
+28930998521,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T09:06:45Z,2026-07-08T09:09:08Z,2026-07-08T09:06:45Z,claude/go-q6wmrk
+28931391080,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T09:13:17Z,2026-07-08T09:15:43Z,2026-07-08T09:13:17Z,main
+28931395811,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-08T09:13:22Z,2026-07-08T09:18:40Z,2026-07-08T09:13:22Z,main
+28931712070,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T09:18:41Z,2026-07-08T09:20:58Z,2026-07-08T09:18:41Z,claude/go-q6wmrk
+28931879517,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T09:21:24Z,2026-07-08T09:23:46Z,2026-07-08T09:21:24Z,main
+28931883528,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-08T09:21:28Z,2026-07-08T09:27:17Z,2026-07-08T09:21:28Z,main
+28932639475,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T09:34:13Z,2026-07-08T09:36:41Z,2026-07-08T09:34:13Z,claude/go-q6wmrk
+28932824764,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T09:37:25Z,2026-07-08T09:39:46Z,2026-07-08T09:37:25Z,main
+28932829090,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-08T09:37:29Z,2026-07-08T09:42:48Z,2026-07-08T09:37:29Z,main
+28933002940,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T09:40:30Z,2026-07-08T09:42:51Z,2026-07-08T09:40:30Z,claude/go-q6wmrk
+28933305143,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T09:45:41Z,2026-07-08T09:47:57Z,2026-07-08T09:45:41Z,main
+28933309084,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-08T09:45:46Z,2026-07-08T09:50:35Z,2026-07-08T09:45:46Z,main
+28940288147,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T11:49:23Z,2026-07-08T11:51:37Z,2026-07-08T11:49:23Z,claude/go-q6wmrk
+28940582576,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T11:54:32Z,2026-07-08T11:56:53Z,2026-07-08T11:54:32Z,main
+28940587634,Read AI function logs (diagnostic),.github/workflows/read-ai-logs.yml,workflow_dispatch,completed,success,2026-07-08T11:54:37Z,2026-07-08T11:54:54Z,2026-07-08T11:54:37Z,main
+28940946632,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T12:00:48Z,2026-07-08T12:03:09Z,2026-07-08T12:00:48Z,claude/go-q6wmrk
+28941119113,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T12:03:40Z,2026-07-08T12:06:04Z,2026-07-08T12:03:40Z,main
+28941124553,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-08T12:03:46Z,2026-07-08T12:09:04Z,2026-07-08T12:03:46Z,main
+28943629733,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T12:45:47Z,2026-07-08T12:48:07Z,2026-07-08T12:45:47Z,claude/go-q6wmrk
+28943865518,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T12:49:35Z,2026-07-08T12:51:37Z,2026-07-08T12:49:35Z,main
+28944455392,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T12:58:52Z,2026-07-08T13:01:19Z,2026-07-08T12:58:52Z,claude/go-q6wmrk
+28944681412,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T13:02:19Z,2026-07-08T13:04:46Z,2026-07-08T13:02:19Z,main
+28944685646,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-08T13:02:23Z,2026-07-08T13:08:26Z,2026-07-08T13:02:23Z,main
+28945321140,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T13:12:22Z,2026-07-08T13:14:50Z,2026-07-08T13:12:22Z,claude/go-q6wmrk
+28947205488,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T13:41:08Z,2026-07-08T13:43:43Z,2026-07-08T13:41:08Z,claude/go-q6wmrk
+28947699962,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T13:48:25Z,2026-07-08T13:50:55Z,2026-07-08T13:48:25Z,claude/go-q6wmrk
+28954453120,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T15:25:07Z,2026-07-08T15:27:35Z,2026-07-08T15:25:07Z,claude/go-q6wmrk
+28954759374,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T15:29:34Z,2026-07-08T15:32:05Z,2026-07-08T15:29:34Z,claude/go-q6wmrk
+28955056959,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T15:33:48Z,2026-07-08T15:36:26Z,2026-07-08T15:33:48Z,claude/go-q6wmrk
+28955475677,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T15:39:54Z,2026-07-08T15:42:26Z,2026-07-08T15:39:54Z,main
+28955481403,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-08T15:39:59Z,2026-07-08T15:42:45Z,2026-07-08T15:39:59Z,main
+28955995758,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T15:47:24Z,2026-07-08T15:49:16Z,2026-07-08T15:47:24Z,claude/go-q6wmrk
+28956133739,CI,.github/workflows/ci.yml,push,completed,success,2026-07-08T15:49:27Z,2026-07-08T15:51:21Z,2026-07-08T15:49:27Z,main
+28956140621,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,in_progress,,2026-07-08T15:49:34Z,2026-07-08T15:49:39Z,2026-07-08T15:49:34Z,main
+28981833577,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-08T23:05:03Z,2026-07-08T23:06:35Z,2026-07-08T23:05:03Z,claude/go-q6wmrk
+28999342176,CI,.github/workflows/ci.yml,push,completed,success,2026-07-09T06:41:24Z,2026-07-09T06:43:19Z,2026-07-09T06:41:24Z,main
+28999346856,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-09T06:41:31Z,2026-07-09T06:46:47Z,2026-07-09T06:41:31Z,main
+29001274823,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-09T07:21:23Z,2026-07-09T07:22:36Z,2026-07-09T07:21:23Z,claude/go-q6wmrk
+29001714275,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-09T07:29:54Z,2026-07-09T07:32:33Z,2026-07-09T07:29:54Z,claude/go-q6wmrk
+29002276476,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-09T07:40:45Z,2026-07-09T07:47:30Z,2026-07-09T07:40:45Z,claude/go-q6wmrk
+29002652855,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-09T07:47:52Z,2026-07-09T07:49:10Z,2026-07-09T07:47:52Z,claude/go-q6wmrk
+29002982704,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-09T07:54:12Z,2026-07-09T07:55:42Z,2026-07-09T07:54:12Z,claude/go-q6wmrk
+29005143460,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-09T08:33:31Z,2026-07-09T08:34:46Z,2026-07-09T08:33:31Z,claude/go-q6wmrk
+29006409057,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-09T08:55:44Z,2026-07-09T08:57:53Z,2026-07-09T08:55:44Z,claude/go-q6wmrk
+29234643998,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T08:12:59Z,2026-07-13T08:14:11Z,2026-07-13T08:12:59Z,main
+29234697675,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,in_progress,,2026-07-13T08:13:52Z,2026-07-13T08:13:58Z,2026-07-13T08:13:52Z,main
+29236903928,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-13T08:51:23Z,2026-07-13T08:52:31Z,2026-07-13T08:51:23Z,claude/go-q6wmrk
+29237550474,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T09:02:13Z,2026-07-13T09:03:23Z,2026-07-13T09:02:13Z,main
+29237552864,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-13T09:02:16Z,2026-07-13T09:07:31Z,2026-07-13T09:02:16Z,main
+29239167321,Set user role (propulse-business-87f7a / strategic360),.github/workflows/set-user-role.yml,workflow_dispatch,completed,success,2026-07-13T09:27:21Z,2026-07-13T09:29:12Z,2026-07-13T09:27:21Z,main
+29239338211,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-13T09:30:00Z,2026-07-13T09:31:14Z,2026-07-13T09:30:00Z,claude/go-q6wmrk
+29239543971,Set user role (propulse-business-87f7a / strategic360),.github/workflows/set-user-role.yml,workflow_dispatch,completed,success,2026-07-13T09:33:10Z,2026-07-13T09:34:58Z,2026-07-13T09:33:10Z,main
+29239867893,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T09:38:30Z,2026-07-13T09:39:40Z,2026-07-13T09:38:30Z,main
+29239871636,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-13T09:38:34Z,2026-07-13T09:43:01Z,2026-07-13T09:38:34Z,main
+29241260752,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-13T10:01:38Z,2026-07-13T10:03:35Z,2026-07-13T10:01:38Z,claude/go-q6wmrk
+29241481765,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T10:05:15Z,2026-07-13T10:07:32Z,2026-07-13T10:05:15Z,main
+29241487050,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-13T10:05:20Z,2026-07-13T10:10:19Z,2026-07-13T10:05:20Z,main
+29253941307,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-13T13:29:08Z,2026-07-13T13:30:18Z,2026-07-13T13:29:08Z,claude/go-q6wmrk
+29254284912,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T13:34:23Z,2026-07-13T13:39:02Z,2026-07-13T13:34:23Z,main
+29254290304,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-13T13:34:28Z,2026-07-13T13:42:23Z,2026-07-13T13:34:28Z,main
+29255281596,Inspect internal data (propulse-business-87f7a — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-13T13:48:51Z,2026-07-13T13:51:10Z,2026-07-13T13:48:51Z,main
+29256619397,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-13T14:07:41Z,2026-07-13T14:08:53Z,2026-07-13T14:07:41Z,claude/go-q6wmrk
+29259594363,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T14:49:36Z,2026-07-13T14:50:51Z,2026-07-13T14:49:36Z,main
+29259604492,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-13T14:49:44Z,2026-07-13T14:55:12Z,2026-07-13T14:49:44Z,main
+29268055255,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-13T16:50:35Z,2026-07-13T16:51:50Z,2026-07-13T16:50:35Z,claude/go-q6wmrk
+29268329164,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T16:54:39Z,2026-07-13T16:55:35Z,2026-07-13T16:54:39Z,main
+29269181749,Inspect internal data (propulse-business-87f7a — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-13T17:07:24Z,2026-07-13T17:09:29Z,2026-07-13T17:07:24Z,main
+29272585958,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-13T17:58:32Z,2026-07-13T17:59:58Z,2026-07-13T17:58:32Z,claude/go-q6wmrk
+29272751725,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T18:00:56Z,2026-07-13T18:02:22Z,2026-07-13T18:00:56Z,main
+29272765161,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-13T18:01:07Z,2026-07-13T18:06:26Z,2026-07-13T18:01:07Z,main
+29274531770,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-13T18:27:36Z,2026-07-13T18:28:35Z,2026-07-13T18:27:36Z,claude/go-q6wmrk
+29276569547,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T18:57:37Z,2026-07-13T18:59:06Z,2026-07-13T18:57:37Z,main
+29276579813,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-13T18:57:47Z,2026-07-13T19:03:07Z,2026-07-13T18:57:47Z,main
+29278501190,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-13T19:27:06Z,2026-07-13T19:28:18Z,2026-07-13T19:27:06Z,claude/go-q6wmrk
+29279201542,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T19:37:57Z,2026-07-13T19:39:38Z,2026-07-13T19:37:57Z,main
+29279204596,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-13T19:38:00Z,2026-07-13T19:42:49Z,2026-07-13T19:38:00Z,main
+29281019928,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-13T20:05:40Z,2026-07-13T20:06:40Z,2026-07-13T20:05:40Z,claude/go-q6wmrk
+29285726776,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T21:16:45Z,2026-07-13T21:18:05Z,2026-07-13T21:16:45Z,main
+29285736163,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-13T21:16:54Z,2026-07-13T21:21:28Z,2026-07-13T21:16:54Z,main
+29285983496,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-13T21:20:46Z,2026-07-13T21:22:04Z,2026-07-13T21:20:46Z,claude/go-q6wmrk
+29288244988,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T21:57:44Z,2026-07-13T21:58:48Z,2026-07-13T21:57:44Z,main
+29288247835,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-13T21:57:47Z,2026-07-13T22:02:36Z,2026-07-13T21:57:47Z,main
+29288794843,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-13T22:07:02Z,2026-07-13T22:08:11Z,2026-07-13T22:07:02Z,claude/go-q6wmrk
+29292011540,CI,.github/workflows/ci.yml,push,completed,success,2026-07-13T23:06:22Z,2026-07-13T23:07:27Z,2026-07-13T23:06:22Z,main
+29292014382,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-13T23:06:26Z,2026-07-13T23:11:36Z,2026-07-13T23:06:26Z,main
+29318442002,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T08:33:21Z,2026-07-14T08:34:33Z,2026-07-14T08:33:21Z,claude/go-q6wmrk
+29320037587,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T08:59:34Z,2026-07-14T09:00:53Z,2026-07-14T08:59:34Z,main
+29320040463,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-14T08:59:36Z,2026-07-14T09:05:10Z,2026-07-14T08:59:36Z,main
+29321217876,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T09:18:18Z,2026-07-14T09:19:18Z,2026-07-14T09:18:18Z,claude/go-q6wmrk
+29321700883,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T09:26:05Z,2026-07-14T09:27:27Z,2026-07-14T09:26:05Z,main
+29321705319,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-14T09:26:09Z,2026-07-14T09:31:06Z,2026-07-14T09:26:09Z,main
+29325601694,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T10:30:39Z,2026-07-14T10:31:59Z,2026-07-14T10:30:39Z,claude/go-q6wmrk
+29326295976,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T10:42:17Z,2026-07-14T10:43:39Z,2026-07-14T10:42:17Z,main
+29326300747,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-14T10:42:22Z,2026-07-14T10:47:15Z,2026-07-14T10:42:22Z,main
+29326523877,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T10:46:07Z,2026-07-14T10:47:09Z,2026-07-14T10:46:07Z,claude/go-q6wmrk
+29328882170,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T11:26:12Z,2026-07-14T11:27:34Z,2026-07-14T11:26:12Z,main
+29328886779,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-14T11:26:16Z,2026-07-14T11:31:01Z,2026-07-14T11:26:16Z,main
+29330260383,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T11:49:43Z,2026-07-14T11:50:40Z,2026-07-14T11:49:43Z,claude/go-q6wmrk
+29330445909,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T11:52:54Z,2026-07-14T11:53:53Z,2026-07-14T11:52:54Z,main
+29330450064,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-14T11:52:58Z,2026-07-14T11:57:59Z,2026-07-14T11:52:58Z,main
+29331029714,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T12:02:32Z,2026-07-14T12:03:44Z,2026-07-14T12:02:32Z,claude/go-q6wmrk
+29332602488,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T12:28:16Z,2026-07-14T12:29:31Z,2026-07-14T12:28:16Z,main
+29332607081,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-14T12:28:21Z,2026-07-14T12:33:44Z,2026-07-14T12:28:21Z,main
+29334131076,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T12:51:47Z,2026-07-14T12:53:08Z,2026-07-14T12:51:47Z,claude/go-q6wmrk
+29335346328,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T13:09:51Z,2026-07-14T13:11:19Z,2026-07-14T13:09:51Z,main
+29335349855,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-14T13:09:55Z,2026-07-14T13:14:50Z,2026-07-14T13:09:55Z,main
+29347584603,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T15:57:15Z,2026-07-14T15:58:33Z,2026-07-14T15:57:15Z,claude/go-q6wmrk
+29348587006,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T16:11:16Z,2026-07-14T16:12:39Z,2026-07-14T16:11:16Z,main
+29348593379,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-14T16:11:21Z,2026-07-14T16:16:45Z,2026-07-14T16:11:21Z,main
+29349970271,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T16:31:04Z,2026-07-14T16:32:15Z,2026-07-14T16:31:04Z,claude/go-q6wmrk
+29352061090,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T17:01:45Z,2026-07-14T17:02:49Z,2026-07-14T17:01:45Z,claude/go-q6wmrk
+29354319713,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T17:34:17Z,2026-07-14T17:35:24Z,2026-07-14T17:34:17Z,claude/go-q6wmrk
+29354852057,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T17:41:59Z,2026-07-14T17:42:58Z,2026-07-14T17:41:59Z,main
+29354856226,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-14T17:42:03Z,2026-07-14T17:46:50Z,2026-07-14T17:42:03Z,main
+29355723211,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T17:54:46Z,2026-07-14T17:55:54Z,2026-07-14T17:54:46Z,claude/go-q6wmrk
+29356528622,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T18:06:39Z,2026-07-14T18:07:55Z,2026-07-14T18:06:39Z,main
+29356533625,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-14T18:06:44Z,2026-07-14T18:12:02Z,2026-07-14T18:06:44Z,main
+29357692059,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T18:24:01Z,2026-07-14T18:25:18Z,2026-07-14T18:24:01Z,claude/go-q6wmrk
+29357852340,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T18:26:23Z,2026-07-14T18:27:40Z,2026-07-14T18:26:23Z,main
+29357856869,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,in_progress,,2026-07-14T18:26:27Z,2026-07-14T18:26:33Z,2026-07-14T18:26:27Z,main
+29359187257,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T18:45:59Z,2026-07-14T18:47:19Z,2026-07-14T18:45:59Z,claude/go-q6wmrk
+29359907114,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T18:56:51Z,2026-07-14T18:58:25Z,2026-07-14T18:56:51Z,main
+29359910912,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-14T18:56:55Z,2026-07-14T19:02:29Z,2026-07-14T18:56:55Z,main
+29367743391,Inspect internal data (propulse-business-87f7a — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-14T20:57:50Z,2026-07-14T20:59:54Z,2026-07-14T20:57:50Z,claude/go-q6wmrk
+29369211834,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-14T21:21:18Z,2026-07-14T21:22:33Z,2026-07-14T21:21:18Z,claude/go-q6wmrk
+29371359470,CI,.github/workflows/ci.yml,push,completed,success,2026-07-14T21:57:28Z,2026-07-14T21:58:27Z,2026-07-14T21:57:28Z,main
+29371362812,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-14T21:57:31Z,2026-07-14T22:02:38Z,2026-07-14T21:57:31Z,main
+29401663060,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-15T08:40:56Z,2026-07-15T08:42:12Z,2026-07-15T08:40:56Z,claude/go-q6wmrk
+29402064065,CI,.github/workflows/ci.yml,push,completed,success,2026-07-15T08:47:33Z,2026-07-15T08:48:50Z,2026-07-15T08:47:33Z,main
+29402068068,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-15T08:47:37Z,2026-07-15T08:52:05Z,2026-07-15T08:47:37Z,main
+29425391180,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-15T14:50:39Z,2026-07-15T14:52:18Z,2026-07-15T14:50:39Z,claude/go-q6wmrk
+29426161050,CI,.github/workflows/ci.yml,push,completed,success,2026-07-15T15:00:37Z,2026-07-15T15:01:44Z,2026-07-15T15:00:37Z,main
+29426219387,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-15T15:01:20Z,2026-07-15T15:06:15Z,2026-07-15T15:01:20Z,main
+29427518134,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-15T15:18:43Z,2026-07-15T15:24:21Z,2026-07-15T15:18:43Z,main
+29432054984,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-15T16:21:21Z,2026-07-15T16:23:10Z,2026-07-15T16:21:21Z,claude/go-q6wmrk
+29432757089,CI,.github/workflows/ci.yml,push,completed,success,2026-07-15T16:31:26Z,2026-07-15T16:32:41Z,2026-07-15T16:31:26Z,main
+29432761915,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-15T16:31:30Z,2026-07-15T16:37:28Z,2026-07-15T16:31:30Z,main
+29434170792,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-15T16:51:56Z,2026-07-15T16:53:01Z,2026-07-15T16:51:56Z,claude/go-q6wmrk
+29434302076,CI,.github/workflows/ci.yml,push,completed,success,2026-07-15T16:53:52Z,2026-07-15T16:55:13Z,2026-07-15T16:53:52Z,main
+29434305008,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-15T16:53:55Z,2026-07-15T16:58:33Z,2026-07-15T16:53:55Z,main
+29435596975,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-15T17:13:15Z,2026-07-15T17:18:53Z,2026-07-15T17:13:15Z,main
+29439331716,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-15T18:08:27Z,2026-07-15T18:09:53Z,2026-07-15T18:08:27Z,claude/go-q6wmrk
+29449703458,CI,.github/workflows/ci.yml,push,completed,success,2026-07-15T20:48:51Z,2026-07-15T20:49:49Z,2026-07-15T20:48:51Z,main
+29449707413,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-15T20:48:54Z,2026-07-15T20:54:26Z,2026-07-15T20:48:54Z,main
+29483829887,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-16T08:32:41Z,2026-07-16T08:34:07Z,2026-07-16T08:32:41Z,claude/go-q6wmrk
+29487497890,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-16T09:32:14Z,2026-07-16T09:33:32Z,2026-07-16T09:32:14Z,claude/go-q6wmrk
+29488707940,CI,.github/workflows/ci.yml,push,completed,success,2026-07-16T09:51:43Z,2026-07-16T09:52:59Z,2026-07-16T09:51:43Z,main
+29488713788,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-16T09:51:48Z,2026-07-16T09:57:14Z,2026-07-16T09:51:48Z,main
+29491283395,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-16T10:34:04Z,2026-07-16T10:35:26Z,2026-07-16T10:34:04Z,claude/go-q6wmrk
+29492069582,CI,.github/workflows/ci.yml,push,completed,success,2026-07-16T10:47:20Z,2026-07-16T10:48:22Z,2026-07-16T10:47:20Z,main
+29492074405,Deploy (propulse-business-87f7a / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-16T10:47:25Z,2026-07-16T10:52:48Z,2026-07-16T10:47:25Z,main
+29568036058,Inspect internal data (propulse-business-87f7a — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-17T08:54:06Z,2026-07-17T08:56:20Z,2026-07-17T08:54:06Z,main
+29571722314,Inspect internal data (propulse-business-87f7a — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-17T09:56:08Z,2026-07-17T09:58:10Z,2026-07-17T09:56:08Z,main
+29575391297,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-17T11:00:38Z,2026-07-17T11:01:35Z,2026-07-17T11:00:38Z,claude/go-q6wmrk
+29575495352,CI,.github/workflows/ci.yml,push,completed,success,2026-07-17T11:02:23Z,2026-07-17T11:03:31Z,2026-07-17T11:02:23Z,main
+29575500948,Reset profil -> Neurones (propulse-business-87f7a / strategic360),.github/workflows/reset-profile.yml,workflow_dispatch,completed,success,2026-07-17T11:02:29Z,2026-07-17T11:04:24Z,2026-07-17T11:02:29Z,main
+29575773712,Reset profil -> Neurones (propulse-business-87f7a / strategic360),.github/workflows/reset-profile.yml,workflow_dispatch,completed,success,2026-07-17T11:07:07Z,2026-07-17T11:09:04Z,2026-07-17T11:07:07Z,main
+29575923355,Reset profil -> Neurones (propulse-business-87f7a / strategic360),.github/workflows/reset-profile.yml,workflow_dispatch,completed,success,2026-07-17T11:09:50Z,2026-07-17T11:11:41Z,2026-07-17T11:09:50Z,main
+29584975196,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-17T13:42:06Z,2026-07-17T13:43:14Z,2026-07-17T13:42:06Z,claude/go-q6wmrk
+29585400807,CI,.github/workflows/ci.yml,push,completed,success,2026-07-17T13:48:35Z,2026-07-17T13:49:52Z,2026-07-17T13:48:35Z,main
+29589760287,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-17T14:52:10Z,2026-07-17T14:53:33Z,2026-07-17T14:52:10Z,claude/go-q6wmrk
+29590648229,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-17T15:05:04Z,2026-07-17T15:06:28Z,2026-07-17T15:05:04Z,claude/go-q6wmrk
+29590931727,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-17T15:09:12Z,2026-07-17T15:10:08Z,2026-07-17T15:09:12Z,claude/go-q6wmrk
+29591457645,CI,.github/workflows/ci.yml,push,completed,success,2026-07-17T15:16:52Z,2026-07-17T15:18:19Z,2026-07-17T15:16:52Z,main
+29591607957,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-17T15:19:06Z,2026-07-17T15:21:26Z,2026-07-17T15:19:06Z,main
+29592746248,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-17T15:35:29Z,2026-07-17T15:38:12Z,2026-07-17T15:35:29Z,main
+29596915230,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-17T16:37:52Z,2026-07-17T16:40:27Z,2026-07-17T16:37:52Z,main
+29597474961,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-17T16:46:26Z,2026-07-17T16:49:04Z,2026-07-17T16:46:26Z,main
+29598239682,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-17T16:58:23Z,2026-07-17T17:01:13Z,2026-07-17T16:58:23Z,main
+29600257264,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-17T17:29:44Z,2026-07-17T17:35:47Z,2026-07-17T17:29:44Z,main
+29600982297,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-17T17:40:59Z,2026-07-17T17:41:58Z,2026-07-17T17:40:59Z,claude/go-q6wmrk
+29601575868,CI,.github/workflows/ci.yml,push,completed,success,2026-07-17T17:50:23Z,2026-07-17T17:51:44Z,2026-07-17T17:50:23Z,main
+29601831396,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-17T17:54:27Z,2026-07-17T17:59:13Z,2026-07-17T17:54:27Z,main
+29603177789,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-17T18:15:53Z,2026-07-17T18:21:41Z,2026-07-17T18:15:53Z,main
+29604767920,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-17T18:41:44Z,2026-07-17T18:42:40Z,2026-07-17T18:41:44Z,claude/go-q6wmrk
+29604779407,CI,.github/workflows/ci.yml,push,completed,success,2026-07-17T18:41:54Z,2026-07-17T18:43:23Z,2026-07-17T18:41:54Z,main
+29604956531,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-17T18:44:46Z,2026-07-17T18:50:40Z,2026-07-17T18:44:46Z,main
+29606058620,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-17T19:02:21Z,2026-07-17T19:03:45Z,2026-07-17T19:02:21Z,claude/go-q6wmrk
+29606184452,CI,.github/workflows/ci.yml,push,completed,success,2026-07-17T19:04:23Z,2026-07-17T19:05:45Z,2026-07-17T19:04:23Z,main
+29606275569,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-17T19:05:50Z,2026-07-17T19:11:59Z,2026-07-17T19:05:50Z,main
+29607521786,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-17T19:26:22Z,2026-07-17T19:27:34Z,2026-07-17T19:26:22Z,claude/go-q6wmrk
+29607645230,CI,.github/workflows/ci.yml,push,completed,success,2026-07-17T19:28:22Z,2026-07-17T19:29:27Z,2026-07-17T19:28:22Z,main
+29607646936,Run aiHealthCheck now (sentinel-360 / strategic360),.github/workflows/run-aihealthcheck-now.yml,workflow_dispatch,completed,success,2026-07-17T19:28:24Z,2026-07-17T19:29:10Z,2026-07-17T19:28:24Z,main
+29607772654,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-17T19:30:25Z,2026-07-17T19:32:38Z,2026-07-17T19:30:25Z,main
+29612888029,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-17T20:54:40Z,2026-07-17T20:57:22Z,2026-07-17T20:54:40Z,main
+29614741152,Set user role (sentinel-360 / strategic360),.github/workflows/set-user-role.yml,workflow_dispatch,completed,success,2026-07-17T21:26:48Z,2026-07-17T21:28:49Z,2026-07-17T21:26:48Z,main
+29616510905,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-17T22:00:07Z,2026-07-17T22:00:59Z,2026-07-17T22:00:07Z,main
+29617468631,.github/workflows/cleanup-old-project.yml,.github/workflows/cleanup-old-project.yml,push,completed,failure,2026-07-17T22:18:13Z,2026-07-17T22:18:13Z,2026-07-17T22:18:13Z,claude/go-q6wmrk
+29617485735,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-17T22:18:34Z,2026-07-17T22:19:55Z,2026-07-17T22:18:34Z,claude/go-q6wmrk
+29617594255,.github/workflows/cleanup-old-project.yml,.github/workflows/cleanup-old-project.yml,push,completed,failure,2026-07-17T22:20:42Z,2026-07-17T22:20:42Z,2026-07-17T22:20:42Z,main
+29617594860,CI,.github/workflows/ci.yml,push,completed,success,2026-07-17T22:20:43Z,2026-07-17T22:22:01Z,2026-07-17T22:20:43Z,main
+29618676799,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-17T22:42:36Z,2026-07-17T22:43:50Z,2026-07-17T22:42:36Z,claude/go-q6wmrk
+29618684273,CI,.github/workflows/ci.yml,push,completed,success,2026-07-17T22:42:45Z,2026-07-17T22:44:01Z,2026-07-17T22:42:45Z,main
+29618697111,Cleanup OLD project (propulse-business-87f7a) — strategic360 resources ONLY,.github/workflows/cleanup-old-project.yml,workflow_dispatch,completed,success,2026-07-17T22:43:02Z,2026-07-17T22:45:18Z,2026-07-17T22:43:02Z,main
+29619074531,Cleanup OLD project (propulse-business-87f7a) — strategic360 resources ONLY,.github/workflows/cleanup-old-project.yml,workflow_dispatch,completed,success,2026-07-17T22:51:02Z,2026-07-17T22:57:03Z,2026-07-17T22:51:02Z,main
+29619655438,Cleanup OLD project (propulse-business-87f7a) — strategic360 resources ONLY,.github/workflows/cleanup-old-project.yml,workflow_dispatch,in_progress,,2026-07-17T23:03:49Z,2026-07-17T23:03:54Z,2026-07-17T23:03:49Z,main
+29620124729,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,in_progress,,2026-07-17T23:13:53Z,2026-07-17T23:13:58Z,2026-07-17T23:13:53Z,main
+29620352779,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-17T23:18:54Z,2026-07-17T23:20:14Z,2026-07-17T23:18:54Z,claude/go-q6wmrk
+29620359747,CI,.github/workflows/ci.yml,push,completed,success,2026-07-17T23:19:02Z,2026-07-17T23:20:26Z,2026-07-17T23:19:02Z,main
+29620409160,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-17T23:20:08Z,2026-07-17T23:25:47Z,2026-07-17T23:20:08Z,main
+29620653330,Run syncInternalQuanti now (sentinel-360 / strategic360),.github/workflows/run-quanti-now.yml,workflow_dispatch,completed,success,2026-07-17T23:25:35Z,2026-07-17T23:26:33Z,2026-07-17T23:25:35Z,main
+29620656559,Run syncCopiloteAccounts now (sentinel-360 / strategic360),.github/workflows/run-sync-copilote-now.yml,workflow_dispatch,completed,success,2026-07-17T23:25:40Z,2026-07-17T23:26:32Z,2026-07-17T23:25:40Z,main
+29620831284,Run enrichStrategicArtifacts now (sentinel-360 / strategic360),.github/workflows/run-enrich-now.yml,workflow_dispatch,completed,success,2026-07-17T23:29:46Z,2026-07-17T23:31:06Z,2026-07-17T23:29:46Z,main
+29621008679,Run generateBriefingWeekly now (sentinel-360 / strategic360),.github/workflows/run-briefing-now.yml,workflow_dispatch,completed,success,2026-07-17T23:33:43Z,2026-07-17T23:34:47Z,2026-07-17T23:33:43Z,main
+29622220070,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T00:03:19Z,2026-07-18T00:04:32Z,2026-07-18T00:03:19Z,claude/go-q6wmrk
+29636087821,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T07:38:31Z,2026-07-18T07:39:59Z,2026-07-18T07:38:31Z,main
+29636089622,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-18T07:38:35Z,2026-07-18T07:41:07Z,2026-07-18T07:38:35Z,main
+29636303341,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T07:45:56Z,2026-07-18T07:47:16Z,2026-07-18T07:45:56Z,claude/go-q6wmrk
+29636306005,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T07:46:02Z,2026-07-18T07:47:21Z,2026-07-18T07:46:02Z,main
+29636308593,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T07:46:08Z,2026-07-18T07:52:10Z,2026-07-18T07:46:08Z,main
+29637147934,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T08:15:20Z,2026-07-18T08:16:32Z,2026-07-18T08:15:20Z,claude/go-q6wmrk
+29637151510,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T08:15:26Z,2026-07-18T08:16:55Z,2026-07-18T08:15:26Z,main
+29637154224,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T08:15:31Z,2026-07-18T08:25:12Z,2026-07-18T08:15:31Z,main
+29638391171,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T08:59:24Z,2026-07-18T09:00:31Z,2026-07-18T08:59:24Z,claude/go-q6wmrk
+29638393530,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T08:59:29Z,2026-07-18T09:00:34Z,2026-07-18T08:59:29Z,main
+29638395868,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T08:59:34Z,2026-07-18T09:05:51Z,2026-07-18T08:59:34Z,main
+29639232233,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T09:29:10Z,2026-07-18T09:30:31Z,2026-07-18T09:29:10Z,claude/go-q6wmrk
+29639235604,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T09:29:18Z,2026-07-18T09:30:23Z,2026-07-18T09:29:18Z,main
+29639238058,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T09:29:23Z,2026-07-18T09:36:53Z,2026-07-18T09:29:23Z,main
+29639578521,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T09:41:26Z,2026-07-18T09:42:48Z,2026-07-18T09:41:26Z,claude/go-q6wmrk
+29639583508,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T09:41:36Z,2026-07-18T09:42:59Z,2026-07-18T09:41:36Z,main
+29639589487,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T09:41:49Z,2026-07-18T09:48:44Z,2026-07-18T09:41:49Z,main
+29639598173,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-18T09:42:07Z,2026-07-18T09:44:21Z,2026-07-18T09:42:07Z,main
+29639687936,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-18T09:45:16Z,2026-07-18T09:46:01Z,2026-07-18T09:45:16Z,main
+29639972188,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T09:55:17Z,2026-07-18T09:56:19Z,2026-07-18T09:55:17Z,claude/go-q6wmrk
+29639975455,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T09:55:24Z,2026-07-18T09:56:19Z,2026-07-18T09:55:24Z,main
+29639977820,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T09:55:29Z,2026-07-18T10:01:40Z,2026-07-18T09:55:29Z,main
+29640369930,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T10:09:04Z,2026-07-18T10:10:27Z,2026-07-18T10:09:04Z,claude/go-q6wmrk
+29640373633,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T10:09:11Z,2026-07-18T10:10:28Z,2026-07-18T10:09:11Z,main
+29640377024,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T10:09:19Z,2026-07-18T10:15:57Z,2026-07-18T10:09:19Z,main
+29641566444,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T10:51:53Z,2026-07-18T10:52:56Z,2026-07-18T10:51:53Z,claude/go-q6wmrk
+29642048689,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T11:08:36Z,2026-07-18T11:09:33Z,2026-07-18T11:08:36Z,main
+29642054791,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T11:08:49Z,2026-07-18T11:15:51Z,2026-07-18T11:08:49Z,main
+29645239999,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T12:56:38Z,2026-07-18T12:57:37Z,2026-07-18T12:56:38Z,claude/go-q6wmrk
+29645274994,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T12:57:53Z,2026-07-18T12:59:05Z,2026-07-18T12:57:53Z,main
+29645278157,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T12:57:59Z,2026-07-18T13:03:50Z,2026-07-18T12:57:59Z,main
+29645456392,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T13:03:39Z,2026-07-18T13:04:55Z,2026-07-18T13:03:39Z,claude/go-q6wmrk
+29645537556,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T13:06:19Z,2026-07-18T13:07:32Z,2026-07-18T13:06:19Z,main
+29645540460,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-18T13:06:24Z,2026-07-18T13:11:12Z,2026-07-18T13:06:24Z,main
+29645602395,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T13:08:23Z,2026-07-18T13:09:33Z,2026-07-18T13:08:23Z,claude/go-q6wmrk
+29645613505,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T13:08:48Z,2026-07-18T13:09:55Z,2026-07-18T13:08:48Z,main
+29645614961,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-18T13:08:51Z,2026-07-18T13:15:04Z,2026-07-18T13:08:51Z,main
+29646362518,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T13:33:15Z,2026-07-18T13:34:21Z,2026-07-18T13:33:15Z,claude/go-q6wmrk
+29646368241,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T13:33:27Z,2026-07-18T13:34:36Z,2026-07-18T13:33:27Z,main
+29646371548,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T13:33:34Z,2026-07-18T13:40:32Z,2026-07-18T13:33:34Z,main
+29647087727,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T13:56:41Z,2026-07-18T13:57:45Z,2026-07-18T13:56:41Z,claude/go-q6wmrk
+29647377964,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T14:05:46Z,2026-07-18T14:06:52Z,2026-07-18T14:05:46Z,claude/go-q6wmrk
+29647380425,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T14:05:51Z,2026-07-18T14:07:51Z,2026-07-18T14:05:51Z,claude/go-q6wmrk
+29647564555,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T14:11:30Z,2026-07-18T14:12:45Z,2026-07-18T14:11:30Z,main
+29647570763,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T14:11:41Z,2026-07-18T14:18:15Z,2026-07-18T14:11:41Z,main
+29647863109,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T14:21:00Z,2026-07-18T14:22:03Z,2026-07-18T14:21:00Z,claude/go-q6wmrk
+29647881014,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T14:21:33Z,2026-07-18T14:22:55Z,2026-07-18T14:21:33Z,main
+29647900628,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-18T14:22:07Z,2026-07-18T14:27:12Z,2026-07-18T14:22:07Z,main
+29648044971,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T14:26:49Z,2026-07-18T14:28:16Z,2026-07-18T14:26:49Z,claude/go-q6wmrk
+29648054694,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T14:27:07Z,2026-07-18T14:28:25Z,2026-07-18T14:27:07Z,main
+29648065867,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T14:27:25Z,2026-07-18T14:33:02Z,2026-07-18T14:27:25Z,main
+29648749232,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-18T14:48:40Z,2026-07-18T14:49:28Z,2026-07-18T14:48:40Z,main
+29648809383,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T14:50:32Z,2026-07-18T14:52:36Z,2026-07-18T14:50:32Z,main
+29648953481,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-18T14:55:04Z,2026-07-18T14:57:01Z,2026-07-18T14:55:04Z,main
+29649050756,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-18T14:58:06Z,2026-07-18T14:58:49Z,2026-07-18T14:58:06Z,main
+29649262909,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T15:04:25Z,2026-07-18T15:06:26Z,2026-07-18T15:04:25Z,main
+29649438456,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T15:09:50Z,2026-07-18T15:11:52Z,2026-07-18T15:09:50Z,main
+29649456519,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T15:10:19Z,2026-07-18T15:11:24Z,2026-07-18T15:10:19Z,claude/go-q6wmrk
+29649653965,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T15:16:20Z,2026-07-18T15:17:42Z,2026-07-18T15:16:20Z,claude/go-q6wmrk
+29649658640,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T15:16:29Z,2026-07-18T15:17:52Z,2026-07-18T15:16:29Z,main
+29649660739,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T15:16:33Z,2026-07-18T15:23:33Z,2026-07-18T15:16:33Z,main
+29650961752,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-18T15:56:09Z,2026-07-18T15:58:32Z,2026-07-18T15:56:09Z,main
+29651055552,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-18T15:59:12Z,2026-07-18T15:59:59Z,2026-07-18T15:59:12Z,main
+29651256934,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T16:05:03Z,2026-07-18T16:07:03Z,2026-07-18T16:05:03Z,main
+29651445538,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T16:10:49Z,2026-07-18T16:11:54Z,2026-07-18T16:10:49Z,claude/go-q6wmrk
+29651450486,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T16:10:58Z,2026-07-18T16:12:12Z,2026-07-18T16:10:58Z,main
+29651460619,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T16:11:17Z,2026-07-18T16:17:09Z,2026-07-18T16:11:17Z,main
+29651937180,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T16:25:36Z,2026-07-18T16:26:40Z,2026-07-18T16:25:36Z,claude/go-q6wmrk
+29651942592,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T16:25:47Z,2026-07-18T16:27:07Z,2026-07-18T16:25:47Z,main
+29651945711,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-18T16:25:54Z,2026-07-18T16:32:08Z,2026-07-18T16:25:54Z,main
+29652445315,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T16:40:57Z,2026-07-18T16:48:03Z,2026-07-18T16:40:57Z,main
+29652761921,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-18T16:50:36Z,2026-07-18T16:51:19Z,2026-07-18T16:50:36Z,main
+29653326428,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T17:08:06Z,2026-07-18T17:09:57Z,2026-07-18T17:08:06Z,main
+29659302440,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T20:13:50Z,2026-07-18T20:15:13Z,2026-07-18T20:13:50Z,claude/go-q6wmrk
+29659306177,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T20:13:59Z,2026-07-18T20:15:03Z,2026-07-18T20:13:59Z,main
+29659309278,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T20:14:05Z,2026-07-18T20:21:34Z,2026-07-18T20:14:05Z,main
+29660281061,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T20:44:35Z,2026-07-18T20:45:38Z,2026-07-18T20:44:35Z,claude/go-q6wmrk
+29660285757,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T20:44:45Z,2026-07-18T20:45:45Z,2026-07-18T20:44:45Z,main
+29660289153,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T20:44:51Z,2026-07-18T20:51:54Z,2026-07-18T20:44:51Z,main
+29660591680,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T20:54:18Z,2026-07-18T20:55:41Z,2026-07-18T20:54:18Z,claude/go-q6wmrk
+29660598013,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T20:54:30Z,2026-07-18T20:55:34Z,2026-07-18T20:54:30Z,main
+29660613038,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,in_progress,,2026-07-18T20:55:01Z,2026-07-18T20:55:07Z,2026-07-18T20:55:01Z,main
+29660930418,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,in_progress,,2026-07-18T21:04:40Z,2026-07-18T21:04:44Z,2026-07-18T21:04:40Z,main
+29661035458,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-18T21:08:04Z,2026-07-18T21:08:47Z,2026-07-18T21:08:04Z,main
+29661150942,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T21:11:50Z,2026-07-18T21:13:52Z,2026-07-18T21:11:50Z,main
+29661259544,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T21:15:21Z,2026-07-18T21:17:26Z,2026-07-18T21:15:21Z,main
+29661343610,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T21:18:08Z,2026-07-18T21:20:05Z,2026-07-18T21:18:08Z,main
+29661515800,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T21:23:40Z,2026-07-18T21:25:42Z,2026-07-18T21:23:40Z,main
+29661724834,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T21:30:30Z,2026-07-18T21:31:42Z,2026-07-18T21:30:30Z,claude/go-q6wmrk
+29661727813,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T21:30:35Z,2026-07-18T21:31:38Z,2026-07-18T21:30:35Z,main
+29661732037,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-18T21:30:42Z,2026-07-18T21:32:46Z,2026-07-18T21:30:42Z,main
+29663415212,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T22:25:14Z,2026-07-18T22:26:11Z,2026-07-18T22:25:14Z,claude/go-q6wmrk
+29663417985,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T22:25:20Z,2026-07-18T22:26:39Z,2026-07-18T22:25:20Z,main
+29663419537,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T22:25:23Z,2026-07-18T22:33:33Z,2026-07-18T22:25:23Z,main
+29663712053,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-18T22:35:03Z,2026-07-18T22:37:26Z,2026-07-18T22:35:03Z,main
+29663797880,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-18T22:38:01Z,2026-07-18T22:38:47Z,2026-07-18T22:38:01Z,main
+29663914571,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T22:41:57Z,2026-07-18T22:43:56Z,2026-07-18T22:41:57Z,main
+29664153298,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-18T22:49:55Z,2026-07-18T22:50:38Z,2026-07-18T22:49:55Z,main
+29664210262,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-18T22:51:50Z,2026-07-18T22:52:34Z,2026-07-18T22:51:50Z,main
+29664263277,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T22:53:36Z,2026-07-18T22:55:39Z,2026-07-18T22:53:36Z,main
+29664447459,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-18T23:00:12Z,2026-07-18T23:01:33Z,2026-07-18T23:00:12Z,claude/go-q6wmrk
+29664448559,CI,.github/workflows/ci.yml,push,completed,success,2026-07-18T23:00:14Z,2026-07-18T23:01:36Z,2026-07-18T23:00:14Z,main
+29664450051,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-18T23:00:16Z,2026-07-18T23:06:38Z,2026-07-18T23:00:16Z,main
+29664707376,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-18T23:08:46Z,2026-07-18T23:11:09Z,2026-07-18T23:08:46Z,main
+29664791638,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-18T23:11:33Z,2026-07-18T23:12:18Z,2026-07-18T23:11:33Z,main
+29664845742,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-18T23:13:25Z,2026-07-18T23:14:13Z,2026-07-18T23:13:25Z,main
+29664901109,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-18T23:15:16Z,2026-07-18T23:17:20Z,2026-07-18T23:15:16Z,main
+29675269315,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-19T05:42:45Z,2026-07-19T05:43:52Z,2026-07-19T05:42:45Z,claude/go-q6wmrk
+29675271812,CI,.github/workflows/ci.yml,push,completed,success,2026-07-19T05:42:51Z,2026-07-19T05:44:19Z,2026-07-19T05:42:51Z,main
+29675273111,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-19T05:42:54Z,2026-07-19T05:45:01Z,2026-07-19T05:42:54Z,main
+29675342922,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T05:45:33Z,2026-07-19T05:46:21Z,2026-07-19T05:45:33Z,main
+29675392249,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T05:47:32Z,2026-07-19T05:49:40Z,2026-07-19T05:47:32Z,main
+29675517080,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-19T05:52:28Z,2026-07-19T05:53:37Z,2026-07-19T05:52:28Z,claude/go-q6wmrk
+29675519132,CI,.github/workflows/ci.yml,push,completed,success,2026-07-19T05:52:33Z,2026-07-19T05:53:53Z,2026-07-19T05:52:33Z,main
+29675520441,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-19T05:52:36Z,2026-07-19T05:54:40Z,2026-07-19T05:52:36Z,main
+29675589930,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T05:55:15Z,2026-07-19T05:56:06Z,2026-07-19T05:55:15Z,main
+29675640456,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T05:57:16Z,2026-07-19T05:59:19Z,2026-07-19T05:57:16Z,main
+29675729851,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T06:00:31Z,2026-07-19T06:01:16Z,2026-07-19T06:00:31Z,main
+29675837277,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T06:04:08Z,2026-07-19T06:06:04Z,2026-07-19T06:04:08Z,main
+29679091824,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-19T08:01:15Z,2026-07-19T08:02:18Z,2026-07-19T08:01:15Z,claude/go-q6wmrk
+29679095918,CI,.github/workflows/ci.yml,push,completed,success,2026-07-19T08:01:23Z,2026-07-19T08:02:48Z,2026-07-19T08:01:23Z,main
+29679097300,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-19T08:01:25Z,2026-07-19T08:07:53Z,2026-07-19T08:01:25Z,main
+29679341659,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T08:09:45Z,2026-07-19T08:10:37Z,2026-07-19T08:09:45Z,main
+29679700093,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-19T08:22:03Z,2026-07-19T08:23:22Z,2026-07-19T08:22:03Z,claude/go-q6wmrk
+29679703981,CI,.github/workflows/ci.yml,push,completed,success,2026-07-19T08:22:10Z,2026-07-19T08:23:21Z,2026-07-19T08:22:10Z,main
+29679705626,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-19T08:22:13Z,2026-07-19T08:24:36Z,2026-07-19T08:22:13Z,main
+29679785874,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T08:25:05Z,2026-07-19T08:25:53Z,2026-07-19T08:25:05Z,main
+29679841565,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T08:27:04Z,2026-07-19T08:29:06Z,2026-07-19T08:27:04Z,main
+29679962666,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T08:31:13Z,2026-07-19T08:31:59Z,2026-07-19T08:31:13Z,main
+29690778897,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-19T14:24:54Z,2026-07-19T14:26:12Z,2026-07-19T14:24:54Z,claude/go-q6wmrk
+29690781555,CI,.github/workflows/ci.yml,push,completed,success,2026-07-19T14:24:59Z,2026-07-19T14:26:26Z,2026-07-19T14:24:59Z,main
+29690783636,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-19T14:25:03Z,2026-07-19T14:31:32Z,2026-07-19T14:25:03Z,main
+29691067149,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T14:33:25Z,2026-07-19T14:34:12Z,2026-07-19T14:33:25Z,main
+29691143617,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T14:35:44Z,2026-07-19T14:36:30Z,2026-07-19T14:35:44Z,main
+29691222303,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T14:38:04Z,2026-07-19T14:39:44Z,2026-07-19T14:38:04Z,main
+29692097833,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-19T15:04:25Z,2026-07-19T15:05:32Z,2026-07-19T15:04:25Z,claude/go-q6wmrk
+29692101955,CI,.github/workflows/ci.yml,push,completed,success,2026-07-19T15:04:32Z,2026-07-19T15:05:58Z,2026-07-19T15:04:32Z,main
+29692103663,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-19T15:04:35Z,2026-07-19T15:11:50Z,2026-07-19T15:04:35Z,main
+29693121896,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-19T15:34:35Z,2026-07-19T15:35:59Z,2026-07-19T15:34:35Z,claude/go-q6wmrk
+29693125045,CI,.github/workflows/ci.yml,push,completed,success,2026-07-19T15:34:41Z,2026-07-19T15:35:50Z,2026-07-19T15:34:41Z,main
+29693127674,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-19T15:34:46Z,2026-07-19T15:42:09Z,2026-07-19T15:34:46Z,main
+29694021462,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T16:01:31Z,2026-07-19T16:02:16Z,2026-07-19T16:01:31Z,main
+29694105991,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T16:03:52Z,2026-07-19T16:04:35Z,2026-07-19T16:03:52Z,main
+29694191349,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T16:06:11Z,2026-07-19T16:08:03Z,2026-07-19T16:06:11Z,main
+29695793026,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-19T16:54:51Z,2026-07-19T16:56:12Z,2026-07-19T16:54:51Z,claude/go-q6wmrk
+29695796288,CI,.github/workflows/ci.yml,push,completed,success,2026-07-19T16:54:58Z,2026-07-19T16:56:18Z,2026-07-19T16:54:58Z,main
+29695798461,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-19T16:55:02Z,2026-07-19T17:01:06Z,2026-07-19T16:55:02Z,main
+29696082754,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T17:03:43Z,2026-07-19T17:04:36Z,2026-07-19T17:03:43Z,main
+29696160574,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T17:06:07Z,2026-07-19T17:06:52Z,2026-07-19T17:06:07Z,main
+29696238968,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T17:08:33Z,2026-07-19T17:10:28Z,2026-07-19T17:08:33Z,main
+29696503218,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-19T17:16:27Z,2026-07-19T17:17:51Z,2026-07-19T17:16:27Z,claude/go-q6wmrk
+29696506399,CI,.github/workflows/ci.yml,push,completed,success,2026-07-19T17:16:33Z,2026-07-19T17:18:02Z,2026-07-19T17:16:33Z,main
+29696508087,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-19T17:16:36Z,2026-07-19T17:24:18Z,2026-07-19T17:16:36Z,main
+29696790438,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-19T17:25:13Z,2026-07-19T17:27:34Z,2026-07-19T17:25:13Z,main
+29696876710,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T17:27:54Z,2026-07-19T17:28:43Z,2026-07-19T17:27:54Z,main
+29696956066,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T17:30:20Z,2026-07-19T17:32:05Z,2026-07-19T17:30:20Z,main
+29697125976,CI,.github/workflows/ci.yml,pull_request,in_progress,,2026-07-19T17:35:28Z,2026-07-19T17:35:33Z,2026-07-19T17:35:28Z,claude/go-q6wmrk
+29697233732,CI,.github/workflows/ci.yml,push,completed,success,2026-07-19T17:38:45Z,2026-07-19T17:40:07Z,2026-07-19T17:38:45Z,main
+29697239493,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-19T17:38:56Z,2026-07-19T17:46:13Z,2026-07-19T17:38:56Z,main
+29697537314,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T17:48:00Z,2026-07-19T17:48:44Z,2026-07-19T17:48:00Z,main
+29697678127,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T17:52:22Z,2026-07-19T17:54:26Z,2026-07-19T17:52:22Z,main
+29699728384,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T18:59:28Z,2026-07-19T19:01:32Z,2026-07-19T18:59:28Z,main
+29699836827,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T19:02:28Z,2026-07-19T19:04:22Z,2026-07-19T19:02:28Z,main
+29700528959,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-19T19:24:36Z,2026-07-19T19:26:01Z,2026-07-19T19:24:36Z,claude/go-q6wmrk
+29700632859,CI,.github/workflows/ci.yml,push,completed,success,2026-07-19T19:27:27Z,2026-07-19T19:28:44Z,2026-07-19T19:27:27Z,main
+29700634699,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-19T19:27:30Z,2026-07-19T19:35:04Z,2026-07-19T19:27:30Z,main
+29700893065,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T19:35:00Z,2026-07-19T19:35:48Z,2026-07-19T19:35:00Z,main
+29701057380,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T19:40:13Z,2026-07-19T19:42:09Z,2026-07-19T19:40:13Z,main
+29701261612,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-19T19:46:53Z,2026-07-19T19:48:12Z,2026-07-19T19:46:53Z,claude/go-q6wmrk
+29701350716,CI,.github/workflows/ci.yml,push,completed,success,2026-07-19T19:49:53Z,2026-07-19T19:51:19Z,2026-07-19T19:49:53Z,main
+29701352157,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-19T19:49:55Z,2026-07-19T19:56:37Z,2026-07-19T19:49:55Z,main
+29701611215,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-19T19:58:05Z,2026-07-19T20:00:14Z,2026-07-19T19:58:05Z,main
+29701728245,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-19T20:01:40Z,2026-07-19T20:02:24Z,2026-07-19T20:01:40Z,main
+29701898471,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-19T20:06:48Z,2026-07-19T20:08:51Z,2026-07-19T20:06:48Z,main
+29731866502,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-20T09:33:03Z,2026-07-20T09:34:25Z,2026-07-20T09:33:03Z,claude/go-q6wmrk
+29732362295,CI,.github/workflows/ci.yml,push,completed,success,2026-07-20T09:41:14Z,2026-07-20T09:42:23Z,2026-07-20T09:41:14Z,main
+29732420481,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-20T09:42:14Z,2026-07-20T09:43:11Z,2026-07-20T09:42:14Z,claude/go-q6wmrk
+29732573039,CI,.github/workflows/ci.yml,push,completed,success,2026-07-20T09:44:46Z,2026-07-20T09:45:59Z,2026-07-20T09:44:46Z,main
+29732577080,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-20T09:44:50Z,2026-07-20T09:52:02Z,2026-07-20T09:44:50Z,main
+29733802512,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-20T10:05:23Z,2026-07-20T10:06:38Z,2026-07-20T10:05:23Z,claude/go-q6wmrk
+29733806784,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-20T10:05:27Z,2026-07-20T10:06:18Z,2026-07-20T10:05:27Z,main
+29734015742,CI,.github/workflows/ci.yml,push,completed,success,2026-07-20T10:08:45Z,2026-07-20T10:10:01Z,2026-07-20T10:08:45Z,main
+29734019727,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-20T10:08:49Z,2026-07-20T10:16:01Z,2026-07-20T10:08:49Z,main
+29734427930,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-20T10:15:20Z,2026-07-20T10:17:14Z,2026-07-20T10:15:20Z,main
+29734820900,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-20T10:22:11Z,2026-07-20T10:23:11Z,2026-07-20T10:22:11Z,claude/go-q6wmrk
+29735012034,CI,.github/workflows/ci.yml,push,completed,success,2026-07-20T10:25:28Z,2026-07-20T10:26:43Z,2026-07-20T10:25:28Z,main
+29735015605,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-20T10:25:32Z,2026-07-20T10:27:42Z,2026-07-20T10:25:32Z,main
+29735430240,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-20T10:32:48Z,2026-07-20T10:34:51Z,2026-07-20T10:32:48Z,main
+29735889033,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-20T10:40:51Z,2026-07-20T10:42:05Z,2026-07-20T10:40:51Z,claude/go-q6wmrk
+29736081223,CI,.github/workflows/ci.yml,push,completed,success,2026-07-20T10:44:15Z,2026-07-20T10:45:03Z,2026-07-20T10:44:15Z,main
+29736085618,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-20T10:44:19Z,2026-07-20T10:51:29Z,2026-07-20T10:44:19Z,main
+29737531839,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-20T11:09:12Z,2026-07-20T11:10:44Z,2026-07-20T11:09:12Z,claude/go-q6wmrk
+29737742719,CI,.github/workflows/ci.yml,push,completed,success,2026-07-20T11:12:35Z,2026-07-20T11:13:55Z,2026-07-20T11:12:35Z,main
+29737746137,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-20T11:12:38Z,2026-07-20T11:18:42Z,2026-07-20T11:12:38Z,main
+29738256505,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-20T11:21:21Z,2026-07-20T11:26:36Z,2026-07-20T11:21:21Z,main
+29738755723,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-20T11:29:56Z,2026-07-20T11:35:23Z,2026-07-20T11:29:56Z,main
+29739206230,Run syncInternalQuanti now (sentinel-360 / strategic360),.github/workflows/run-quanti-now.yml,workflow_dispatch,completed,success,2026-07-20T11:37:30Z,2026-07-20T11:38:31Z,2026-07-20T11:37:30Z,main
+29740278167,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-20T11:55:45Z,2026-07-20T11:57:10Z,2026-07-20T11:55:45Z,claude/go-q6wmrk
+29740486804,CI,.github/workflows/ci.yml,push,completed,success,2026-07-20T11:59:11Z,2026-07-20T12:00:29Z,2026-07-20T11:59:11Z,main
+29740490403,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-20T11:59:14Z,2026-07-20T12:06:38Z,2026-07-20T11:59:14Z,main
+29741036665,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-20T12:07:49Z,2026-07-20T12:09:56Z,2026-07-20T12:07:49Z,main
+29741148790,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-20T12:09:36Z,2026-07-20T12:10:22Z,2026-07-20T12:09:36Z,main
+29741492766,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-20T12:14:54Z,2026-07-20T12:16:31Z,2026-07-20T12:14:54Z,main
+29742023964,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-20T12:23:28Z,2026-07-20T12:24:45Z,2026-07-20T12:23:28Z,claude/go-q6wmrk
+29742241875,CI,.github/workflows/ci.yml,push,completed,success,2026-07-20T12:26:53Z,2026-07-20T12:28:12Z,2026-07-20T12:26:53Z,main
+29742245352,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-20T12:26:57Z,2026-07-20T12:34:12Z,2026-07-20T12:26:57Z,main
+29742771922,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-20T12:35:07Z,2026-07-20T12:37:11Z,2026-07-20T12:35:07Z,main
+29745248271,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-20T13:12:24Z,2026-07-20T13:13:39Z,2026-07-20T13:12:24Z,claude/go-q6wmrk
+29745501567,CI,.github/workflows/ci.yml,push,completed,success,2026-07-20T13:15:48Z,2026-07-20T13:17:05Z,2026-07-20T13:15:48Z,main
+29745506349,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,in_progress,,2026-07-20T13:15:52Z,2026-07-20T13:15:58Z,2026-07-20T13:15:52Z,main
+29750154421,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-20T14:19:46Z,2026-07-20T14:21:05Z,2026-07-20T14:19:46Z,claude/go-q6wmrk
+29750969297,CI,.github/workflows/ci.yml,push,completed,success,2026-07-20T14:30:52Z,2026-07-20T14:32:19Z,2026-07-20T14:30:52Z,main
+29751026950,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-20T14:31:39Z,2026-07-20T14:33:02Z,2026-07-20T14:31:39Z,claude/go-q6wmrk
+29751053010,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-20T14:32:00Z,2026-07-20T14:39:46Z,2026-07-20T14:32:00Z,main
+29751242880,CI,.github/workflows/ci.yml,push,completed,success,2026-07-20T14:34:32Z,2026-07-20T14:36:01Z,2026-07-20T14:34:32Z,main
+29751687555,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,failure,2026-07-20T14:40:29Z,2026-07-20T14:46:11Z,2026-07-20T14:40:29Z,main
+29751703476,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-20T14:40:42Z,2026-07-20T14:43:07Z,2026-07-20T14:40:42Z,main
+29752164392,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-20T14:46:47Z,2026-07-20T14:53:03Z,2026-07-20T14:46:47Z,main
+29808908785,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-21T07:01:07Z,2026-07-21T07:03:33Z,2026-07-21T07:01:07Z,claude/go-q6wmrk
+29809128961,CI,.github/workflows/ci.yml,push,completed,success,2026-07-21T07:04:45Z,2026-07-21T07:06:53Z,2026-07-21T07:04:45Z,main
+29809132097,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-21T07:04:48Z,2026-07-21T07:11:06Z,2026-07-21T07:04:48Z,main
+29812318614,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-21T07:56:15Z,2026-07-21T07:58:20Z,2026-07-21T07:56:15Z,main
+29812620362,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-21T08:00:54Z,2026-07-21T08:03:02Z,2026-07-21T08:00:54Z,main
+29813938497,CI,.github/workflows/ci.yml,pull_request,completed,success,2026-07-21T08:20:59Z,2026-07-21T08:23:13Z,2026-07-21T08:20:59Z,claude/go-q6wmrk
+29814183277,CI,.github/workflows/ci.yml,push,completed,success,2026-07-21T08:24:47Z,2026-07-21T08:26:59Z,2026-07-21T08:24:47Z,main
+29814188930,Deploy (sentinel-360 / strategic360),.github/workflows/deploy.yml,workflow_dispatch,completed,success,2026-07-21T08:24:53Z,2026-07-21T08:32:14Z,2026-07-21T08:24:53Z,main
+29814195833,Seed data (sentinel-360 / strategic360),.github/workflows/seed-data.yml,workflow_dispatch,completed,success,2026-07-21T08:24:59Z,2026-07-21T08:27:17Z,2026-07-21T08:24:59Z,main
+29814987197,Run syncSources now (sentinel-360 / strategic360),.github/workflows/run-sync-now.yml,workflow_dispatch,completed,success,2026-07-21T08:37:05Z,2026-07-21T08:37:57Z,2026-07-21T08:37:05Z,main
+29814993697,Run syncInternalQuanti now (sentinel-360 / strategic360),.github/workflows/run-quanti-now.yml,workflow_dispatch,completed,success,2026-07-21T08:37:11Z,2026-07-21T08:38:12Z,2026-07-21T08:37:11Z,main
+29815000064,Run syncCopiloteAccounts now (sentinel-360 / strategic360),.github/workflows/run-sync-copilote-now.yml,workflow_dispatch,completed,success,2026-07-21T08:37:17Z,2026-07-21T08:38:04Z,2026-07-21T08:37:17Z,main
+29815641854,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-21T08:47:20Z,2026-07-21T08:49:25Z,2026-07-21T08:47:20Z,main
+29866462358,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-21T20:36:14Z,2026-07-21T20:38:18Z,2026-07-21T20:36:14Z,main
+29872295710,Inspect internal data (sentinel-360 — READ ONLY),.github/workflows/inspect-internal-data.yml,workflow_dispatch,completed,success,2026-07-21T22:02:31Z,2026-07-21T22:04:24Z,2026-07-21T22:02:31Z,main
