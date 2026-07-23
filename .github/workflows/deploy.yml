@@ -23,10 +23,20 @@ on:
 permissions:
   contents: read
 
+# Anti-empilement (audit coûts GCP 2026-07, .audit/RAPPORT.md) : UN SEUL déploiement à la fois,
+# tout run superflu annulé. 203 déploiements en 19 jours × 45 fonctions = ~4 800 builds Cloud
+# Build — deux runs lancés coup sur coup doublaient la facture pour un résultat identique.
+concurrency:
+  group: deploy-sentinel-360
+  cancel-in-progress: true
+
 jobs:
   deploy:
     name: Build & deploy
     runs-on: ubuntu-latest
+    # Garde de branche (audit coûts) : le déploiement prod ne part QUE de main — un dispatch
+    # depuis une branche de travail redéployait 45 fonctions pour tester un commit intermédiaire.
+    if: ${{ github.ref == 'refs/heads/main' }}
     # Optional extra safety net: create a "production" Environment in the repo's Settings >
     # Environments with required reviewers, and this job will pause for manual approval before
     # touching the shared project. Harmless no-op if the Environment doesn't exist.

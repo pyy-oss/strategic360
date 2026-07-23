@@ -20,6 +20,13 @@ on:
 permissions:
   contents: read
 
+# Anti-empilement (audit couts GCP 2026-07) : un seul run de ce workflow a la fois.
+# Pas de cancel-in-progress : on n'interrompt pas un traitement Vertex/Firestore en cours,
+# le run suivant attend son tour (queued) au lieu de doubler le cout.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   run-enrich:
     name: Force-run enrichStrategicArtifacts

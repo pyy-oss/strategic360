@@ -3,11 +3,27 @@ name: CI
 on:
   push:
     branches: [main]
+    # Pas de CI pour la doc et les artefacts d'audit (audit coûts GCP 2026-07) : ces chemins ne
+    # changent ni le build ni les tests — 432 runs CI le mois dernier, chaque minute évitée compte.
+    paths-ignore:
+      - "docs/**"
+      - ".audit/**"
+      - "*.md"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - ".audit/**"
+      - "*.md"
 
 # La CI ne fait que lire le repo (audit 2026-07) : GITHUB_TOKEN réduit à la lecture.
 permissions:
   contents: read
+
+# Anti-empilement (audit coûts GCP 2026-07) : un push qui en remplace un autre sur la même
+# branche/PR annule le run devenu obsolète au lieu de le laisser tourner pour rien.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   web:
